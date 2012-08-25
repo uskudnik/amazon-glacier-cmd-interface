@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
 # Originally developed by Thomas Parslow http://almostobsolete.net
 # Extended by Urban Skudnik urban.skudnik@gmail.com
 #
@@ -22,6 +25,8 @@ import urllib
 import hashlib
 import math
 import json
+
+from boto.connection import AWSAuthConnection
 
 class GlacierConnection(AWSAuthConnection):
         
@@ -53,7 +58,7 @@ class GlacierConnection(AWSAuthConnection):
         return super(GlacierConnection, self).make_request(method, path, headers, data, host, auth_path, sender, override_num_retries)
 
     def list_vaults(self):
-        return self.make_request(method="GET")
+        return self.make_request(method="GET", path='/-/vaults/')
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
@@ -104,15 +109,21 @@ class GlacierVault(object):
         return job
 
     def make_request(self, method, extra_path, headers=None, data=""):
-        return self.connection.make_request(method, "/-/vaults/%s%s" % (urllib.quote(self.name),extra_path,), headers, data)
+        if extra_path:
+            uri = "/-/vaults/%s%s" % (urllib.quote(self.name), extra_path,)
+        else:
+            uri = "/-/vaults/%s" % (urllib.quote(self.name),)
+        return self.connection.make_request(method, uri, headers, data)
 
     def get_job(self, job_id):
         return GlacierJob(self, job_id=job_id)
 
     def list_jobs(self):
-        response = self.vault.make_request("GET", "/jobs", None, json.dumps(self.params))
+        response = self.make_request("GET", "/jobs", None)
 
         assert response.status == 200, "List job expected 200 back (got %s): %r" % (response.status, response.read())
+        jdata = json.loads(response.read())
+        self.job_list = jdata['JobList'] 
         return response
 
     def create_vault(self):
@@ -134,7 +145,9 @@ class GlacierJob(object):
     def initiate(self):
         response = self.vault.make_request("POST", "/jobs", None, json.dumps(self.params))
         
-        assert response.status == 202, "Start job expected 202 back (got %s): %r" % (response.status, response.read())
+        if response.status != 202:
+            msg = "Start job expected 202 back (got %s)" % (response.status, )
+            raise Exception(msg, response.read())
         response.read()
         
         self.job_id = response.getheader("x-amz-job-id")
@@ -148,6 +161,19 @@ class GlacierJob(object):
         response = self.vault.make_request("GET", "/jobs/%s/output" % (urllib.quote(self.job_id),))
         assert response.status == 200, "Get output expects 200 responses (got %s): %r" % (response.status, response.read())
         return response
+
+    def job_status(self):
+        response = self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
+
+        assert response.status == 200, "Describe job expets 200 (got %s): %s" % (response.status, response.read())
+        jdata = json.loads(response.read())
+        self.json_output = jdata
+        self.completed = jdata['Completed']
+        self.archive_id = jdata['ArchiveId']
+        self.created = jdata['CreationDate']
+        self.status_code = jdata['StatusCode']
+        self.status_msg = jdata['StatusMessage']
+        return self
 
 def chunk_hashes(str):
     """
