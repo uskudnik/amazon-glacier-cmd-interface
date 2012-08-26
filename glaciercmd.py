@@ -69,7 +69,7 @@ except ImportError:
 
 def lsvault(args):
 	region = args.region
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
 	response = glacierconn.list_vaults()
 	parse_response(response)
@@ -83,7 +83,7 @@ def mkvault(args):
 	vault_name = args.vault
 	region = args.region
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	
 	if check_vault_name(vault_name):
 		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
@@ -94,7 +94,7 @@ def rmvault(args):
 	vault_name = args.vault
 	region = args.region
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	
 	if check_vault_name(vault_name):
 		response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
@@ -104,7 +104,7 @@ def listjobs(args):
 	vault_name = args.vault
 	region = args.region
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	
 	gv = glacier.GlacierVault(glacierconn, name=vault_name)
 	response = gv.list_jobs()
@@ -116,7 +116,7 @@ def listjobs(args):
 def describejob(args):
 	job = args.jobid
 	region = args.region
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	
 	gv = glacier.GlacierVault(glacierconn, job_id)
 	gj = glacier.GlacierJob(gv, job_id=job)
@@ -129,7 +129,7 @@ def putarchive(args):
 	filename = args.filename
 	description = args.description
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	
 	if description:
 		description = " ".join(description)
@@ -148,7 +148,7 @@ def getarchive(args):
 	vault = args.vault
 	archive = args.archive
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	
 	jobs = gv.list_jobs()
@@ -169,7 +169,7 @@ def deletearchive(args):
 	vault = args.vault
 	archive = args.archive
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	print gv.delete_archive(archive)
 
@@ -177,7 +177,7 @@ def inventar(args):
 	region = args.region
 	vault=args.vault
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=default_region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	try:
 		gv.list_jobs()
@@ -207,12 +207,12 @@ parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI)
 parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI)
 	
 parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
-parser_lsvault.add_argument('--region', default='us-east-1')
+parser_lsvault.add_argument('--region', default=default_region)
 parser_lsvault.set_defaults(func=lsvault)
 
 parser_mkvault = subparsers.add_parser("mkvault", help="Make vault")
 parser_mkvault.add_argument('vault')
-parser_mkvault.add_argument('--region', default='us-east-1')
+parser_mkvault.add_argument('--region', default=default_region)
 parser_mkvault.set_defaults(func=mkvault)
 
 parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
