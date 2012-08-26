@@ -31,6 +31,17 @@ def check_vault_name(name):
 		raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), '-' (hyphen), and '.' (period)")	
 	return True
 
+MAX_DESCRIPTION_LENGTH = 1024
+
+def check_description(description):
+	if len(description) > 1024:
+		raise Exception(u"Description must be less or equal to 1024 characters.")
+	
+	for char in description:
+		n = ord(char)
+		if n < 32 or n > 126:
+			raise Exception(u"The allowable characters are 7-bit ASCII without control codes, specifically ASCII values 32—126 decimal or 0x20—0x7E hexadecimal.")
+	return True
 
 try:
 	import glacier_settings
@@ -44,16 +55,17 @@ parser = argparse.ArgumentParser(description=u'Command line access to Amazon gla
 parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI)
 parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI)
 
-parser.add_argument('--list-vaults', action='store_true')
-parser.add_argument('--create-vault', nargs='*')
+parser.add_argument('lsvault', nargs='*')
+parser.add_argument('mkvault', nargs='+')
 parser.add_argument('--remove-vault', nargs='*')
 
 parser.add_argument('--vault', nargs=1)
 parser.add_argument('--list-jobs', action='store_true')
 parser.add_argument('--describe-job', nargs='*')
-parser.add_argument('--put-archive', nargs='*')
-parser.add_argument('--get-archive', nargs='*')	
-parser.add_argument('--delete-archive', nargs='*')
+
+parser.add_argument('--put-archive', nargs='+')
+parser.add_argument('--get-archive', nargs=1)	
+parser.add_argument('--delete-archive', nargs=1)
 parser.add_argument('--get-inventar', action='store_true')
 
 parser.add_argument('--region', nargs=1)
@@ -65,7 +77,7 @@ if AWS_KEYS_FROM_CLI:
 	AWS_SECRET_KEY = args.aws_secret_key
 
 if args.region:
-	region = args.region
+	region = args.region[0]
 else:
 	try:
 		region = glacier_settings.REGION
@@ -83,13 +95,20 @@ def parse_response(response):
 		print response.msg
 	print response.status, response.reason
 
-if args.create_vault:
-	vaults = args.create_vault
-	for vault_name in vaults:
-		if check_vault_name(vault_name):
-			response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
-			parse_response(response)
-			print response.getheader("Location")
+if args.mkvault:
+	mkv = args.mkvault
+	print mkv
+	if len(mkv) > 1:
+		region = mkv[0]
+		vault_name = mkv[1]
+		glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	else:
+		vault_name = mkv[0]
+	
+	if check_vault_name(vault_name):
+		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
+		parse_response(response)
+		print response.getheader("Location")
 			
 if args.remove_vault:
 	vaults = args.remove_vault
@@ -98,7 +117,13 @@ if args.remove_vault:
 			response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
 			parse_response(response)
 
-if args.list_vaults:
+if args.lsvault:
+	lsv = args.lsvault
+	
+	if len(lsv) > 1:
+		region = lsv[1]
+		glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	
 	response = glacierconn.list_vaults()
 	parse_response(response)
 	jdata = json.loads(response.read())
@@ -128,30 +153,35 @@ if args.describe_job:
 		print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id, job, gj.created, gj.status_code)
 
 if args.put_archive:
-	files = args.put_archive
-	writer = glacier.GlacierWriter(glacierconn, args.vault[0])
-	for ffile in files:
+	put_archive = args.put_archive
+	ffile = put_archive[0]
+	if len(put_archive) > 1:
+		description = " ".join(put_archive[1:])
+	else:
+		description = ffile
+	
+	if check_description(description):
+		writer = glacier.GlacierWriter(glacierconn, args.vault[0], description=description)
 		ffile = open(ffile, "rb")
 		writer.write(ffile.read())
-	writer.close()
-	print "Created archive with ID: ", writer.get_archive_id()
+		writer.close()
+		print "Created archive with ID: ", writer.get_archive_id()
 
 if args.get_archive:
-	archives = args.get_archive
-	for archive in archives:
-		gv = glacier.GlacierVault(glacierconn, args.vault[0])
-		jobs = gv.list_jobs()
-		for job in gv.job_list:
-			if job['ArchiveId'] == archive:
-				# no need to start another archive retrieval
-				print "ArchiveId: ", archive
-				if job['Completed']:
-					job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
-					print "Output: ", job2.get_output().read()
-				else:
-					print "Status: ", job['StatusCode']
+	archive = args.get_archive[0]
+	gv = glacier.GlacierVault(glacierconn, args.vault[0])
+	jobs = gv.list_jobs()
+	for job in gv.job_list:
+		if job['ArchiveId'] == archive:
+			# no need to start another archive retrieval
+			print "ArchiveId: ", archive
+			if job['Completed']:
+				job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
+				print "Output: ", job2.get_output().read()
 			else:
-				job = gv.retrieve_archive(archive)
+				print "Status: ", job['StatusCode']
+		else:
+			job = gv.retrieve_archive(archive)
 
 if args.get_inventar:
 	gv = glacier.GlacierVault(glacierconn, args.vault[0])
@@ -171,7 +201,6 @@ if args.get_inventar:
 		print json.loads(e[1])['message']
 		
 if args.delete_archive:
-	archives = args.delete_archive
-	for archive in archives:
-		gv = glacier.GlacierVault(glacierconn, args.vault[0])
-		print gv.delete_archive(archive)
+	archive = args.delete_archive[0]
+	gv = glacier.GlacierVault(glacierconn, args.vault[0])
+	print gv.delete_archive(archive)

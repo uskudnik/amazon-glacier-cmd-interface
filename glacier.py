@@ -219,7 +219,7 @@ class GlacierWriter(object):
     Archive. The data is written using the multi-part upload API.
     """
     DEFAULT_PART_SIZE = 128*1024*1024 #128MB
-    def __init__(self, connection, vault, part_size=DEFAULT_PART_SIZE):
+    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE):
         self.part_size = part_size
         self.buffer_size = 0
         self.uploaded_size = 0
@@ -233,7 +233,8 @@ class GlacierWriter(object):
 
         headers = {
                     "x-amz-glacier-version": "2012-06-01",
-                    "x-amz-part-size": str(self.part_size)
+                    "x-amz-part-size": str(self.part_size),
+                    "x-amz-archive-description": description
                   }
         response = self.connection.make_request(
             "POST",
