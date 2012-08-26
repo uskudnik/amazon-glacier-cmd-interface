@@ -147,6 +147,7 @@ def getarchive(args):
 	region = args.region
 	vault = args.vault
 	archive = args.archive
+	filename = args.filename
 	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
@@ -158,11 +159,17 @@ def getarchive(args):
 			print "ArchiveId: ", archive
 			if job['Completed']:
 				job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
-				print "Output: ", job2.get_output().read()
+				if filename:
+					ffile = open(filename, "w")
+					ffile.write(job2.get_output().read())
+					ffile.close()
+				else:
+					print job2.get_output().read()
 			else:
-				print "Status: ", job['StatusCode']
+				print job['StatusCode']
 		else:
 			job = gv.retrieve_archive(archive)
+			print "Started"
 
 def deletearchive(args):
 	region = args.region
@@ -177,7 +184,7 @@ def inventar(args):
 	region = args.region
 	vault=args.vault
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=maregion)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	try:
 		gv.list_jobs()
@@ -241,6 +248,7 @@ parser_download = subparsers.add_parser('download', help='Download file')
 parser_download.add_argument('--region', default=default_region)
 parser_download.add_argument('vault')
 parser_download.add_argument('archive')
+parser_download.add_argument('filename', nargs='?')
 parser_download.set_defaults(func=getarchive)
 
 parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
