@@ -83,6 +83,9 @@ def mkvault(args):
 		parse_response(response)
 		print response.getheader("Location")
 
+def rmvault(args):
+	pass
+
 parser = argparse.ArgumentParser(description=u'Command line access to Amazon glacier')
 subparsers = parser.add_subparsers()
 
@@ -90,15 +93,18 @@ parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI)
 parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI)
 	
 parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
-parser_lsvault.add_argument('--region', default='us-east-1', nargs=1)
+parser_lsvault.add_argument('--region', default='us-east-1')
 parser_lsvault.set_defaults(func=lsvault)
 
 parser_mkvault = subparsers.add_parser("mkvault", help="Make vault")
 parser_mkvault.add_argument('name')
-parser_mkvault.add_argument('--region', default='us-east-1', nargs=1)
+parser_mkvault.add_argument('--region', default='us-east-1')
 parser_mkvault.set_defaults(func=mkvault)
 
-parser.add_argument('--remove-vault', nargs='+')
+# parser.add_argument('--remove-vault', nargs='+')
+
+parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
+parser_rmvault.add_argument('--region', default='us-east-1')
 
 parser.add_argument('--vault', nargs=1)
 parser.add_argument('--list-jobs', action='store_true')
@@ -142,12 +148,12 @@ glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=r
 # 		parse_response(response)
 # 		print response.getheader("Location")
 			
-if args.remove_vault:
-	vaults = args.remove_vault
-	for vault_name in vaults:
-		if check_vault_name(vault_name):
-			response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
-			parse_response(response)
+# if args.remove_vault:
+# 	vaults = args.remove_vault
+# 	for vault_name in vaults:
+# 		if check_vault_name(vault_name):
+# 			response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
+# 			parse_response(response)
 
 # if args.lsvault:
 # 	lsv = args.lsvault
