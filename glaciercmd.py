@@ -43,6 +43,15 @@ def check_description(description):
 			raise Exception(u"The allowable characters are 7-bit ASCII without control codes, specifically ASCII values 32—126 decimal or 0x20—0x7E hexadecimal.")
 	return True
 
+def parse_response(response):
+	if response.status == 403:
+		print "403 Forbidden."
+		print "\n"
+		print "Reason:"
+		print response.read()
+		print response.msg
+	print response.status, response.reason
+
 try:
 	import glacier_settings
 	AWS_ACCESS_KEY = glacier_settings.AWS_ACCESS_KEY
@@ -51,13 +60,45 @@ try:
 except ImportError:
 	AWS_KEYS_FROM_CLI = True
 
+
+def lsvault(args):
+	region = args.region
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+
+	response = glacierconn.list_vaults()
+	parse_response(response)
+	jdata = json.loads(response.read())
+	vault_list = jdata['VaultList']
+	print "Vault name\tARN\tCreated\tSize"
+	for vault in vault_list:
+		print "%s\t%s\t%s\t%s" % (vault['VaultName'], vault['VaultARN'], vault['CreationDate'], vault['SizeInBytes'])
+
+def mkvault(args):
+	vault_name = args.name
+	region = args.region
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	
+	if check_vault_name(vault_name):
+		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
+		parse_response(response)
+		print response.getheader("Location")
+
 parser = argparse.ArgumentParser(description=u'Command line access to Amazon glacier')
+subparsers = parser.add_subparsers()
+
 parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI)
 parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI)
+	
+parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
+parser_lsvault.add_argument('--region', default='us-east-1', nargs=1)
+parser_lsvault.set_defaults(func=lsvault)
 
-parser.add_argument('lsvault', nargs='*')
-parser.add_argument('mkvault', nargs='+')
-parser.add_argument('--remove-vault', nargs='*')
+parser_mkvault = subparsers.add_parser("mkvault", help="Make vault")
+parser_mkvault.add_argument('name')
+parser_mkvault.add_argument('--region', default='us-east-1', nargs=1)
+parser_mkvault.set_defaults(func=mkvault)
+
+parser.add_argument('--remove-vault', nargs='+')
 
 parser.add_argument('--vault', nargs=1)
 parser.add_argument('--list-jobs', action='store_true')
@@ -68,9 +109,8 @@ parser.add_argument('--get-archive', nargs=1)
 parser.add_argument('--delete-archive', nargs=1)
 parser.add_argument('--get-inventar', action='store_true')
 
-parser.add_argument('--region', nargs=1)
-
 args = parser.parse_args(sys.argv[1:])
+args.func(args)
 
 if AWS_KEYS_FROM_CLI:
 	AWS_ACCESS_KEY = args.aws_access_key
@@ -86,29 +126,21 @@ else:
 
 glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
-def parse_response(response):
-	if response.status == 403:
-		print "403 Forbidden."
-		print "\n"
-		print "Reason:"
-		print response.read()
-		print response.msg
-	print response.status, response.reason
-
-if args.mkvault:
-	mkv = args.mkvault
-	print mkv
-	if len(mkv) > 1:
-		region = mkv[0]
-		vault_name = mkv[1]
-		glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	else:
-		vault_name = mkv[0]
-	
-	if check_vault_name(vault_name):
-		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
-		parse_response(response)
-		print response.getheader("Location")
+# if args.mkvault:
+# 	print "mkv"
+# 	mkv = args.mkvault
+# 	print mkv
+# 	if len(mkv) > 1:
+# 		region = mkv[0]
+# 		vault_name = mkv[1]
+# 		glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+# 	else:
+# 		vault_name = mkv[0]
+# 	
+# 	if check_vault_name(vault_name):
+# 		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
+# 		parse_response(response)
+# 		print response.getheader("Location")
 			
 if args.remove_vault:
 	vaults = args.remove_vault
@@ -117,20 +149,20 @@ if args.remove_vault:
 			response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
 			parse_response(response)
 
-if args.lsvault:
-	lsv = args.lsvault
-	
-	if len(lsv) > 1:
-		region = lsv[1]
-		glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
-	response = glacierconn.list_vaults()
-	parse_response(response)
-	jdata = json.loads(response.read())
-	vault_list = jdata['VaultList']
-	print "Vault name\tARN\tCreated\tSize"
-	for vault in vault_list:
-		print "%s\t%s\t%s\t%s" % (vault['VaultName'], vault['VaultARN'], vault['CreationDate'], vault['SizeInBytes'])
+# if args.lsvault:
+# 	lsv = args.lsvault
+# 	
+# 	if len(lsv) > 1:
+# 		region = lsv[1]
+# 		glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+# 	
+# 	response = glacierconn.list_vaults()
+# 	parse_response(response)
+# 	jdata = json.loads(response.read())
+# 	vault_list = jdata['VaultList']
+# 	print "Vault name\tARN\tCreated\tSize"
+# 	for vault in vault_list:
+# 		print "%s\t%s\t%s\t%s" % (vault['VaultName'], vault['VaultARN'], vault['CreationDate'], vault['SizeInBytes'])
 
 if args.list_jobs or args.describe_job or args.put_archive or args.get_archive or args.delete_archive or args.get_inventar:
 	if not args.vault:
