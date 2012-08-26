@@ -1,7 +1,8 @@
-amazon-glacier-cmd-interface
-============================
+Amazon Glacier CLI
+==================
 
-Command line interface for Amazon Glacier  
+Command line interface for Amazon Glacier
+-----------------------------------------
 
 Required libraries are glacier (which is included into repository) and boto - at the moment you still need to use development branch of boto (which you can get by running "pip install --upgrade git+https://github.com/boto/boto.git").  
 
