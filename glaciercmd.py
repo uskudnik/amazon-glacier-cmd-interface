@@ -3,11 +3,29 @@
 """
 glaciercmd.py
 
-mkvault, rmvault, inventory, put, get, delete
+MIT License
 
-Created by  on 2012-08-24.
-Copyright (c) 2012 __MyCompanyName__. All rights reserved.
-"""
+Copyright (C) 2012 and beyond by Urban Skudnik (urban.skudnik@gmail.com).
+
+All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE."""
 
 import sys
 import os
@@ -207,7 +225,16 @@ def inventar(args):
 		print "exception: ", e
 		print json.loads(e[1])['message']
 
-parser = argparse.ArgumentParser(description=u'Command line access to Amazon glacier')
+program_description = u"""Command line interface for Amazon Glacier\n
+\n
+Required libraries are glacier (which is included into repository) and boto - at the moment you still need to use development branch of boto (which you can get by running "pip install --upgrade git+https://github.com/boto/boto.git").
+
+While you can pass in your AWS Access and Secret key (--aws-access-key and --aws-secret-key), it is recommended that you create glacier_settings.py file into which you put AWS_ACCESS_KEY and AWS_SECRET_KEY strings.
+
+You can also put REGION into glacier_settings.py to specify the default region on which you will operate (default is us-east-1). When you want to operate on a non-default region you can pass in the --region settings to the commands.
+"""
+
+parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=program_description)
 subparsers = parser.add_subparsers()
 
 parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI)
@@ -217,7 +244,7 @@ parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
 parser_lsvault.add_argument('--region', default=default_region)
 parser_lsvault.set_defaults(func=lsvault)
 
-parser_mkvault = subparsers.add_parser("mkvault", help="Make vault")
+parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
 parser_mkvault.add_argument('vault')
 parser_mkvault.add_argument('--region', default=default_region)
 parser_mkvault.set_defaults(func=mkvault)
@@ -237,14 +264,14 @@ parser_describejob.add_argument('--region', default=default_region)
 parser_describejob.add_argument('vault')
 parser_describejob.set_defaults(func=describejob)
 
-parser_upload = subparsers.add_parser('upload', help='Upload file')
+parser_upload = subparsers.add_parser('upload', help='Upload an archive')
 parser_upload.add_argument('--region', default=default_region)
 parser_upload.add_argument('vault')
 parser_upload.add_argument('filename')
 parser_upload.add_argument('description', nargs='*')
 parser_upload.set_defaults(func=putarchive)
 
-parser_download = subparsers.add_parser('download', help='Download file')
+parser_download = subparsers.add_parser('download', help='Download an archive')
 parser_download.add_argument('--region', default=default_region)
 parser_download.add_argument('vault')
 parser_download.add_argument('archive')
