@@ -72,7 +72,7 @@ else:
 	except AttributeError:
 		region = "us-east-1"
 
-glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region)
+glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
 def parse_response(response):
 	if response.status == 403:
