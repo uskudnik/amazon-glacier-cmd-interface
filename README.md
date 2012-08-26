@@ -10,15 +10,15 @@ While you can pass in your AWS Access and Secret key (--aws-access-key and --aws
 You can also put REGION into glacier_settings.py to specify the default region on which you will operate (default is us-east-1). When you want to operate on a non-default region you can pass in the --region settings to the commands.  
   
 positional arguments:  
-    lsvault             List vaults  
-    mkvault             Create a new vault  
-    rmvault             Remove vault  
-    listjobs            List jobs  
-    describejob         Describe job  
-    upload              Upload an archive  
-    download            Download an archive  
-    rmarchive           Remove archive  
-    inventar            List inventar of a vault  
+    lsvault				List vaults  
+    mkvault				Create a new vault  
+    rmvault				Remove vault  
+    listjobs			List jobs  
+    describejob			Describe job  
+    upload				Upload an archive  
+    download			Download an archive  
+    rmarchive			Remove archive  
+    inventar			List inventar of a vault  
   
 optional arguments:  
   -h, --help            this help message and exit  
