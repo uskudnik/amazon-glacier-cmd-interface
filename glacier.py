@@ -143,10 +143,10 @@ class GlacierJob(object):
         self.job_id = job_id
 
     def initiate(self):
-	    headers = {
+        headers = {
                     "x-amz-glacier-version": "2012-06-01",
                   }
-        response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))        
+        response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
         if response.status != 202:
             msg = "Start job expected 202 back (got %s)" % (response.status, )
             raise Exception(msg, response.read())
