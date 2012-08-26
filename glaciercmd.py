@@ -56,7 +56,7 @@ parser.add_argument('--get-archive', nargs='*')
 parser.add_argument('--delete-archive', nargs='*')
 parser.add_argument('--get-inventar', action='store_true')
 
-parser.add_argument('--initialize-IAM-controls', action='store_true')
+parser.add_argument('--region', nargs=1)
 
 args = parser.parse_args(sys.argv[1:])
 
@@ -64,9 +64,15 @@ if AWS_KEYS_FROM_CLI:
 	AWS_ACCESS_KEY = args.aws_access_key
 	AWS_SECRET_KEY = args.aws_secret_key
 
-glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY)
+if args.region:
+	region = args.region
+else:
+	try:
+		region = glacier_settings.REGION
+	except AttributeError:
+		region = "us-east-1"
 
-#if args.initialize_IAM_controls:
+glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region)
 
 def parse_response(response):
 	if response.status == 403:
