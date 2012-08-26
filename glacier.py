@@ -143,8 +143,10 @@ class GlacierJob(object):
         self.job_id = job_id
 
     def initiate(self):
-        response = self.vault.make_request("POST", "/jobs", None, json.dumps(self.params))
-        
+	    headers = {
+                    "x-amz-glacier-version": "2012-06-01",
+                  }
+        response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))        
         if response.status != 202:
             msg = "Start job expected 202 back (got %s)" % (response.status, )
             raise Exception(msg, response.read())
@@ -185,14 +187,27 @@ def chunk_hashes(str):
     chunks = [str[i*chunk:(i+1)*chunk] for i in range(chunk_count)]
     return [hashlib.sha256(x).digest() for x in chunks]
 
-def tree_hash(hashes):
+def tree_hash(fo):
     """
     Given a hash of each 1MB chunk (from chunk_hashes) this will hash
     together adjacent hashes until it ends up with one big one. So a
     tree of hashes.
     """
+    hashes = []
+    hashes.extend(fo)
     while len(hashes) > 1:
-        hashes = [hashlib.sha256("".join(h[i:i+1])).digest() for i in range(i,2)]
+        new_hashes = []
+        while True:
+            if len(hashes) > 1:
+                first = hashes.pop(0)
+                second = hashes.pop(0)
+                new_hashes.append(hashlib.sha256(first + second).digest())
+            elif len(hashes) == 1:
+                only = hashes.pop(0)
+                new_hashes.append(only)
+            else:
+                break
+        hashes.extend(new_hashes)
     return hashes[0]
 
 def bytes_to_hex(str):
@@ -217,6 +232,7 @@ class GlacierWriter(object):
         self.connection = connection
 
         headers = {
+                    "x-amz-glacier-version": "2012-06-01",
                     "x-amz-part-size": str(self.part_size)
                   }
         response = self.connection.make_request(
@@ -246,6 +262,7 @@ class GlacierWriter(object):
         self.tree_hashes.append(part_tree_hash)
 
         headers = {
+                   "x-amz-glacier-version": "2012-06-01",
                     "Content-Range": "bytes %d-%d/*" % (self.uploaded_size, (self.uploaded_size+len(part))-1),
                     "Content-Length": str(len(part)),
                     "Content-Type": "application/octet-stream",
@@ -279,6 +296,7 @@ class GlacierWriter(object):
             self.send_part()
         # Complete the multiplart glacier upload
         headers = {
+                    "x-amz-glacier-version": "2012-06-01",
                     "x-amz-sha256-tree-hash": bytes_to_hex(tree_hash(self.tree_hashes)),
                     "x-amz-archive-size": str(self.uploaded_size)
                   }

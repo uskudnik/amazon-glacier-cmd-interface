@@ -140,8 +140,8 @@ if args.get_archive:
 				# no need to start another archive retrieval
 				print "ArchiveId: ", archive
 				if job['Completed']:
-					job = glacier.GlacierJob(gv, job['JobId'])
-					print "Output: ", job.get_output()
+					job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
+					print "Output: ", job2.get_output().read()
 				else:
 					print "Status: ", job['StatusCode']
 			else:
