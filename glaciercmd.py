@@ -264,6 +264,7 @@ parser_listjobs.set_defaults(func=listjobs)
 parser_describejob = subparsers.add_parser('describejob', help='Describe job')
 parser_describejob.add_argument('--region', default=default_region)
 parser_describejob.add_argument('vault')
+parser_describejob.add_argument('jobid')
 parser_describejob.set_defaults(func=describejob)
 
 parser_upload = subparsers.add_parser('upload', help='Upload an archive')

@@ -12,15 +12,15 @@ You can also put REGION into glacier_settings.py to specify the default region o
  
 Positional arguments:  
 
-	lsvault				List vaults  
-	mkvault				Create a new vault  
-	rmvault				Remove vault  
-	listjobs			List jobs  
-	describejob			Describe job  
-	upload				Upload an archive  
-	download			Download an archive  
-	rmarchive			Remove archive  
-	inventar			List inventar of a vault  
+	lsvault	[--region REGION]										List vaults
+	mkvault	[--region REGION] vault									Create a new vault
+	rmvault	[--region REGION] vault									Remove vault
+	listjobs [--region REGION] vault								List jobs
+	describejob [--region REGION] vault jobid						Describe job
+	upload [--region REGION] vault filename [description ...]		Upload an archive
+	download [--region REGION] vault archive [filename]				Download an archive
+	rmarchive [--region REGION] vault archive						Remove archive
+	inventory [--region REGION] vault								List inventar of a vault
   
 Optional arguments:  
   
