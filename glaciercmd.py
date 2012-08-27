@@ -39,7 +39,7 @@ import glacier
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-BOOKKEPPING = True
+BOOKKEPPING = False
 
 def check_vault_name(name):
 	m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
