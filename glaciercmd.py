@@ -176,7 +176,8 @@ def getarchive(args):
 		if job['ArchiveId'] == archive:
 			found = True
 			# no need to start another archive retrieval
-			print "ArchiveId: ", archive
+			if filename or not job['Completed']:
+				print "ArchiveId: ", archive
 			if job['Completed']:
 				job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
 				if filename:
