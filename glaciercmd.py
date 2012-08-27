@@ -218,7 +218,7 @@ def inventar(args):
 					print "Content:"
 					print "Archive Description\tUploaded\tSize\tArchive ID"
 					for archive in inventary['ArchiveList']:
-						print "%s\t%s\t%s\t%s" % (archive['ArchiveDescription'], archive['CreationDate'], archive['Size'], archive['ArchiveId'])
+						print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'], archive['CreationDate'], archive['Size'], archive['ArchiveId'], archive['SHA256TreeHash'])
 					break
 		
 		job = gv.retrieve_inventar(format="JSON")
