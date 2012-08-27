@@ -72,17 +72,22 @@ def parse_response(response):
 
 try:
 	import glacier_settings
-	AWS_ACCESS_KEY = glacier_settings.AWS_ACCESS_KEY
-	AWS_SECRET_KEY = glacier_settings.AWS_SECRET_KEY
-	AWS_KEYS_FROM_CLI = False
 	
 	try:
-		default_region = glacier_settings.REGION
+		AWS_ACCESS_KEY = glacier_settings.AWS_ACCESS_KEY
+		AWS_SECRET_KEY = glacier_settings.AWS_SECRET_KEY
+		AWS_KEYS_FROM_CLI = False
 	except AttributeError:
-		default_region = "us-east-1"
+		AWS_KEYS_FROM_CLI = True
 	
+	try:
+		DEFAULT_REGION = glacier_settings.REGION
+	except AttributeError:
+		DEFAULT_REGION = "us-east-1"
+		
 except ImportError:
 	AWS_KEYS_FROM_CLI = True
+	DEFAULT_REGION = "us-east-1"
 
 
 def lsvault(args):
@@ -239,62 +244,65 @@ You can also put REGION into glacier_settings.py to specify the default region o
 parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=program_description)
 subparsers = parser.add_subparsers()
 
-parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI)
-parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI)
+
+help_msg_access_secret_key = u"Required if you haven't created glacier_settings.py file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. Command line keys will override keys set in glacier_settings.py."
+parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI, help=help_msg_access_secret_key)
+parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI, help=help_msg_access_secret_key)
 	
 parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
-parser_lsvault.add_argument('--region', default=default_region)
+parser_lsvault.add_argument('--region', default=DEFAULT_REGION)
 parser_lsvault.set_defaults(func=lsvault)
 
 parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
 parser_mkvault.add_argument('vault')
-parser_mkvault.add_argument('--region', default=default_region)
+parser_mkvault.add_argument('--region', default=DEFAULT_REGION)
 parser_mkvault.set_defaults(func=mkvault)
 
 parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
-parser_rmvault.add_argument('--region', default=default_region)
+parser_rmvault.add_argument('--region', default=DEFAULT_REGION)
 parser_rmvault.add_argument('vault')
 parser_rmvault.set_defaults(func=rmvault)
 
 parser_listjobs = subparsers.add_parser('listjobs', help='List jobs')
-parser_listjobs.add_argument('--region', default=default_region)
+parser_listjobs.add_argument('--region', default=DEFAULT_REGION)
 parser_listjobs.add_argument('vault')
 parser_listjobs.set_defaults(func=listjobs)
 
 parser_describejob = subparsers.add_parser('describejob', help='Describe job')
-parser_describejob.add_argument('--region', default=default_region)
+parser_describejob.add_argument('--region', default=DEFAULT_REGION)
 parser_describejob.add_argument('vault')
 parser_describejob.add_argument('jobid')
 parser_describejob.set_defaults(func=describejob)
 
 parser_upload = subparsers.add_parser('upload', help='Upload an archive')
-parser_upload.add_argument('--region', default=default_region)
+parser_upload.add_argument('--region', default=DEFAULT_REGION)
 parser_upload.add_argument('vault')
 parser_upload.add_argument('filename')
 parser_upload.add_argument('description', nargs='*')
 parser_upload.set_defaults(func=putarchive)
 
 parser_download = subparsers.add_parser('download', help='Download an archive')
-parser_download.add_argument('--region', default=default_region)
+parser_download.add_argument('--region', default=DEFAULT_REGION)
 parser_download.add_argument('vault')
 parser_download.add_argument('archive')
 parser_download.add_argument('filename', nargs='?')
 parser_download.set_defaults(func=getarchive)
 
 parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
-parser_rmarchive.add_argument('--region', default=default_region)
+parser_rmarchive.add_argument('--region', default=DEFAULT_REGION)
 parser_rmarchive.add_argument('vault')
 parser_rmarchive.add_argument('archive')
 parser_rmarchive.set_defaults(func=deletearchive)
 
 parser_inventory = subparsers.add_parser('inventory', help='List inventory of a vault')
-parser_inventory.add_argument('--region', default=default_region)
+parser_inventory.add_argument('--region', default=DEFAULT_REGION)
 parser_inventory.add_argument('vault')
 parser_inventory.set_defaults(func=inventory)
 
 args = parser.parse_args(sys.argv[1:])
-args.func(args)
 
-if AWS_KEYS_FROM_CLI:
+if args.aws_access_key and args.aws_secret_key:
 	AWS_ACCESS_KEY = args.aws_access_key
 	AWS_SECRET_KEY = args.aws_secret_key
+
+args.func(args)

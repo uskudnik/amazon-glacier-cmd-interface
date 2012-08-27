@@ -24,5 +24,14 @@ Positional arguments:
   
 Optional arguments:  
   
-	--aws-access-key 		AWS_ACCESS_KEY  
-	--aws-secret-key 		AWS_SECRET_KEY  
+	--aws-access-key AWS_ACCESS_KEY
+                      Required if you haven't created glacier_settings.py
+                      file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. Command
+                      line keys will override keys set in
+                      glacier_settings.py.
+	--aws-secret-key AWS_SECRET_KEY
+                      Required if you haven't created glacier_settings.py
+                      file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. Command
+                      line keys will override keys set in
+                      glacier_settings.py.
+
