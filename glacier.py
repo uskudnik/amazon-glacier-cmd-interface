@@ -250,7 +250,7 @@ class GlacierWriter(object):
         buf = "".join(self.buffer)
         # Put back any data remaining over the part size into the
         # buffer
-        if len(buf) < self.part_size:
+        if len(buf) > self.part_size:
             self.buffer = [buf[self.part_size:]]
             self.buffer_size = len(self.buffer[0])
         else:
