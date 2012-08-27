@@ -199,7 +199,7 @@ def deletearchive(args):
 	gv = glacier.GlacierVault(glacierconn, vault)
 	print gv.delete_archive(archive)
 
-def inventar(args):
+def inventory(args):
 	region = args.region
 	vault=args.vault
 	
@@ -285,10 +285,10 @@ parser_rmarchive.add_argument('vault')
 parser_rmarchive.add_argument('archive')
 parser_rmarchive.set_defaults(func=deletearchive)
 
-parser_inventar = subparsers.add_parser('inventar', help='List inventar of a vault')
-parser_inventar.add_argument('--region', default=default_region)
-parser_inventar.add_argument('vault')
-parser_inventar.set_defaults(func=inventar)
+parser_inventory = subparsers.add_parser('inventory', help='List inventory of a vault')
+parser_inventory.add_argument('--region', default=default_region)
+parser_inventory.add_argument('vault')
+parser_inventory.set_defaults(func=inventory)
 
 args = parser.parse_args(sys.argv[1:])
 args.func(args)
