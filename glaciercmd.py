@@ -32,12 +32,14 @@ import os
 import argparse
 import re
 import json
+import datetime
 
 import boto
 import glacier
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
+BOOKKEPPING = True
 
 def check_vault_name(name):
 	m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
@@ -84,11 +86,15 @@ try:
 		DEFAULT_REGION = glacier_settings.REGION
 	except AttributeError:
 		DEFAULT_REGION = "us-east-1"
+	
+	try:
+		BOOKKEPPING = glacier_settings.BOOKKEPPING
+	except AttributeError:
+		pass
 		
 except ImportError:
 	AWS_KEYS_FROM_CLI = True
 	DEFAULT_REGION = "us-east-1"
-
 
 def lsvault(args):
 	region = args.region
@@ -153,18 +159,35 @@ def putarchive(args):
 	description = args.description
 	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+	
+	domain_name = "aws_glacier_%s_%s" % (region, vault)
+	try:
+		domain = sdb_conn.get_domain(domain_name, validate=True)
+	except boto.exception.SDBResponseError:
+		domain = sdb_conn.create_domain(domain_name)
 	
 	if description:
 		description = " ".join(description)
 	else:
 		description = filename
-	
+		
 	if check_description(description):
 		writer = glacier.GlacierWriter(glacierconn, vault, description=description)
 		ffile = open(filename, "rb")
 		writer.write(ffile.read())
 		writer.close()
-		print "Created archive with ID: ", writer.get_archive_id()
+		
+		archive_id = writer.get_archive_id()
+		
+		file_attrs = {
+			'archive_id': archive_id,
+			'description':description,
+			'date':'%s' % datetime.datetime.now()
+		}
+		
+		domain.put_attributes(filename, file_attrs)
+		print "Created archive with ID: ", archive_id
 
 def getarchive(args):
 	region = args.region
