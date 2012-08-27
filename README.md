@@ -8,7 +8,7 @@ Required libraries are glacier (which is included into repository) and boto - at
 
 While you can pass in your AWS Access and Secret key (`--aws-access-key` and `--aws-secret-key`), it is recommended that you create `glacier_settings.py` file into which you put `AWS_ACCESS_KEY` and `AWS_SECRET_KEY` strings.
 
-You can also put `REGION into `glacier_settings.py` to specify the default region on which you will operate (default is `us-east-1`). When you want to operate on a non-default region you can pass in the `--region` settings to the commands.
+You can also put `REGION` into `glacier_settings.py` to specify the default region on which you will operate (default is `us-east-1`). When you want to operate on a non-default region you can pass in the `--region` settings to the commands.
 
 Positional arguments:  
 
