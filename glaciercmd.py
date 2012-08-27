@@ -202,7 +202,7 @@ def inventar(args):
 	region = args.region
 	vault=args.vault
 	
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=maregion)
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	try:
 		gv.list_jobs()
