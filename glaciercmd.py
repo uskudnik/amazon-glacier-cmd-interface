@@ -171,8 +171,10 @@ def getarchive(args):
 	gv = glacier.GlacierVault(glacierconn, vault)
 	
 	jobs = gv.list_jobs()
+	found = False
 	for job in gv.job_list:
 		if job['ArchiveId'] == archive:
+			found = True
 			# no need to start another archive retrieval
 			print "ArchiveId: ", archive
 			if job['Completed']:
@@ -183,11 +185,10 @@ def getarchive(args):
 					ffile.close()
 				else:
 					print job2.get_output().read()
-			else:
-				print job['StatusCode']
-		else:
-			job = gv.retrieve_archive(archive)
-			print "Started"
+				return 
+	if !found:
+		job = gv.retrieve_archive(archive)
+		print "Started"
 
 def deletearchive(args):
 	region = args.region
