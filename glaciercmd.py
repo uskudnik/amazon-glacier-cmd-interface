@@ -159,13 +159,14 @@ def putarchive(args):
 	description = args.description
 	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
 	
-	domain_name = "aws_glacier_%s_%s" % (region, vault)
-	try:
-		domain = sdb_conn.get_domain(domain_name, validate=True)
-	except boto.exception.SDBResponseError:
-		domain = sdb_conn.create_domain(domain_name)
+	if BOOKKEPPING:
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)	
+		domain_name = "aws_glacier_%s_%s" % (region, vault)
+		try:
+			domain = sdb_conn.get_domain(domain_name, validate=True)
+		except boto.exception.SDBResponseError:
+			domain = sdb_conn.create_domain(domain_name)
 	
 	if description:
 		description = " ".join(description)
@@ -179,14 +180,18 @@ def putarchive(args):
 		writer.close()
 		
 		archive_id = writer.get_archive_id()
+		location = writer.get_location()
+		sha256hash = writer.get_hash()
+		if BOOKKEPPING:
+			file_attrs = {
+				'archive_id': archive_id,
+				'location':location,
+				'description':description,
+				'date':'%s' % datetime.datetime.now(),
+				'hash':sha256hash
+			}
 		
-		file_attrs = {
-			'archive_id': archive_id,
-			'description':description,
-			'date':'%s' % datetime.datetime.now()
-		}
-		
-		domain.put_attributes(filename, file_attrs)
+			domain.put_attributes(filename, file_attrs)
 		print "Created archive with ID: ", archive_id
 
 def getarchive(args):
