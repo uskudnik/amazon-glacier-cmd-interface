@@ -186,7 +186,7 @@ def getarchive(args):
 				else:
 					print job2.get_output().read()
 				return 
-	if !found:
+	if not found:
 		job = gv.retrieve_archive(archive)
 		print "Started"
 
