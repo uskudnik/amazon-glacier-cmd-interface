@@ -5,3 +5,5 @@ AWS_ACCESS_KEY = ""
 AWS_SECRET_KEY = ""
 
 #REGION = "us-east-1"
+#BOOKKEEPING = True
+#BOOKKEEPING_DOMAIN_NAME = 'amazon-glacier'

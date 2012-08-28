@@ -39,7 +39,8 @@ import glacier
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-BOOKKEPPING = False
+BOOKKEEPING = False
+BOOKKEEPING_DOMAIN_NAME = "amazon-glacier"
 
 def check_vault_name(name):
 	m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
@@ -88,7 +89,7 @@ try:
 		DEFAULT_REGION = "us-east-1"
 	
 	try:
-		BOOKKEPPING = glacier_settings.BOOKKEPPING
+		BOOKKEEPING = glacier_settings.BOOKKEEPING
 	except AttributeError:
 		pass
 		
@@ -160,9 +161,9 @@ def putarchive(args):
 	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	
-	if BOOKKEPPING:
+	if BOOKKEEPING:
 		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)	
-		domain_name = "aws_glacier_%s_%s" % (region, vault)
+		domain_name = BOOKKEEPING_DOMAIN_NAME
 		try:
 			domain = sdb_conn.get_domain(domain_name, validate=True)
 		except boto.exception.SDBResponseError:
@@ -172,7 +173,7 @@ def putarchive(args):
 		description = " ".join(description)
 	else:
 		description = filename
-		
+	
 	if check_description(description):
 		writer = glacier.GlacierWriter(glacierconn, vault, description=description)
 		ffile = open(filename, "rb")
@@ -182,8 +183,11 @@ def putarchive(args):
 		archive_id = writer.get_archive_id()
 		location = writer.get_location()
 		sha256hash = writer.get_hash()
-		if BOOKKEPPING:
+		if BOOKKEEPING:
 			file_attrs = {
+				'region':region,
+				'vault':vault,
+				'filename':filename,
 				'archive_id': archive_id,
 				'location':location,
 				'description':description,
@@ -232,6 +236,52 @@ def deletearchive(args):
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	print gv.delete_archive(archive)
+
+def search(args):
+	region = args.region
+	vault = args.vault
+	search_term = args.search_term
+	
+	if BOOKKEEPING:
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+		domain_name = BOOKKEEPING_DOMAIN_NAME
+		try:
+			domain = sdb_conn.get_domain(domain_name, validate=True)
+		except boto.exception.SDBResponseError:
+			domain = sdb_conn.create_domain(domain_name)
+	else:
+		raise Exception(u"You have to enable bookkeeping in your settings before you can perform search.")
+	
+	search_params = []
+	table_title = ""
+	if region:
+		search_params += ["region='%s'" % (region,)]
+	else:
+		table_title += "Region\t"
+	
+	if vault:
+		search_params += ["vault='%s'" % (vault,)]
+	else:
+		table_title += "Vault\t"
+	
+	table_title += "Filename\tArchive ID"
+	
+	search_params += ["filename='%s'" % (search_term,)]
+	search_params = " and ".join(search_params)
+	
+	query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
+	items = domain.select(query)
+	print table_title
+	for item in items:
+		# print item, item.keys()
+		item_attrs = []
+		if not region:
+			item_attrs += [item[u'region']]
+		if not vault:
+			item_attrs += [item[u'vault']]
+		item_attrs += [item[u'filename']]
+		item_attrs += [item[u'archive_id']]
+		print "\t".join(item_attrs)
 
 def inventory(args):
 	region = args.region
@@ -321,6 +371,12 @@ parser_rmarchive.add_argument('--region', default=DEFAULT_REGION)
 parser_rmarchive.add_argument('vault')
 parser_rmarchive.add_argument('archive')
 parser_rmarchive.set_defaults(func=deletearchive)
+
+parser_search = subparsers.add_parser('search', help='Search SimpleDB database (if it was created)')
+parser_search.add_argument('--region')
+parser_search.add_argument('--vault')
+parser_search.add_argument('search_term')
+parser_search.set_defaults(func=search)
 
 parser_inventory = subparsers.add_parser('inventory', help='List inventory of a vault')
 parser_inventory.add_argument('--region', default=DEFAULT_REGION)
