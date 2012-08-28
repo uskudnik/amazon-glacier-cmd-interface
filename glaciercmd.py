@@ -219,7 +219,7 @@ def getarchive(args):
 	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
-	
+
 	jobs = gv.list_jobs()
 	found = False
 	for job in gv.job_list:
@@ -237,6 +237,58 @@ def getarchive(args):
 				else:
 					print job2.get_output().read()
 				return 
+	if not found:
+		job = gv.retrieve_archive(archive)
+		print "Started"
+	
+def download(args):
+	region = args.region
+	vault = args.vault
+	filename = args.filename
+	out_file = args.out_file
+	
+	if not filename:
+		raise Exception(u"You have to pass in the file name or the search term of it's description to search through archive.")
+		
+	args.search_term = filename
+	items = search(args, print_results=False)
+	
+	n_items = 0
+	if not items:
+		print "Sorry, didn't find anything."
+		return False
+	
+	print "Region\tVault\tFilename\tArchive ID"
+	for item in items:
+		n_items += 1
+		archive = item['archive_id']
+		vault = item['vault']
+		print "%s\t%s\t%s\t%s" % (item['region'],item['vault'], item['filename'], item['archive_id'])
+	
+	if n_items > 1:
+		print "You need to uniquely identify file with either region, vault or filename parameters. If that is not enough, use getarchive to specify exactly which archive you want."
+		return False
+	
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	gv = glacier.GlacierVault(glacierconn, vault)
+	
+	jobs = gv.list_jobs()
+	found = False
+	for job in gv.job_list:
+		if job['ArchiveId'] == archive:
+			found = True
+			# no need to start another archive retrieval
+			if not job['Completed']:
+				print "Waiting for Amazon Glacier to assamble the archive."
+			if job['Completed']:
+				job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
+				if out_file:
+					ffile = open(out_file, "w")
+					ffile.write(job2.get_output().read())
+					ffile.close()
+				else:
+					print job2.get_output().read()
+			return True
 	if not found:
 		job = gv.retrieve_archive(archive)
 		print "Started"
@@ -265,7 +317,7 @@ def deletearchive(args):
 	item = items.next()
 	domain.delete_item(item)
 
-def search(args):
+def search(args, print_results=True):
 	region = args.region
 	vault = args.vault
 	search_term = args.search_term
@@ -300,7 +352,9 @@ def search(args):
 	query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
 	items = domain.select(query)
 	
-	print table_title
+	if print_results:
+		print table_title
+	
 	for item in items:
 		# print item, item.keys()
 		item_attrs = []
@@ -310,8 +364,12 @@ def search(args):
 			item_attrs += [item[u'vault']]
 		item_attrs += [item[u'filename']]
 		item_attrs += [item[u'archive_id']]
-		print "\t".join(item_attrs)
-
+		if print_results:
+			print "\t".join(item_attrs)
+	
+	if not print_results:
+		return items
+	
 def render_inventory(inventory):
 	print "Inventory of vault %s" % (inventory["VaultARN"],)
 	print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
@@ -416,12 +474,20 @@ parser_upload.add_argument('filename')
 parser_upload.add_argument('description', nargs='*')
 parser_upload.set_defaults(func=putarchive)
 
-parser_download = subparsers.add_parser('download', help='Download an archive')
-parser_download.add_argument('--region', default=DEFAULT_REGION)
-parser_download.add_argument('vault')
-parser_download.add_argument('archive')
-parser_download.add_argument('filename', nargs='?')
-parser_download.set_defaults(func=getarchive)
+parser_getarchive = subparsers.add_parser('getarchive', help='Get a file by explicitly setting archive id.')
+parser_getarchive.add_argument('--region', default=DEFAULT_REGION)
+parser_getarchive.add_argument('vault')
+parser_getarchive.add_argument('archive')
+parser_getarchive.add_argument('filename', nargs='?')
+parser_getarchive.set_defaults(func=getarchive)
+
+if BOOKKEEPING:
+	parser_download = subparsers.add_parser('download', help='Download a file by searching through SimpleDB cache for it.')
+	parser_download.add_argument('--region', default=DEFAULT_REGION)
+	parser_download.add_argument('--vault', help="Specify the vault in which archive is located.")
+	parser_download.add_argument('--out-file')
+	parser_download.add_argument('filename', nargs='?')
+	parser_download.set_defaults(func=download)
 
 parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
 parser_rmarchive.add_argument('--region', default=DEFAULT_REGION)

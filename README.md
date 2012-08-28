@@ -10,6 +10,12 @@ While you can pass in your AWS Access and Secret key (`--aws-access-key` and `--
 
 You can also put `REGION` into `glacier_settings.py` to specify the default region on which you will operate (default is `us-east-1`). When you want to operate on a non-default region you can pass in the `--region` settings to the commands.
 
+It is recommended that you enable `BOOKKEEPING` in `glacier_settings.py` to allow for saving cache information into Amazon SimpleDB database.
+
+You have two options to retrieve an archive - first one is `download`, second one is `getarchive`.
+
+If you use `download`, you will have to uniquely identify the file either by its file name, its description, or limit the search by region and vault. If that is not enough you should use `getarchive` and specify the archive ID of the archive you want to retrieve.
+
 Positional arguments:  
 
 	lsvault	[--region REGION]										List vaults
@@ -18,7 +24,10 @@ Positional arguments:
 	listjobs [--region REGION] vault								List jobs
 	describejob [--region REGION] vault jobid						Describe job
 	upload [--region REGION] vault filename [description ...]		Upload an archive
-	download [--region REGION] vault archive [filename]				Download an archive
+	download [--region REGION] filename								Only if BOOKKEEPING is enabled: Download an archive by searching through SimpleDB cache. Result must be unique (one archive) - if not, specify --region, --vault, or use getarchive to specify archive ID of the archive you want to download. 
+			 [--vault VAULT]										
+			 [--out-file OUT_FILE]									If you pass in --out-file parameter, output will be downloaded into out_file. Otherwise it will be outputted straight into command line (stdout).
+	getarchive [--region REGION] vault archive [filename]			Download an archive. Specify filename if you want it to output to file, other it will dump plain output into command line.
 	rmarchive [--region REGION] vault archive						Remove archive
 	inventory [--region REGION] vault								List inventar of a vault
 	search [--region REGION] [--vault VAULT] search_term			If BOOKKEEPING is enabled, search through SimpleDB for search_term
