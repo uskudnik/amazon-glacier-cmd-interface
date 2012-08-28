@@ -18,7 +18,10 @@ Positional arguments:
 	listjobs [--region REGION] vault								List jobs
 	describejob [--region REGION] vault jobid						Describe job
 	upload [--region REGION] vault filename [description ...]		Upload an archive
-	download [--region REGION] vault archive [filename]				Download an archive
+	download [--region REGION] filename								Download an archive by searching through SimpleDB cache. Result must be unique (one archive) - if not, specify --region, --vault, or use getarchive to specify archive ID of the archive you want to download. 
+			 [--vault VAULT]										
+			 [--out-file OUT_FILE]									If you pass in --out-file parameter, output will be downloaded into out_file. Otherwise it will be outputted straight into command line (stdout).
+	getarchive [--region REGION] vault archive [filename]			Download an archive. Specify filename if you want it to output to file, other it will dump plain output into command line.
 	rmarchive [--region REGION] vault archive						Remove archive
 	inventory [--region REGION] vault								List inventar of a vault
 	search [--region REGION] [--vault VAULT] search_term			If BOOKKEEPING is enabled, search through SimpleDB for search_term
