@@ -324,35 +324,34 @@ def inventory(args):
 		gv.list_jobs()
 		inventory_retrievals_done = []
 		for job in gv.job_list:
-			if job['Action'] == "InventoryRetrieval":
-				if job['StatusCode'] == "Succeeded":
-					job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
-					inventory = json.loads(job2.get_output().read())
-					
-					d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
-					inventory['inventary_date'] = d
-					inventory_retrievals_done += [inventory]
-					
-					if BOOKKEEPING:
-						sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
-						domain_name = BOOKKEEPING_DOMAIN_NAME + "_inventory"
-						try:
-							domain = sdb_conn.get_domain(domain_name, validate=True)
-						except boto.exception.SDBResponseError:
-							domain = sdb_conn.create_domain(domain_name)
-						
-						item = domain.put_attributes("%s" % (inventory['inventary_date'],), inventory)
+			if job['Action'] == "InventoryRetrieval" and job['StatusCode'] == "Succeeded":
+				d = dateutil.parser.parse(job['CompletionDate']).replace(tzinfo=pytz.utc)
+				job['inventory_date'] = d
+				inventory_retrievals_done += [job]
 					
 		if len(inventory_retrievals_done):
-			sorted(inventory_retrievals_done, key=lambda i: i['inventary_date'], reverse=True)
-			render_inventory(inventory_retrievals_done[0])
-		
+			sorted(inventory_retrievals_done, key=lambda i: i['inventory_date'], reverse=True)
+			job = inventory_retrievals_done[0]
+			job = glacier.GlacierJob(gv, job_id=job['JobId'])
+			inventory = json.loads(job.get_output().read())
+			
+			if BOOKKEEPING:
+				sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+				domain_name = BOOKKEEPING_DOMAIN_NAME + "_inventory"
+				try:
+					domain = sdb_conn.get_domain(domain_name, validate=True)
+				except boto.exception.SDBResponseError:
+					domain = sdb_conn.create_domain(domain_name)
+				
+				d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
+				item = domain.put_attributes("%s" % (d,), inventory)
+				
+			if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
+				gv.retrieve_inventory(format="JSON")
+				
+			render_inventory(inventory)
 		else:
 			job = gv.retrieve_inventory(format="JSON")
-		
-		if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - inventory_retrievals_done[0]['inventary_date']).days > 1):
-			job = gv.retrieve_inventory(format="JSON")
-		
 	except Exception, e:
 		print "exception: ", e
 		print json.loads(e[1])['message']
