@@ -383,12 +383,11 @@ def inventory(args):
 	vault = args.vault
 	force = args.force
 	
-	if force:
-		job = gv.retrieve_inventory(format="JSON")
-		return True
-	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
+	if force:
+		job = gv.retrieve_inventory(format="JSON")
+		return True	
 	try:
 		gv.list_jobs()
 		inventory_retrievals_done = []
