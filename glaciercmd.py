@@ -34,6 +34,7 @@ import re
 import json
 import datetime
 import dateutil.parser
+import pytz
 
 import boto
 import glacier
@@ -192,7 +193,7 @@ def putarchive(args):
 				'archive_id': archive_id,
 				'location':location,
 				'description':description,
-				'date':'%s' % datetime.datetime.now(),
+				'date':'%s' % datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
 				'hash':sha256hash
 			}
 		
@@ -327,17 +328,29 @@ def inventory(args):
 				if job['StatusCode'] == "Succeeded":
 					job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
 					inventory = json.loads(job2.get_output().read())
-					inventory['inventary_date'] = dateutil.parser.parse(inventory['InventoryDate'])
+					
+					d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
+					inventory['inventary_date'] = d
 					inventory_retrievals_done += [inventory]
+					
+					if BOOKKEEPING:
+						sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+						domain_name = BOOKKEEPING_DOMAIN_NAME + "_inventory"
+						try:
+							domain = sdb_conn.get_domain(domain_name, validate=True)
+						except boto.exception.SDBResponseError:
+							domain = sdb_conn.create_domain(domain_name)
+						
+						item = domain.put_attributes("%s" % (inventory['inventary_date'],), inventory)
 					
 		if len(inventory_retrievals_done):
 			sorted(inventory_retrievals_done, key=lambda i: i['inventary_date'], reverse=True)
 			render_inventory(inventory_retrievals_done[0])
-			return True
+		
 		else:
 			job = gv.retrieve_inventory(format="JSON")
 		
-		if ((datetime.datetime.now() - inventory_retrievals_done[0]['inventary_date']).days > 1)
+		if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - inventory_retrievals_done[0]['inventary_date']).days > 1):
 			job = gv.retrieve_inventory(format="JSON")
 		
 	except Exception, e:
