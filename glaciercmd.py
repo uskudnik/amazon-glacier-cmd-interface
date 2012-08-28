@@ -33,6 +33,7 @@ import argparse
 import re
 import json
 import datetime
+import dateutil.parser
 
 import boto
 import glacier
@@ -299,29 +300,42 @@ def search(args):
 		item_attrs += [item[u'archive_id']]
 		print "\t".join(item_attrs)
 
+def render_inventory(inventory):
+	print "Inventory of vault %s" % (inventory["VaultARN"],)
+	print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
+	print "Content:"
+	print "Archive Description\tUploaded\tSize\tArchive ID\tSHA256 hash"
+	for archive in inventory['ArchiveList']:
+		print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'], archive['CreationDate'], archive['Size'], archive['ArchiveId'], archive['SHA256TreeHash'])
+
 def inventory(args):
 	region = args.region
-	vault=args.vault
+	vault = args.vault
+	force = args.force
+	
+	if force:
+		job = gv.retrieve_inventory(format="JSON")
+		return True
 	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	try:
 		gv.list_jobs()
+		inventory_retrievals_done = []
 		for job in gv.job_list:
 			if job['Action'] == "InventoryRetrieval":
 				if job['StatusCode'] == "Succeeded":
 					job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
-					inventary = json.loads(job2.get_output().read())
+					inventory = json.loads(job2.get_output().read())
+					inventory['inventary_date'] = dateutil.parser.parse(inventory['InventoryDate'])
+					inventory_retrievals_done += [inventory]
 					
-					print "Inventory of vault %s" % (inventary["VaultARN"],)
-					print "Inventory Date: %s\n" % (inventary['InventoryDate'],)
-					print "Content:"
-					print "Archive Description\tUploaded\tSize\tArchive ID"
-					for archive in inventary['ArchiveList']:
-						print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'], archive['CreationDate'], archive['Size'], archive['ArchiveId'], archive['SHA256TreeHash'])
-					break
+		if len(inventory_retrievals_done):
+			sorted(inventory_retrievals_done, key=lambda i: i['inventary_date'], reverse=True)
+			render_inventory(inventory_retrievals_done[0])
+			return True
 		
-		job = gv.retrieve_inventar(format="JSON")
+		job = gv.retrieve_inventory(format="JSON")
 	except Exception, e:
 		print "exception: ", e
 		print json.loads(e[1])['message']
@@ -396,6 +410,7 @@ parser_search.set_defaults(func=search)
 
 parser_inventory = subparsers.add_parser('inventory', help='List inventory of a vault')
 parser_inventory.add_argument('--region', default=DEFAULT_REGION)
+parser_inventory.add_argument('--force')
 parser_inventory.add_argument('vault')
 parser_inventory.set_defaults(func=inventory)
 

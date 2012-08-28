@@ -21,6 +21,7 @@ Positional arguments:
 	download [--region REGION] vault archive [filename]				Download an archive
 	rmarchive [--region REGION] vault archive						Remove archive
 	inventory [--region REGION] vault								List inventar of a vault
+	search [--region REGION] [--vault VAULT] search_term			If BOOKKEEPING is enabled, search through SimpleDB for search_term
   
 Optional arguments:  
   

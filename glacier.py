@@ -93,7 +93,7 @@ class GlacierVault(object):
         job.initiate()
         return job
 
-    def retrieve_inventar(self, format=None, sns_topic=None, description=None):
+    def retrieve_inventory(self, format=None, sns_topic=None, description=None):
         """
         Initiate a inventar retrieval job to list the contents of the archive.
         """
