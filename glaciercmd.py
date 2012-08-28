@@ -283,7 +283,7 @@ def search(args):
 	
 	table_title += "Filename\tArchive ID"
 	
-	search_params += ["filename='%s'" % (search_term,)]
+	search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
 	search_params = " and ".join(search_params)
 	
 	query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
