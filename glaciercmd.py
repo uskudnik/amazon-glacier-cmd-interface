@@ -334,8 +334,12 @@ def inventory(args):
 			sorted(inventory_retrievals_done, key=lambda i: i['inventary_date'], reverse=True)
 			render_inventory(inventory_retrievals_done[0])
 			return True
+		else:
+			job = gv.retrieve_inventory(format="JSON")
 		
-		job = gv.retrieve_inventory(format="JSON")
+		if ((datetime.datetime.now() - inventory_retrievals_done[0]['inventary_date']).days > 1)
+			job = gv.retrieve_inventory(format="JSON")
+		
 	except Exception, e:
 		print "exception: ", e
 		print json.loads(e[1])['message']
