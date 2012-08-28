@@ -233,9 +233,24 @@ def deletearchive(args):
 	vault = args.vault
 	archive = args.archive
 	
+	if BOOKKEEPING:
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+		domain_name = BOOKKEEPING_DOMAIN_NAME
+		try:
+			domain = sdb_conn.get_domain(domain_name, validate=True)
+		except boto.exception.SDBResponseError:
+			domain = sdb_conn.create_domain(domain_name)
+	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
+	
 	print gv.delete_archive(archive)
+	
+	# TODO: can't find a method for counting right now 
+	query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive_id)
+	items = domain.select(query)
+	item = items.next()
+	domain.delete_item(item)
 
 def search(args):
 	region = args.region
@@ -271,6 +286,7 @@ def search(args):
 	
 	query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
 	items = domain.select(query)
+	
 	print table_title
 	for item in items:
 		# print item, item.keys()
