@@ -315,7 +315,7 @@ def deletearchive(args):
 	print gv.delete_archive(archive)
 
 	# TODO: can't find a method for counting right now
-	query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive_id)
+	query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
 	items = domain.select(query)
 	item = items.next()
 	domain.delete_item(item)
@@ -392,12 +392,11 @@ def inventory(args):
 	vault = args.vault
 	force = args.force
 
+	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	gv = glacier.GlacierVault(glacierconn, vault)
 	if force:
 		job = gv.retrieve_inventory(format="JSON")
 		return True
-
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	gv = glacier.GlacierVault(glacierconn, vault)
 	try:
 		gv.list_jobs()
 		inventory_retrievals_done = []
