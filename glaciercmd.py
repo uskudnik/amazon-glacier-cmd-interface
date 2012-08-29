@@ -208,7 +208,7 @@ def getarchive(args):
 	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
-
+	
 	jobs = gv.list_jobs()
 	found = False
 	for job in gv.job_list:
