@@ -4,17 +4,41 @@ Amazon Glacier CLI
 Command line interface for Amazon Glacier
 -----------------------------------------
 
-Required libraries are glacier (which is included into repository) and boto - at the moment you still need to use development branch of boto (which you can get by running `pip install --upgrade git+https://github.com/boto/boto.git`).  
+Required libraries are glacier (which is included into repository) and 
+boto - at the moment you still need to use development branch of boto 
+(which you can get by running `pip install --upgrade git+https://github.com/boto/boto.git`).
 
-While you can pass in your AWS Access and Secret key (`--aws-access-key` and `--aws-secret-key`), it is recommended that you create `glacier_settings.py` file into which you put `AWS_ACCESS_KEY` and `AWS_SECRET_KEY` strings.
+To install simply execute:
 
-You can also put `REGION` into `glacier_settings.py` to specify the default region on which you will operate (default is `us-east-1`). When you want to operate on a non-default region you can pass in the `--region` settings to the commands.
+    >>> python setup.py install
 
-It is recommended that you enable `BOOKKEEPING` in `glacier_settings.py` to allow for saving cache information into Amazon SimpleDB database.
+To run:
+    
+    >>> glacier-cmd
 
-You have two options to retrieve an archive - first one is `download`, second one is `getarchive`.
+While you can pass in your AWS Access and Secret key (`--aws-access-key` and `--aws-secret-key`), 
+it is recommended that you create `glacier_settings.py` file into which you put
+`AWS_ACCESS_KEY` and `AWS_SECRET_KEY` strings. You can also set these settings
+by exporting environemnt variables using `export AWS_ACCESS_KEY=key` and
+`export AWS_SECRET_KEY=key`.
 
-If you use `download`, you will have to uniquely identify the file either by its file name, its description, or limit the search by region and vault. If that is not enough you should use `getarchive` and specify the archive ID of the archive you want to retrieve.
+You can also put `REGION` into `glacier_settings.py` to specify the default region 
+on which you will operate (default is `us-east-1`). When you want to operate on 
+a non-default region you can pass in the `--region` settings to the commands.
+You can also specify this setting by exporting `export GLACIER_DEFAULT_REGION=region`.
+
+It is recommended that you enable `BOOKKEEPING` in `glacier_settings.py` to allow
+for saving cache information into Amazon SimpleDB database. Again you can also
+export `GLACIER_BOOKKEEPING` and `GLACIER_BOOKKEEPING_DOMAIN_NAME` as environemnt
+variables.
+
+You have two options to retrieve an archive - first one is `download`, 
+second one is `getarchive`.
+
+If you use `download`, you will have to uniquely identify the file either by 
+its file name, its description, or limit the search by region and vault. 
+If that is not enough you should use `getarchive` and specify the archive ID of
+the archive you want to retrieve.
 
 Positional arguments:  
 
