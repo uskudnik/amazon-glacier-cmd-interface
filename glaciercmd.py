@@ -46,6 +46,11 @@ BOOKKEEPING = False
 BOOKKEEPING_DOMAIN_NAME = "amazon-glacier"
 READ_PART_SIZE= glacier.GlacierWriter.DEFAULT_PART_SIZE
 
+# Gets set in main
+AWS_ACCESS_KEY = None
+AWS_SECRET_KEY = None
+DEFAULT_REGION = None
+
 def check_vault_name(name):
 	m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
 	if len(name) > 255:
@@ -79,30 +84,6 @@ def parse_response(response):
 		print response.read()
 		print response.msg
 	print response.status, response.reason
-
-try:
-	import glacier_settings
-	
-	try:
-		AWS_ACCESS_KEY = glacier_settings.AWS_ACCESS_KEY
-		AWS_SECRET_KEY = glacier_settings.AWS_SECRET_KEY
-		AWS_KEYS_FROM_CLI = False
-	except AttributeError:
-		AWS_KEYS_FROM_CLI = True
-	
-	try:
-		DEFAULT_REGION = glacier_settings.REGION
-	except AttributeError:
-		DEFAULT_REGION = "us-east-1"
-	
-	try:
-		BOOKKEEPING = glacier_settings.BOOKKEEPING
-	except AttributeError:
-		pass
-		
-except ImportError:
-	AWS_KEYS_FROM_CLI = True
-	DEFAULT_REGION = "us-east-1"
 
 def lsvault(args):
 	region = args.region
@@ -452,92 +433,124 @@ def inventory(args):
 		print "exception: ", e
 		print json.loads(e[1])['message']
 
-program_description = u"""Command line interface for Amazon Glacier\n
-\n
-Required libraries are glacier (which is included into repository) and boto - at the moment you still need to use development branch of boto (which you can get by running "pip install --upgrade git+https://github.com/boto/boto.git").
+def main():
+	glacier_settings=None
+	try:
+		import glacier_settings
+	except ImportError:
+		pass
 
-While you can pass in your AWS Access and Secret key (--aws-access-key and --aws-secret-key), it is recommended that you create glacier_settings.py file into which you put AWS_ACCESS_KEY and AWS_SECRET_KEY strings.
+	AWS_ACCESS_KEY = getattr(glacier_settings, "AWS_ACCESS_KEY", None) \
+						or os.environ.get("AWS_ACCESS_KEY")
+	AWS_SECRET_KEY = getattr(glacier_settings, "AWS_SECRET_KEY", None) \
+						or os.environ.get("AWS_SECRET_KEY")
+	DEFAULT_REGION = getattr(glacier_settings, "REGION", None) \
+						or os.environ.get("AWS_DEFAULT_REGION") \
+						or "us-east-1"
 
-You can also put REGION into glacier_settings.py to specify the default region on which you will operate (default is us-east-1). When you want to operate on a non-default region you can pass in the --region settings to the commands.
-"""
+	program_description = u"""Command line interface for Amazon Glacier\n
+    \n
+    Required libraries are glacier (which is included into repository) and
+    boto - at the moment you still need to use development branch of boto
+    (which you can get by running "pip install --upgrade git+https://github.com/boto/boto.git").
 
-parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=program_description)
-subparsers = parser.add_subparsers()
+    While you can pass in your AWS Access and Secret key (--aws-access-key and --aws-secret-key),
+    it is recommended that you create glacier_settings.py file into which you put
+    AWS_ACCESS_KEY and AWS_SECRET_KEY strings.
 
+    You can also put REGION into glacier_settings.py to specify the default region
+    on which you will operate (default is us-east-1). When you want to operate on a
+    non-default region you can pass in the --region settings to the commands.
+    """
 
-help_msg_access_secret_key = u"Required if you haven't created glacier_settings.py file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. Command line keys will override keys set in glacier_settings.py."
-parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI, help=help_msg_access_secret_key)
-parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI, help=help_msg_access_secret_key)
-	
-parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
-parser_lsvault.add_argument('--region', default=DEFAULT_REGION)
-parser_lsvault.set_defaults(func=lsvault)
+	parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                    description=program_description)
+	subparsers = parser.add_subparsers()
 
-parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
-parser_mkvault.add_argument('vault')
-parser_mkvault.add_argument('--region', default=DEFAULT_REGION)
-parser_mkvault.set_defaults(func=mkvault)
+	help_msg_access_secret_key = u"Required if you haven't created glacier_settings.py \
+                                file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. \
+                                Command line keys will override keys set in glacier_settings.py."
+	parser.add_argument('--aws-access-key', required=not AWS_ACCESS_KEY,
+                        default=AWS_ACCESS_KEY, help=help_msg_access_secret_key)
+	parser.add_argument('--aws-secret-key', required=not AWS_SECRET_KEY,
+                        default=AWS_SECRET_KEY, help=help_msg_access_secret_key)
+	parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
+	parser_lsvault.add_argument('--region', default=DEFAULT_REGION)
+	parser_lsvault.set_defaults(func=lsvault)
 
-parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
-parser_rmvault.add_argument('--region', default=DEFAULT_REGION)
-parser_rmvault.add_argument('vault')
-parser_rmvault.set_defaults(func=rmvault)
+	parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
+	parser_mkvault.add_argument('vault')
+	parser_mkvault.add_argument('--region', default=DEFAULT_REGION)
+	parser_mkvault.set_defaults(func=mkvault)
 
-parser_listjobs = subparsers.add_parser('listjobs', help='List jobs')
-parser_listjobs.add_argument('--region', default=DEFAULT_REGION)
-parser_listjobs.add_argument('vault')
-parser_listjobs.set_defaults(func=listjobs)
+	parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
+	parser_rmvault.add_argument('--region', default=DEFAULT_REGION)
+	parser_rmvault.add_argument('vault')
+	parser_rmvault.set_defaults(func=rmvault)
 
-parser_describejob = subparsers.add_parser('describejob', help='Describe job')
-parser_describejob.add_argument('--region', default=DEFAULT_REGION)
-parser_describejob.add_argument('vault')
-parser_describejob.add_argument('jobid')
-parser_describejob.set_defaults(func=describejob)
+	parser_listjobs = subparsers.add_parser('listjobs', help='List jobs')
+	parser_listjobs.add_argument('--region', default=DEFAULT_REGION)
+	parser_listjobs.add_argument('vault')
+	parser_listjobs.set_defaults(func=listjobs)
 
-parser_upload = subparsers.add_parser('upload', help='Upload an archive')
-parser_upload.add_argument('--region', default=DEFAULT_REGION)
-parser_upload.add_argument('vault')
-parser_upload.add_argument('filename')
-parser_upload.add_argument('description', nargs='*')
-parser_upload.set_defaults(func=putarchive)
+	parser_describejob = subparsers.add_parser('describejob', help='Describe job')
+	parser_describejob.add_argument('--region', default=DEFAULT_REGION)
+	parser_describejob.add_argument('vault')
+	parser_describejob.add_argument('jobid')
+	parser_describejob.set_defaults(func=describejob)
 
-parser_getarchive = subparsers.add_parser('getarchive', help='Get a file by explicitly setting archive id.')
-parser_getarchive.add_argument('--region', default=DEFAULT_REGION)
-parser_getarchive.add_argument('vault')
-parser_getarchive.add_argument('archive')
-parser_getarchive.add_argument('filename', nargs='?')
-parser_getarchive.set_defaults(func=getarchive)
+	parser_upload = subparsers.add_parser('upload', help='Upload an archive')
+	parser_upload.add_argument('--region', default=DEFAULT_REGION)
+	parser_upload.add_argument('vault')
+	parser_upload.add_argument('filename')
+	parser_upload.add_argument('description', nargs='*')
+	parser_upload.set_defaults(func=putarchive)
 
-if BOOKKEEPING:
-	parser_download = subparsers.add_parser('download', help='Download a file by searching through SimpleDB cache for it.')
-	parser_download.add_argument('--region', default=DEFAULT_REGION)
-	parser_download.add_argument('--vault', help="Specify the vault in which archive is located.")
-	parser_download.add_argument('--out-file')
-	parser_download.add_argument('filename', nargs='?')
-	parser_download.set_defaults(func=download)
+	parser_getarchive = subparsers.add_parser('getarchive',
+                help='Get a file by explicitly setting archive id.')
+	parser_getarchive.add_argument('--region', default=DEFAULT_REGION)
+	parser_getarchive.add_argument('vault')
+	parser_getarchive.add_argument('archive')
+	parser_getarchive.add_argument('filename', nargs='?')
+	parser_getarchive.set_defaults(func=getarchive)
 
-parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
-parser_rmarchive.add_argument('--region', default=DEFAULT_REGION)
-parser_rmarchive.add_argument('vault')
-parser_rmarchive.add_argument('archive')
-parser_rmarchive.set_defaults(func=deletearchive)
+	if BOOKKEEPING:
+		parser_download = subparsers.add_parser('download',
+				help='Download a file by searching through SimpleDB cache for it.')
+		parser_download.add_argument('--region', default=DEFAULT_REGION)
+		parser_download.add_argument('--vault',
+				help="Specify the vault in which archive is located.")
+		parser_download.add_argument('--out-file')
+		parser_download.add_argument('filename', nargs='?')
+		parser_download.set_defaults(func=download)
 
-parser_search = subparsers.add_parser('search', help='Search SimpleDB database (if it was created)')
-parser_search.add_argument('--region')
-parser_search.add_argument('--vault')
-parser_search.add_argument('search_term')
-parser_search.set_defaults(func=search)
+	parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
+	parser_rmarchive.add_argument('--region', default=DEFAULT_REGION)
+	parser_rmarchive.add_argument('vault')
+	parser_rmarchive.add_argument('archive')
+	parser_rmarchive.set_defaults(func=deletearchive)
 
-parser_inventory = subparsers.add_parser('inventory', help='List inventory of a vault')
-parser_inventory.add_argument('--region', default=DEFAULT_REGION)
-parser_inventory.add_argument('--force')
-parser_inventory.add_argument('vault')
-parser_inventory.set_defaults(func=inventory)
+	parser_search = subparsers.add_parser('search',
+                help='Search SimpleDB database (if it was created)')
+	parser_search.add_argument('--region')
+	parser_search.add_argument('--vault')
+	parser_search.add_argument('search_term')
+	parser_search.set_defaults(func=search)
 
-args = parser.parse_args(sys.argv[1:])
+	parser_inventory = subparsers.add_parser('inventory',
+                help='List inventory of a vault')
+	parser_inventory.add_argument('--region', default=DEFAULT_REGION)
+	parser_inventory.add_argument('--force')
+	parser_inventory.add_argument('vault')
+	parser_inventory.set_defaults(func=inventory)
 
-if args.aws_access_key and args.aws_secret_key:
-	AWS_ACCESS_KEY = args.aws_access_key
-	AWS_SECRET_KEY = args.aws_secret_key
+	args = parser.parse_args(sys.argv[1:])
 
-args.func(args)
+	if args.aws_access_key and args.aws_secret_key:
+		AWS_ACCESS_KEY = args.aws_access_key
+		AWS_SECRET_KEY = args.aws_secret_key
+
+	args.func(args)
+
+if __name__ == "__main__":
+    main()
