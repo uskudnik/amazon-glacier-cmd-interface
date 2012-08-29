@@ -9,7 +9,12 @@ boto - at the moment you still need to use development branch of boto
 (which you can get by running `pip install --upgrade git+https://github.com/boto/boto.git`).
 
 To install simply execute:
-    python setup.py install
+
+    >>> python setup.py install
+
+To run:
+    
+    >>> glacier-cmd
 
 While you can pass in your AWS Access and Secret key (`--aws-access-key` and `--aws-secret-key`), 
 it is recommended that you create `glacier_settings.py` file into which you put

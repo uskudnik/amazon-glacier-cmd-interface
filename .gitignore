@@ -1,6 +1,6 @@
 #virtualenv
 bin/*
-amazon_glacier_cmd_interface.egg-info/*
+glacier_cmd.egg-info/*
 include/*
 lib/*
 local

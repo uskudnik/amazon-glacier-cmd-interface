@@ -12,7 +12,7 @@ def read(*rnames):
 
 version = '0.2dev'
 
-setup(name='amazon-glacier-cmd-interface',
+setup(name='glacier-cmd',
       version=version,
       description="Command line interface for Amazon Glacier",
       long_description=read('README.md')+read("LICENSE"),
@@ -37,6 +37,6 @@ setup(name='amazon-glacier-cmd-interface',
       ],
     entry_points="""
           [console_scripts]
-          amazon-glacier = amazon_glacier.glaciercmd:main
+          glacier-cmd = glacier_cmd.glaciercmd:main
           """,
       )
