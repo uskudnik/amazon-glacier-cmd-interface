@@ -42,11 +42,12 @@ import glacier
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-BOOKKEEPING = False
-BOOKKEEPING_DOMAIN_NAME = "amazon-glacier"
 READ_PART_SIZE= glacier.GlacierWriter.DEFAULT_PART_SIZE
 
 # Gets set in main
+# TODO: Rewrite as args and not as global variables
+BOOKKEEPING = None
+BOOKKEEPING_DOMAIN_NAME = None
 AWS_ACCESS_KEY = None
 AWS_SECRET_KEY = None
 DEFAULT_REGION = None
@@ -445,8 +446,14 @@ def main():
 	AWS_SECRET_KEY = getattr(glacier_settings, "AWS_SECRET_KEY", None) \
 						or os.environ.get("AWS_SECRET_KEY")
 	DEFAULT_REGION = getattr(glacier_settings, "REGION", None) \
-						or os.environ.get("AWS_DEFAULT_REGION") \
+						or os.environ.get("GLACIER_DEFAULT_REGION") \
 						or "us-east-1"
+	BOOKKEEPING = getattr(glacier_settings, "BOOKKEEPING", None) \
+						or os.environ.get("GLACIER_BOOKKEEPING") \
+						or False
+	BOOKKEEPING_DOMAIN_NAME = getattr(glacier_settings, "BOOKKEEPING_DOMAIN_NAME", None) \
+						or os.environ.get("GLACIER_BOOKKEEPING_DOMAIN_NAME") \
+						or "amazon-glacier"
 
 	program_description = u"""Command line interface for Amazon Glacier\n
     \n
