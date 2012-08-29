@@ -29,6 +29,7 @@ THE SOFTWARE."""
 
 import sys
 import os
+import select
 import argparse
 import re
 import json
@@ -43,6 +44,7 @@ MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
 BOOKKEEPING = False
 BOOKKEEPING_DOMAIN_NAME = "amazon-glacier"
+READ_PART_SIZE= glacier.GlacierWriter.DEFAULT_PART_SIZE
 
 def check_vault_name(name):
 	m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
@@ -177,9 +179,18 @@ def putarchive(args):
 		description = filename
 	
 	if check_description(description):
+		reader = None
 		writer = glacier.GlacierWriter(glacierconn, vault, description=description)
-		ffile = open(filename, "rb")
-		writer.write(ffile.read())
+
+		#if we have data on stdin, use that
+		if select.select([sys.stdin,],[],[],0.0)[0]:
+			reader = sys.stdin
+		else:
+			reader = open(filename, "rb")
+
+		#Read file in chunks so we don't fill whole memory
+		for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
+			writer.write(part)
 		writer.close()
 		
 		archive_id = writer.get_archive_id()
@@ -301,7 +312,7 @@ def deletearchive(args):
 	print gv.delete_archive(archive)
 	
 	# TODO: can't find a method for counting right now 
-	query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive_id)
+	query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
 	items = domain.select(query)
 	item = items.next()
 	domain.delete_item(item)
@@ -372,12 +383,11 @@ def inventory(args):
 	vault = args.vault
 	force = args.force
 	
-	if force:
-		job = gv.retrieve_inventory(format="JSON")
-		return True
-	
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
+	if force:
+		job = gv.retrieve_inventory(format="JSON")
+		return True	
 	try:
 		gv.list_jobs()
 		inventory_retrievals_done = []
