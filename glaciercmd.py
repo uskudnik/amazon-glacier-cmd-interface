@@ -53,7 +53,8 @@ def check_vault_name(name):
 	if len(name) == 0:
 		raise Exception(u"Vault name has to be at least 1 character long.")
 	if m.end() != len(name):
-		raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), '-' (hyphen), and '.' (period)")	
+		raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
+                          '-' (hyphen), and '.' (period)")
 	return True
 
 MAX_DESCRIPTION_LENGTH = 1024
@@ -61,11 +62,13 @@ MAX_DESCRIPTION_LENGTH = 1024
 def check_description(description):
 	if len(description) > 1024:
 		raise Exception(u"Description must be less or equal to 1024 characters.")
-	
+
 	for char in description:
 		n = ord(char)
 		if n < 32 or n > 126:
-			raise Exception(u"The allowable characters are 7-bit ASCII without control codes, specifically ASCII values 32—126 decimal or 0x20—0x7E hexadecimal.")
+			raise Exception(u"The allowable characters are 7-bit ASCII without \
+                              control codes, specifically ASCII values 32—126 \
+                              decimal or 0x20—0x7E hexadecimal.")
 	return True
 
 def parse_response(response):
@@ -111,14 +114,17 @@ def lsvault(args):
 	vault_list = jdata['VaultList']
 	print "Vault name\tARN\tCreated\tSize"
 	for vault in vault_list:
-		print "%s\t%s\t%s\t%s" % (vault['VaultName'], vault['VaultARN'], vault['CreationDate'], vault['SizeInBytes'])
+		print "%s\t%s\t%s\t%s" % (vault['VaultName'],
+                                  vault['VaultARN'],
+                                  vault['CreationDate'],
+                                  vault['SizeInBytes'])
 
 def mkvault(args):
 	vault_name = args.vault
 	region = args.region
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	if check_vault_name(vault_name):
 		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
 		parse_response(response)
@@ -127,9 +133,9 @@ def mkvault(args):
 def rmvault(args):
 	vault_name = args.vault
 	region = args.region
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	if check_vault_name(vault_name):
 		response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
 		parse_response(response)
@@ -137,47 +143,55 @@ def rmvault(args):
 def listjobs(args):
 	vault_name = args.vault
 	region = args.region
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	gv = glacier.GlacierVault(glacierconn, name=vault_name)
 	response = gv.list_jobs()
 	parse_response(response)
 	print "Action\tArchive ID\tStatus\tInitiated\tVaultARN\tJob ID"
 	for job in gv.job_list:
-		print "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'], job['ArchiveId'], job['StatusCode'], job['CreationDate'], job['VaultARN'], job['JobId'])
+		print "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'],
+                                          job['ArchiveId'],
+                                          job['StatusCode'],
+                                          job['CreationDate'],
+                                          job['VaultARN'],
+                                          job['JobId'])
 
 def describejob(args):
 	job = args.jobid
 	region = args.region
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	gv = glacier.GlacierVault(glacierconn, job_id)
 	gj = glacier.GlacierJob(gv, job_id=job)
 	gj.job_status()
-	print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id, job, gj.created, gj.status_code)
+	print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id,
+                                                                     job, gj.created,
+                                                                     gj.status_code)
 
 def putarchive(args):
 	region = args.region
 	vault = args.vault
 	filename = args.filename
 	description = args.description
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	if BOOKKEEPING:
-		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)	
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                    aws_secret_access_key=AWS_SECRET_KEY)
 		domain_name = BOOKKEEPING_DOMAIN_NAME
 		try:
 			domain = sdb_conn.get_domain(domain_name, validate=True)
 		except boto.exception.SDBResponseError:
 			domain = sdb_conn.create_domain(domain_name)
-	
+
 	if description:
 		description = " ".join(description)
 	else:
 		description = filename
-	
+
 	if check_description(description):
 		reader = None
 		writer = glacier.GlacierWriter(glacierconn, vault, description=description)
@@ -192,7 +206,7 @@ def putarchive(args):
 		for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
 			writer.write(part)
 		writer.close()
-		
+
 		archive_id = writer.get_archive_id()
 		location = writer.get_location()
 		sha256hash = writer.get_hash()
@@ -207,7 +221,7 @@ def putarchive(args):
 				'date':'%s' % datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
 				'hash':sha256hash
 			}
-		
+
 			domain.put_attributes(filename, file_attrs)
 		print "Created archive with ID: ", archive_id
 
@@ -216,7 +230,7 @@ def getarchive(args):
 	vault = args.vault
 	archive = args.archive
 	filename = args.filename
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 
@@ -236,42 +250,48 @@ def getarchive(args):
 					ffile.close()
 				else:
 					print job2.get_output().read()
-				return 
+				return
 	if not found:
 		job = gv.retrieve_archive(archive)
 		print "Started"
-	
+
 def download(args):
 	region = args.region
 	vault = args.vault
 	filename = args.filename
 	out_file = args.out_file
-	
+
 	if not filename:
-		raise Exception(u"You have to pass in the file name or the search term of it's description to search through archive.")
-		
+		raise Exception(u"You have to pass in the file name or the search term \
+                          of it's description to search through archive.")
+
 	args.search_term = filename
 	items = search(args, print_results=False)
-	
+
 	n_items = 0
 	if not items:
 		print "Sorry, didn't find anything."
 		return False
-	
+
 	print "Region\tVault\tFilename\tArchive ID"
 	for item in items:
 		n_items += 1
 		archive = item['archive_id']
 		vault = item['vault']
-		print "%s\t%s\t%s\t%s" % (item['region'],item['vault'], item['filename'], item['archive_id'])
-	
+		print "%s\t%s\t%s\t%s" % (item['region'],
+                                  item['vault'],
+                                  item['filename'],
+                                  item['archive_id'])
+
 	if n_items > 1:
-		print "You need to uniquely identify file with either region, vault or filename parameters. If that is not enough, use getarchive to specify exactly which archive you want."
+		print "You need to uniquely identify file with either region, vault or \
+               filename parameters. If that is not enough, use getarchive to \
+               specify exactly which archive you want."
 		return False
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
-	
+
 	jobs = gv.list_jobs()
 	found = False
 	for job in gv.job_list:
@@ -297,21 +317,22 @@ def deletearchive(args):
 	region = args.region
 	vault = args.vault
 	archive = args.archive
-	
+
 	if BOOKKEEPING:
-		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                    aws_secret_access_key=AWS_SECRET_KEY)
 		domain_name = BOOKKEEPING_DOMAIN_NAME
 		try:
 			domain = sdb_conn.get_domain(domain_name, validate=True)
 		except boto.exception.SDBResponseError:
 			domain = sdb_conn.create_domain(domain_name)
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
-	
+
 	print gv.delete_archive(archive)
-	
-	# TODO: can't find a method for counting right now 
+
+	# TODO: can't find a method for counting right now
 	query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive_id)
 	items = domain.select(query)
 	item = items.next()
@@ -321,40 +342,42 @@ def search(args, print_results=True):
 	region = args.region
 	vault = args.vault
 	search_term = args.search_term
-	
+
 	if BOOKKEEPING:
-		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                    aws_secret_access_key=AWS_SECRET_KEY)
 		domain_name = BOOKKEEPING_DOMAIN_NAME
 		try:
 			domain = sdb_conn.get_domain(domain_name, validate=True)
 		except boto.exception.SDBResponseError:
 			domain = sdb_conn.create_domain(domain_name)
 	else:
-		raise Exception(u"You have to enable bookkeeping in your settings before you can perform search.")
-	
+		raise Exception(u"You have to enable bookkeeping in your settings \
+                          before you can perform search.")
+
 	search_params = []
 	table_title = ""
 	if region:
 		search_params += ["region='%s'" % (region,)]
 	else:
 		table_title += "Region\t"
-	
+
 	if vault:
 		search_params += ["vault='%s'" % (vault,)]
 	else:
 		table_title += "Vault\t"
-	
+
 	table_title += "Filename\tArchive ID"
-	
+
 	search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
 	search_params = " and ".join(search_params)
-	
+
 	query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
 	items = domain.select(query)
-	
+
 	if print_results:
 		print table_title
-	
+
 	for item in items:
 		# print item, item.keys()
 		item_attrs = []
@@ -366,27 +389,31 @@ def search(args, print_results=True):
 		item_attrs += [item[u'archive_id']]
 		if print_results:
 			print "\t".join(item_attrs)
-	
+
 	if not print_results:
 		return items
-	
+
 def render_inventory(inventory):
 	print "Inventory of vault %s" % (inventory["VaultARN"],)
 	print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
 	print "Content:"
 	print "Archive Description\tUploaded\tSize\tArchive ID\tSHA256 hash"
 	for archive in inventory['ArchiveList']:
-		print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'], archive['CreationDate'], archive['Size'], archive['ArchiveId'], archive['SHA256TreeHash'])
+		print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'],
+                                      archive['CreationDate'],
+                                      archive['Size'],
+                                      archive['ArchiveId'],
+                                      archive['SHA256TreeHash'])
 
 def inventory(args):
 	region = args.region
 	vault = args.vault
 	force = args.force
-	
+
 	if force:
 		job = gv.retrieve_inventory(format="JSON")
 		return True
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	try:
@@ -397,27 +424,27 @@ def inventory(args):
 				d = dateutil.parser.parse(job['CompletionDate']).replace(tzinfo=pytz.utc)
 				job['inventory_date'] = d
 				inventory_retrievals_done += [job]
-					
+
 		if len(inventory_retrievals_done):
 			sorted(inventory_retrievals_done, key=lambda i: i['inventory_date'], reverse=True)
 			job = inventory_retrievals_done[0]
 			job = glacier.GlacierJob(gv, job_id=job['JobId'])
 			inventory = json.loads(job.get_output().read())
-			
+
 			if BOOKKEEPING:
-				sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
-				domain_name = BOOKKEEPING_DOMAIN_NAME + "_inventory"
+				sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                            aws_secret_access_key=AWS_SECRET_KEY)
 				try:
 					domain = sdb_conn.get_domain(domain_name, validate=True)
 				except boto.exception.SDBResponseError:
 					domain = sdb_conn.create_domain(domain_name)
-				
+
 				d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
 				item = domain.put_attributes("%s" % (d,), inventory)
-				
+
 			if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
 				gv.retrieve_inventory(format="JSON")
-				
+
 			render_inventory(inventory)
 		else:
 			job = gv.retrieve_inventory(format="JSON")
