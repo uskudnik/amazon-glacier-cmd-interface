@@ -38,11 +38,11 @@ import dateutil.parser
 import pytz
 
 import boto
-import glacier
+import glaciercorecalls
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-READ_PART_SIZE= glacier.GlacierWriter.DEFAULT_PART_SIZE
+READ_PART_SIZE= glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
 
 # Gets set in main
 # TODO: Rewrite as args and not as global variables
@@ -88,7 +88,7 @@ def parse_response(response):
 
 def lsvault(args):
 	region = args.region
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
 	response = glacierconn.list_vaults()
 	parse_response(response)
@@ -105,10 +105,10 @@ def mkvault(args):
 	vault_name = args.vault
 	region = args.region
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
 	if check_vault_name(vault_name):
-		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
+		response = glaciercorecalls.GlacierVault(glacierconn, vault_name).create_vault()
 		parse_response(response)
 		print response.getheader("Location")
 
@@ -116,19 +116,19 @@ def rmvault(args):
 	vault_name = args.vault
 	region = args.region
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
 	if check_vault_name(vault_name):
-		response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
+		response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
 		parse_response(response)
 
 def listjobs(args):
 	vault_name = args.vault
 	region = args.region
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
-	gv = glacier.GlacierVault(glacierconn, name=vault_name)
+	gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
 	response = gv.list_jobs()
 	parse_response(response)
 	print "Action\tArchive ID\tStatus\tInitiated\tVaultARN\tJob ID"
@@ -143,10 +143,10 @@ def listjobs(args):
 def describejob(args):
 	job = args.jobid
 	region = args.region
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
-	gv = glacier.GlacierVault(glacierconn, job_id)
-	gj = glacier.GlacierJob(gv, job_id=job)
+	gv = glaciercorecalls.GlacierVault(glacierconn, job_id)
+	gj = glaciercorecalls.GlacierJob(gv, job_id=job)
 	gj.job_status()
 	print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id,
                                                                      job, gj.created,
@@ -158,7 +158,7 @@ def putarchive(args):
 	filename = args.filename
 	description = args.description
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 
 	if BOOKKEEPING:
 		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
@@ -176,7 +176,7 @@ def putarchive(args):
 
 	if check_description(description):
 		reader = None
-		writer = glacier.GlacierWriter(glacierconn, vault, description=description)
+		writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
 
 		#if we have data on stdin, use that
 		if select.select([sys.stdin,],[],[],0.0)[0]:
@@ -213,8 +213,8 @@ def getarchive(args):
 	archive = args.archive
 	filename = args.filename
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	gv = glacier.GlacierVault(glacierconn, vault)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 	
 	jobs = gv.list_jobs()
 	found = False
@@ -225,7 +225,7 @@ def getarchive(args):
 			if filename or not job['Completed']:
 				print "ArchiveId: ", archive
 			if job['Completed']:
-				job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
+				job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
 				if filename:
 					ffile = open(filename, "w")
 					ffile.write(job2.get_output().read())
@@ -271,8 +271,8 @@ def download(args):
                specify exactly which archive you want."
 		return False
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	gv = glacier.GlacierVault(glacierconn, vault)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
 	jobs = gv.list_jobs()
 	found = False
@@ -283,7 +283,7 @@ def download(args):
 			if not job['Completed']:
 				print "Waiting for Amazon Glacier to assamble the archive."
 			if job['Completed']:
-				job2 = glacier.GlacierJob(gv, job_id=job['JobId'])
+				job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
 				if out_file:
 					ffile = open(out_file, "w")
 					ffile.write(job2.get_output().read())
@@ -309,8 +309,8 @@ def deletearchive(args):
 		except boto.exception.SDBResponseError:
 			domain = sdb_conn.create_domain(domain_name)
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	gv = glacier.GlacierVault(glacierconn, vault)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
 	print gv.delete_archive(archive)
 
@@ -392,8 +392,8 @@ def inventory(args):
 	vault = args.vault
 	force = args.force
 
-	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	gv = glacier.GlacierVault(glacierconn, vault)
+	glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+	gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 	if force:
 		job = gv.retrieve_inventory(format="JSON")
 		return True
@@ -409,7 +409,7 @@ def inventory(args):
 		if len(inventory_retrievals_done):
 			sorted(inventory_retrievals_done, key=lambda i: i['inventory_date'], reverse=True)
 			job = inventory_retrievals_done[0]
-			job = glacier.GlacierJob(gv, job_id=job['JobId'])
+			job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
 			inventory = json.loads(job.get_output().read())
 
 			if BOOKKEEPING:

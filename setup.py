@@ -12,15 +12,15 @@ def read(*rnames):
 
 version = '0.2dev'
 
-setup(name='glacier-cmd',
+setup(name='glacier',
       version=version,
       description="Command line interface for Amazon Glacier",
       long_description=read('README.md')+read("LICENSE"),
       classifiers=[
         "Programming Language :: Python",
         ],
-      keywords='amazon glacier cmd interface',
-      author='Urban Škudnik',
+      keywords='amazon glacier cmd cli command line interface command-line',
+      author='Urban Škudnik, Jaka Hudoklin',
       author_email='urban.skudnik@gmail.com',
       url='https://github.com/uskudnik/amazon-glacier-cmd-interface',
       license='MIT',
