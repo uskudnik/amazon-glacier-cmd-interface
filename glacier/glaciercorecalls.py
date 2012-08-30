@@ -4,7 +4,7 @@
 # Originally developed by Thomas Parslow http://almostobsolete.net
 # Extended by Urban Skudnik urban.skudnik@gmail.com
 #
-# Just a work in progress and adapted to what I need right now. 
+# Just a work in progress and adapted to what I need right now.
 # It does uploads (via a file-like object that you write to) and
 # I've started on downloads. Needs the development version of Boto from Github.
 #
@@ -29,8 +29,9 @@ import json
 from boto.connection import AWSAuthConnection
 
 class GlacierConnection(AWSAuthConnection):
-        
-    def __init__(self, aws_access_key_id=None, aws_secret_access_key=None, region="us-east-1",
+
+    def __init__(self, aws_access_key_id=None, aws_secret_access_key=None,
+                 region="us-east-1",
                  is_secure=True, port=None, proxy=None, proxy_port=None,
                  proxy_user=None, proxy_pass=None,
                  host=None, debug=0, https_connection_factory=None,
@@ -44,7 +45,7 @@ class GlacierConnection(AWSAuthConnection):
                 debug=debug, https_connection_factory=https_connection_factory,
                 path=path, provider=provider, security_token=security_token,
                 suppress_consec_slashes=suppress_consec_slashes)
-        
+
     def _required_auth_capability(self):
         return ["hmac-v4"]
 
@@ -55,7 +56,9 @@ class GlacierConnection(AWSAuthConnection):
                      auth_path=None, sender=None, override_num_retries=None):
         headers = headers or {}
         headers.setdefault("x-amz-glacier-version","2012-06-01")
-        return super(GlacierConnection, self).make_request(method, path, headers, data, host, auth_path, sender, override_num_retries)
+        return super(GlacierConnection, self).make_request(method, path, headers,
+                                                           data, host, auth_path,
+                                                           sender, override_num_retries)
 
     def list_vaults(self):
         return self.make_request(method="GET", path='/-/vaults/')
@@ -71,8 +74,9 @@ def check_vault_name(name):
     if len(name) == 0:
         raise Exception(u"Vault name has to be at least 1 character long.")
     if m.end() != len(name):
-        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), '-' (hyphen), and '.' (period)")    
-    return True       
+        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
+                        '-' (hyphen), and '.' (period)")
+    return True
 
 class GlacierVault(object):
     def __init__(self, connection, name):
@@ -121,20 +125,22 @@ class GlacierVault(object):
     def list_jobs(self):
         response = self.make_request("GET", "/jobs", None)
 
-        assert response.status == 200, "List job expected 200 back (got %s): %r" % (response.status, response.read())
+        assert response.status == 200,\
+                "List job expected 200 back (got %s): %r"\
+                    % (response.status, response.read())
         jdata = json.loads(response.read())
-        self.job_list = jdata['JobList'] 
+        self.job_list = jdata['JobList']
         return response
 
     def create_vault(self):
         return self.make_request("PUT", extra_path=None)
-        
+
     def delete_vault(self):
         return self.make_request("DELETE", extra_path=None)
-        
+
     def delete_archive(self, archive_id):
         return self.make_request("DELETE", extra_path="/archives/%s" % (archive_id, ))
-        
+
 
 class GlacierJob(object):
     def __init__(self, vault, params=None, job_id=None):
@@ -151,23 +157,30 @@ class GlacierJob(object):
             msg = "Start job expected 202 back (got %s)" % (response.status, )
             raise Exception(msg, response.read())
         response.read()
-        
+
         self.job_id = response.getheader("x-amz-job-id")
         self.location = response.getheader("Location")
 
     def get_output(self, range_from=None, range_to=None):
         headers = {}
         if range_from is not None or range_to is not None:
-            assert range_from is not None and range_to is not None, "If you specify one of range_from or range_to you must specify the other"
+            assert range_from is not None and range_to is not None, \
+                        """If you specify one of range_from or """\
+                        """range_to you must specify the other"""
+
             headers["Range"] = "bytes %d-%d" % (range_from, range_to)
         response = self.vault.make_request("GET", "/jobs/%s/output" % (urllib.quote(self.job_id),))
-        assert response.status == 200, "Get output expects 200 responses (got %s): %r" % (response.status, response.read())
+        assert response.status == 200,\
+                "Get output expects 200 responses (got %s): %r"\
+                    % (response.status, response.read())
         return response
 
     def job_status(self):
         response = self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
 
-        assert response.status == 200, "Describe job expets 200 (got %s): %s" % (response.status, response.read())
+        assert response.status == 200,\
+               "Describe job expets 200 (got %s): %s"\
+                    % (response.status, response.read())
         jdata = json.loads(response.read())
         self.json_output = jdata
         self.completed = jdata['Completed']
@@ -212,7 +225,7 @@ def tree_hash(fo):
 
 def bytes_to_hex(str):
     return ''.join( [ "%02x" % ord( x ) for x in str] ).strip()
-    
+
 class GlacierWriter(object):
     """
     Presents a file-like object for writing to a Amazon Glacier
@@ -241,10 +254,11 @@ class GlacierWriter(object):
             "/-/vaults/%s/multipart-uploads" % (urllib.quote(self.vault),),
             headers,
             "")
-        assert response.status == 201, "Multipart-start should respond with a 201! (got %s): %r" % (response.status, response.read())
+        assert response.status == 201,\
+                "Multipart-start should respond with a 201! (got %s): %r"\
+                    % (response.status, response.read())
         response.read()
         self.upload_url = response.getheader("location")
-        
 
     def send_part(self):
         buf = "".join(self.buffer)
@@ -264,7 +278,8 @@ class GlacierWriter(object):
 
         headers = {
                    "x-amz-glacier-version": "2012-06-01",
-                    "Content-Range": "bytes %d-%d/*" % (self.uploaded_size, (self.uploaded_size+len(part))-1),
+                    "Content-Range": "bytes %d-%d/*" % (self.uploaded_size,
+                                                       (self.uploaded_size+len(part))-1),
                     "Content-Length": str(len(part)),
                     "Content-Type": "application/octet-stream",
                     "x-amz-sha256-tree-hash": bytes_to_hex(part_tree_hash),
@@ -276,13 +291,14 @@ class GlacierWriter(object):
             self.upload_url,
             headers,
             part)
-        
-        assert response.status == 204, "Multipart upload part should respond with a 204! (got %s): %r" % (response.status, response.read())
+
+        assert response.status == 204,\
+                "Multipart upload part should respond with a 204! (got %s): %r"\
+                    % (response.status, response.read())
 
         response.read()
-        
         self.uploaded_size += len(part)
-    
+
     def write(self, str):
         assert not self.closed, "Tried to write to a GlacierWriter that is already closed!"
         self.buffer.append(str)
@@ -306,8 +322,10 @@ class GlacierWriter(object):
             self.upload_url,
             headers,
             "")
-        
-        assert response.status == 201, "Multipart-complete should respond with a 201! (got %s): %r" % (response.status, response.read())
+
+        assert response.status == 201,\
+                "Multipart-complete should respond with a 201! (got %s): %r"\
+                    % (response.status, response.read())
         response.read()
         self.archive_id = response.getheader("x-amz-archive-id")
         self.location = response.getheader("Location")
@@ -321,7 +339,7 @@ class GlacierWriter(object):
     def get_location(self):
         self.close()
         return self.location
-    
+
     def get_hash(self):
         self.close()
         return self.hash_sha256
