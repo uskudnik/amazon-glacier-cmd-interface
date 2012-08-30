@@ -84,24 +84,29 @@ def parse_response(response):
         print "Reason:"
         print response.read()
         print response.msg
-    print response.status, response.reason
+        print response.status, response.reason
+        raise Exception(u"Error occured.")
 
-def lsvault(args):
+def lsvault(args, print_results=True):
     region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    
     response = glacierconn.list_vaults()
     parse_response(response)
     jdata = json.loads(response.read())
     vault_list = jdata['VaultList']
-    print "Vault name\tARN\tCreated\tSize"
+    repr_str = ""
+    repr_str += "Vault name\tARN\tCreated\tSize\n"
     for vault in vault_list:
-        print "%s\t%s\t%s\t%s" % (vault['VaultName'],
+        repr_str += "%s\t%s\t%s\t%s\n" % (vault['VaultName'],
                                   vault['VaultARN'],
                                   vault['CreationDate'],
                                   vault['SizeInBytes'])
+    if print_results:
+        print repr_str
+    return repr_str
 
-def mkvault(args):
+def mkvault(args, print_results=True):
     vault_name = args.vault
     region = args.region
 
@@ -110,9 +115,12 @@ def mkvault(args):
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).create_vault()
         parse_response(response)
+    
+    if print_results:
         print response.getheader("Location")
+    return response.getheader("Location")
 
-def rmvault(args):
+def rmvault(args, print_results=True):
     vault_name = args.vault
     region = args.region
 
@@ -121,8 +129,13 @@ def rmvault(args):
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
         parse_response(response)
+    
+    if print_results:
+        print "Vault removed."
+    return "Vault removed."
+    
 
-def listjobs(args):
+def listjobs(args, print_results=True):
     vault_name = args.vault
     region = args.region
 
@@ -131,14 +144,19 @@ def listjobs(args):
     gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
     response = gv.list_jobs()
     parse_response(response)
-    print "Action\tArchive ID\tStatus\tInitiated\tVaultARN\tJob ID"
+    if print_results:
+        print "Action\tArchive ID\tStatus\tInitiated\tVaultARN\tJob ID"
+    ss = ""
     for job in gv.job_list:
-        print "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'],
+        ss += "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'],
                                           job['ArchiveId'],
                                           job['StatusCode'],
                                           job['CreationDate'],
                                           job['VaultARN'],
                                           job['JobId'])
+        if print_results:
+            print ss
+    return ss
 
 def describejob(args):
     job = args.jobid
@@ -152,7 +170,7 @@ def describejob(args):
                                                                      job, gj.created,
                                                                      gj.status_code)
 
-def putarchive(args):
+def putarchive(args, print_results=True):
     region = args.region
     vault = args.vault
     filename = args.filename
@@ -205,9 +223,11 @@ def putarchive(args):
             }
 
             domain.put_attributes(filename, file_attrs)
-        print "Created archive with ID: ", archive_id
+        if print_results:
+            print "Created archive with ID: ", archive_id
+    return archive_id
 
-def getarchive(args):
+def getarchive(args, print_results=True):
     region = args.region
     vault = args.vault
     archive = args.archive
@@ -235,7 +255,9 @@ def getarchive(args):
                 return
     if not found:
         job = gv.retrieve_archive(archive)
-        print "Started"
+        if print_results:
+            print "Started"
+        return "Started."
 
 def download(args):
     region = args.region
@@ -387,7 +409,7 @@ def render_inventory(inventory):
                                       archive['ArchiveId'],
                                       archive['SHA256TreeHash'])
 
-def inventory(args):
+def inventory(args, print_results=True):
     region = args.region
     vault = args.vault
     force = args.force
@@ -425,13 +447,15 @@ def inventory(args):
 
             if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
                 gv.retrieve_inventory(format="JSON")
-
-            render_inventory(inventory)
+            
+            if print_results:
+                render_inventory(inventory)
+            return inventory
         else:
             job = gv.retrieve_inventory(format="JSON")
     except Exception, e:
-        print "exception: ", e
-        print json.loads(e[1])['message']
+        print "Exception: ", e
+        return json.loads(e[1])['message']
 
 def main():
     glacier_settings=None
@@ -583,9 +607,10 @@ def main():
 
     args = parser.parse_args(sys.argv[1:])
 
-    if args.aws_access_key and args.aws_secret_key:
-        AWS_ACCESS_KEY = args.aws_access_key
-        AWS_SECRET_KEY = args.aws_secret_key
+    if not args.aws_access_key and not args.aws_secret_key:
+        args.aws_access_key = AWS_ACCESS_KEY
+        args.aws_secret_key = AWS_SECRET_KEY 
+        
 
     args.func(args)
 
