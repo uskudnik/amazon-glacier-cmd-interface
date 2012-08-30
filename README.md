@@ -4,9 +4,9 @@ Amazon Glacier CLI
 Command line interface for Amazon Glacier
 -----------------------------------------
 
-Required libraries are glaciercorecalls (temporarily, while we wait for glacier 
-support to land in boto's develop branch) and boto - at the moment you still 
-need to use development branch of boto (which you can get by
+Required libraries are `glaciercorecalls` (temporarily, while we wait for glacier 
+support to land in boto's develop branch) and `boto` - at the moment you still 
+need to use development branch of `boto` (which you can get by
  running `pip install --upgrade git+https://github.com/boto/boto.git`).
 
 Use of `virtualenv` is recommended:
@@ -21,7 +21,7 @@ Otherwise you can install simply by executing:
 
 To run:
     
-    >>> glacier
+    >>> glacier command [args]
 
 There are a couple of options on how to pass in the credentials. One is to set 
 `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` by exporting environment
