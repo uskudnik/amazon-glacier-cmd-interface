@@ -42,9 +42,15 @@ import glacier
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-BOOKKEEPING = False
-BOOKKEEPING_DOMAIN_NAME = "amazon-glacier"
 READ_PART_SIZE= glacier.GlacierWriter.DEFAULT_PART_SIZE
+
+# Gets set in main
+# TODO: Rewrite as args and not as global variables
+BOOKKEEPING = None
+BOOKKEEPING_DOMAIN_NAME = None
+AWS_ACCESS_KEY = None
+AWS_SECRET_KEY = None
+DEFAULT_REGION = None
 
 def check_vault_name(name):
 	m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
@@ -53,7 +59,8 @@ def check_vault_name(name):
 	if len(name) == 0:
 		raise Exception(u"Vault name has to be at least 1 character long.")
 	if m.end() != len(name):
-		raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), '-' (hyphen), and '.' (period)")	
+		raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
+                          '-' (hyphen), and '.' (period)")
 	return True
 
 MAX_DESCRIPTION_LENGTH = 1024
@@ -61,11 +68,13 @@ MAX_DESCRIPTION_LENGTH = 1024
 def check_description(description):
 	if len(description) > 1024:
 		raise Exception(u"Description must be less or equal to 1024 characters.")
-	
+
 	for char in description:
 		n = ord(char)
 		if n < 32 or n > 126:
-			raise Exception(u"The allowable characters are 7-bit ASCII without control codes, specifically ASCII values 32—126 decimal or 0x20—0x7E hexadecimal.")
+			raise Exception(u"The allowable characters are 7-bit ASCII without \
+                              control codes, specifically ASCII values 32—126 \
+                              decimal or 0x20—0x7E hexadecimal.")
 	return True
 
 def parse_response(response):
@@ -77,30 +86,6 @@ def parse_response(response):
 		print response.msg
 	print response.status, response.reason
 
-try:
-	import glacier_settings
-	
-	try:
-		AWS_ACCESS_KEY = glacier_settings.AWS_ACCESS_KEY
-		AWS_SECRET_KEY = glacier_settings.AWS_SECRET_KEY
-		AWS_KEYS_FROM_CLI = False
-	except AttributeError:
-		AWS_KEYS_FROM_CLI = True
-	
-	try:
-		DEFAULT_REGION = glacier_settings.REGION
-	except AttributeError:
-		DEFAULT_REGION = "us-east-1"
-	
-	try:
-		BOOKKEEPING = glacier_settings.BOOKKEEPING
-	except AttributeError:
-		pass
-		
-except ImportError:
-	AWS_KEYS_FROM_CLI = True
-	DEFAULT_REGION = "us-east-1"
-
 def lsvault(args):
 	region = args.region
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
@@ -111,14 +96,17 @@ def lsvault(args):
 	vault_list = jdata['VaultList']
 	print "Vault name\tARN\tCreated\tSize"
 	for vault in vault_list:
-		print "%s\t%s\t%s\t%s" % (vault['VaultName'], vault['VaultARN'], vault['CreationDate'], vault['SizeInBytes'])
+		print "%s\t%s\t%s\t%s" % (vault['VaultName'],
+                                  vault['VaultARN'],
+                                  vault['CreationDate'],
+                                  vault['SizeInBytes'])
 
 def mkvault(args):
 	vault_name = args.vault
 	region = args.region
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	if check_vault_name(vault_name):
 		response = glacier.GlacierVault(glacierconn, vault_name).create_vault()
 		parse_response(response)
@@ -127,9 +115,9 @@ def mkvault(args):
 def rmvault(args):
 	vault_name = args.vault
 	region = args.region
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	if check_vault_name(vault_name):
 		response = glacier.GlacierVault(glacierconn, vault_name).delete_vault()
 		parse_response(response)
@@ -137,47 +125,55 @@ def rmvault(args):
 def listjobs(args):
 	vault_name = args.vault
 	region = args.region
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	gv = glacier.GlacierVault(glacierconn, name=vault_name)
 	response = gv.list_jobs()
 	parse_response(response)
 	print "Action\tArchive ID\tStatus\tInitiated\tVaultARN\tJob ID"
 	for job in gv.job_list:
-		print "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'], job['ArchiveId'], job['StatusCode'], job['CreationDate'], job['VaultARN'], job['JobId'])
+		print "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'],
+                                          job['ArchiveId'],
+                                          job['StatusCode'],
+                                          job['CreationDate'],
+                                          job['VaultARN'],
+                                          job['JobId'])
 
 def describejob(args):
 	job = args.jobid
 	region = args.region
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	gv = glacier.GlacierVault(glacierconn, job_id)
 	gj = glacier.GlacierJob(gv, job_id=job)
 	gj.job_status()
-	print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id, job, gj.created, gj.status_code)
+	print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id,
+                                                                     job, gj.created,
+                                                                     gj.status_code)
 
 def putarchive(args):
 	region = args.region
 	vault = args.vault
 	filename = args.filename
 	description = args.description
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
-	
+
 	if BOOKKEEPING:
-		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)	
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                    aws_secret_access_key=AWS_SECRET_KEY)
 		domain_name = BOOKKEEPING_DOMAIN_NAME
 		try:
 			domain = sdb_conn.get_domain(domain_name, validate=True)
 		except boto.exception.SDBResponseError:
 			domain = sdb_conn.create_domain(domain_name)
-	
+
 	if description:
 		description = " ".join(description)
 	else:
 		description = filename
-	
+
 	if check_description(description):
 		reader = None
 		writer = glacier.GlacierWriter(glacierconn, vault, description=description)
@@ -192,7 +188,7 @@ def putarchive(args):
 		for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
 			writer.write(part)
 		writer.close()
-		
+
 		archive_id = writer.get_archive_id()
 		location = writer.get_location()
 		sha256hash = writer.get_hash()
@@ -207,7 +203,7 @@ def putarchive(args):
 				'date':'%s' % datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
 				'hash':sha256hash
 			}
-		
+
 			domain.put_attributes(filename, file_attrs)
 		print "Created archive with ID: ", archive_id
 
@@ -216,7 +212,7 @@ def getarchive(args):
 	vault = args.vault
 	archive = args.archive
 	filename = args.filename
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	
@@ -236,42 +232,48 @@ def getarchive(args):
 					ffile.close()
 				else:
 					print job2.get_output().read()
-				return 
+				return
 	if not found:
 		job = gv.retrieve_archive(archive)
 		print "Started"
-	
+
 def download(args):
 	region = args.region
 	vault = args.vault
 	filename = args.filename
 	out_file = args.out_file
-	
+
 	if not filename:
-		raise Exception(u"You have to pass in the file name or the search term of it's description to search through archive.")
-		
+		raise Exception(u"You have to pass in the file name or the search term \
+                          of it's description to search through archive.")
+
 	args.search_term = filename
 	items = search(args, print_results=False)
-	
+
 	n_items = 0
 	if not items:
 		print "Sorry, didn't find anything."
 		return False
-	
+
 	print "Region\tVault\tFilename\tArchive ID"
 	for item in items:
 		n_items += 1
 		archive = item['archive_id']
 		vault = item['vault']
-		print "%s\t%s\t%s\t%s" % (item['region'],item['vault'], item['filename'], item['archive_id'])
-	
+		print "%s\t%s\t%s\t%s" % (item['region'],
+                                  item['vault'],
+                                  item['filename'],
+                                  item['archive_id'])
+
 	if n_items > 1:
-		print "You need to uniquely identify file with either region, vault or filename parameters. If that is not enough, use getarchive to specify exactly which archive you want."
+		print "You need to uniquely identify file with either region, vault or \
+               filename parameters. If that is not enough, use getarchive to \
+               specify exactly which archive you want."
 		return False
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
-	
+
 	jobs = gv.list_jobs()
 	found = False
 	for job in gv.job_list:
@@ -297,21 +299,22 @@ def deletearchive(args):
 	region = args.region
 	vault = args.vault
 	archive = args.archive
-	
+
 	if BOOKKEEPING:
-		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                    aws_secret_access_key=AWS_SECRET_KEY)
 		domain_name = BOOKKEEPING_DOMAIN_NAME
 		try:
 			domain = sdb_conn.get_domain(domain_name, validate=True)
 		except boto.exception.SDBResponseError:
 			domain = sdb_conn.create_domain(domain_name)
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
-	
+
 	print gv.delete_archive(archive)
-	
-	# TODO: can't find a method for counting right now 
+
+	# TODO: can't find a method for counting right now
 	query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
 	items = domain.select(query)
 	item = items.next()
@@ -321,40 +324,42 @@ def search(args, print_results=True):
 	region = args.region
 	vault = args.vault
 	search_term = args.search_term
-	
+
 	if BOOKKEEPING:
-		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
+		sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                    aws_secret_access_key=AWS_SECRET_KEY)
 		domain_name = BOOKKEEPING_DOMAIN_NAME
 		try:
 			domain = sdb_conn.get_domain(domain_name, validate=True)
 		except boto.exception.SDBResponseError:
 			domain = sdb_conn.create_domain(domain_name)
 	else:
-		raise Exception(u"You have to enable bookkeeping in your settings before you can perform search.")
-	
+		raise Exception(u"You have to enable bookkeeping in your settings \
+                          before you can perform search.")
+
 	search_params = []
 	table_title = ""
 	if region:
 		search_params += ["region='%s'" % (region,)]
 	else:
 		table_title += "Region\t"
-	
+
 	if vault:
 		search_params += ["vault='%s'" % (vault,)]
 	else:
 		table_title += "Vault\t"
-	
+
 	table_title += "Filename\tArchive ID"
-	
+
 	search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
 	search_params = " and ".join(search_params)
-	
+
 	query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
 	items = domain.select(query)
-	
+
 	if print_results:
 		print table_title
-	
+
 	for item in items:
 		# print item, item.keys()
 		item_attrs = []
@@ -366,28 +371,32 @@ def search(args, print_results=True):
 		item_attrs += [item[u'archive_id']]
 		if print_results:
 			print "\t".join(item_attrs)
-	
+
 	if not print_results:
 		return items
-	
+
 def render_inventory(inventory):
 	print "Inventory of vault %s" % (inventory["VaultARN"],)
 	print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
 	print "Content:"
 	print "Archive Description\tUploaded\tSize\tArchive ID\tSHA256 hash"
 	for archive in inventory['ArchiveList']:
-		print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'], archive['CreationDate'], archive['Size'], archive['ArchiveId'], archive['SHA256TreeHash'])
+		print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'],
+                                      archive['CreationDate'],
+                                      archive['Size'],
+                                      archive['ArchiveId'],
+                                      archive['SHA256TreeHash'])
 
 def inventory(args):
 	region = args.region
 	vault = args.vault
 	force = args.force
-	
+
 	glacierconn = glacier.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
 	gv = glacier.GlacierVault(glacierconn, vault)
 	if force:
 		job = gv.retrieve_inventory(format="JSON")
-		return True	
+		return True
 	try:
 		gv.list_jobs()
 		inventory_retrievals_done = []
@@ -396,27 +405,27 @@ def inventory(args):
 				d = dateutil.parser.parse(job['CompletionDate']).replace(tzinfo=pytz.utc)
 				job['inventory_date'] = d
 				inventory_retrievals_done += [job]
-					
+
 		if len(inventory_retrievals_done):
 			sorted(inventory_retrievals_done, key=lambda i: i['inventory_date'], reverse=True)
 			job = inventory_retrievals_done[0]
 			job = glacier.GlacierJob(gv, job_id=job['JobId'])
 			inventory = json.loads(job.get_output().read())
-			
+
 			if BOOKKEEPING:
-				sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY, aws_secret_access_key=AWS_SECRET_KEY)
-				domain_name = BOOKKEEPING_DOMAIN_NAME + "_inventory"
+				sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
+                                            aws_secret_access_key=AWS_SECRET_KEY)
 				try:
 					domain = sdb_conn.get_domain(domain_name, validate=True)
 				except boto.exception.SDBResponseError:
 					domain = sdb_conn.create_domain(domain_name)
-				
+
 				d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
 				item = domain.put_attributes("%s" % (d,), inventory)
-				
+
 			if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
 				gv.retrieve_inventory(format="JSON")
-				
+
 			render_inventory(inventory)
 		else:
 			job = gv.retrieve_inventory(format="JSON")
@@ -424,92 +433,130 @@ def inventory(args):
 		print "exception: ", e
 		print json.loads(e[1])['message']
 
-program_description = u"""Command line interface for Amazon Glacier\n
-\n
-Required libraries are glacier (which is included into repository) and boto - at the moment you still need to use development branch of boto (which you can get by running "pip install --upgrade git+https://github.com/boto/boto.git").
+def main():
+	glacier_settings=None
+	try:
+		import glacier_settings
+	except ImportError:
+		pass
 
-While you can pass in your AWS Access and Secret key (--aws-access-key and --aws-secret-key), it is recommended that you create glacier_settings.py file into which you put AWS_ACCESS_KEY and AWS_SECRET_KEY strings.
+	AWS_ACCESS_KEY = getattr(glacier_settings, "AWS_ACCESS_KEY", None) \
+						or os.environ.get("AWS_ACCESS_KEY")
+	AWS_SECRET_KEY = getattr(glacier_settings, "AWS_SECRET_KEY", None) \
+						or os.environ.get("AWS_SECRET_KEY")
+	DEFAULT_REGION = getattr(glacier_settings, "REGION", None) \
+						or os.environ.get("GLACIER_DEFAULT_REGION") \
+						or "us-east-1"
+	BOOKKEEPING = getattr(glacier_settings, "BOOKKEEPING", None) \
+						or os.environ.get("GLACIER_BOOKKEEPING") \
+						or False
+	BOOKKEEPING_DOMAIN_NAME = getattr(glacier_settings, "BOOKKEEPING_DOMAIN_NAME", None) \
+						or os.environ.get("GLACIER_BOOKKEEPING_DOMAIN_NAME") \
+						or "amazon-glacier"
 
-You can also put REGION into glacier_settings.py to specify the default region on which you will operate (default is us-east-1). When you want to operate on a non-default region you can pass in the --region settings to the commands.
-"""
+	program_description = u"""Command line interface for Amazon Glacier\n
+    \n
+    Required libraries are glacier (which is included into repository) and
+    boto - at the moment you still need to use development branch of boto
+    (which you can get by running "pip install --upgrade git+https://github.com/boto/boto.git").
 
-parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter, description=program_description)
-subparsers = parser.add_subparsers()
+    While you can pass in your AWS Access and Secret key (--aws-access-key and --aws-secret-key),
+    it is recommended that you create glacier_settings.py file into which you put
+    AWS_ACCESS_KEY and AWS_SECRET_KEY strings.
 
+    You can also put REGION into glacier_settings.py to specify the default region
+    on which you will operate (default is us-east-1). When you want to operate on a
+    non-default region you can pass in the --region settings to the commands.
+    """
 
-help_msg_access_secret_key = u"Required if you haven't created glacier_settings.py file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. Command line keys will override keys set in glacier_settings.py."
-parser.add_argument('--aws-access-key', required=AWS_KEYS_FROM_CLI, help=help_msg_access_secret_key)
-parser.add_argument('--aws-secret-key', required=AWS_KEYS_FROM_CLI, help=help_msg_access_secret_key)
-	
-parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
-parser_lsvault.add_argument('--region', default=DEFAULT_REGION)
-parser_lsvault.set_defaults(func=lsvault)
+	parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                    description=program_description)
+	subparsers = parser.add_subparsers()
 
-parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
-parser_mkvault.add_argument('vault')
-parser_mkvault.add_argument('--region', default=DEFAULT_REGION)
-parser_mkvault.set_defaults(func=mkvault)
+	help_msg_access_secret_key = u"Required if you haven't created glacier_settings.py \
+                                file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. \
+                                Command line keys will override keys set in glacier_settings.py."
+	parser.add_argument('--aws-access-key', required=not AWS_ACCESS_KEY,
+                        default=AWS_ACCESS_KEY, help=help_msg_access_secret_key)
+	parser.add_argument('--aws-secret-key', required=not AWS_SECRET_KEY,
+                        default=AWS_SECRET_KEY, help=help_msg_access_secret_key)
+	parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
+	parser_lsvault.add_argument('--region', default=DEFAULT_REGION)
+	parser_lsvault.set_defaults(func=lsvault)
 
-parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
-parser_rmvault.add_argument('--region', default=DEFAULT_REGION)
-parser_rmvault.add_argument('vault')
-parser_rmvault.set_defaults(func=rmvault)
+	parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
+	parser_mkvault.add_argument('vault')
+	parser_mkvault.add_argument('--region', default=DEFAULT_REGION)
+	parser_mkvault.set_defaults(func=mkvault)
 
-parser_listjobs = subparsers.add_parser('listjobs', help='List jobs')
-parser_listjobs.add_argument('--region', default=DEFAULT_REGION)
-parser_listjobs.add_argument('vault')
-parser_listjobs.set_defaults(func=listjobs)
+	parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
+	parser_rmvault.add_argument('--region', default=DEFAULT_REGION)
+	parser_rmvault.add_argument('vault')
+	parser_rmvault.set_defaults(func=rmvault)
 
-parser_describejob = subparsers.add_parser('describejob', help='Describe job')
-parser_describejob.add_argument('--region', default=DEFAULT_REGION)
-parser_describejob.add_argument('vault')
-parser_describejob.add_argument('jobid')
-parser_describejob.set_defaults(func=describejob)
+	parser_listjobs = subparsers.add_parser('listjobs', help='List jobs')
+	parser_listjobs.add_argument('--region', default=DEFAULT_REGION)
+	parser_listjobs.add_argument('vault')
+	parser_listjobs.set_defaults(func=listjobs)
 
-parser_upload = subparsers.add_parser('upload', help='Upload an archive')
-parser_upload.add_argument('--region', default=DEFAULT_REGION)
-parser_upload.add_argument('vault')
-parser_upload.add_argument('filename')
-parser_upload.add_argument('description', nargs='*')
-parser_upload.set_defaults(func=putarchive)
+	parser_describejob = subparsers.add_parser('describejob', help='Describe job')
+	parser_describejob.add_argument('--region', default=DEFAULT_REGION)
+	parser_describejob.add_argument('vault')
+	parser_describejob.add_argument('jobid')
+	parser_describejob.set_defaults(func=describejob)
 
-parser_getarchive = subparsers.add_parser('getarchive', help='Get a file by explicitly setting archive id.')
-parser_getarchive.add_argument('--region', default=DEFAULT_REGION)
-parser_getarchive.add_argument('vault')
-parser_getarchive.add_argument('archive')
-parser_getarchive.add_argument('filename', nargs='?')
-parser_getarchive.set_defaults(func=getarchive)
+	parser_upload = subparsers.add_parser('upload', help='Upload an archive')
+	parser_upload.add_argument('--region', default=DEFAULT_REGION)
+	parser_upload.add_argument('vault')
+	parser_upload.add_argument('filename')
+	parser_upload.add_argument('description', nargs='*')
+	parser_upload.set_defaults(func=putarchive)
 
-if BOOKKEEPING:
-	parser_download = subparsers.add_parser('download', help='Download a file by searching through SimpleDB cache for it.')
-	parser_download.add_argument('--region', default=DEFAULT_REGION)
-	parser_download.add_argument('--vault', help="Specify the vault in which archive is located.")
-	parser_download.add_argument('--out-file')
-	parser_download.add_argument('filename', nargs='?')
-	parser_download.set_defaults(func=download)
+	parser_getarchive = subparsers.add_parser('getarchive',
+                help='Get a file by explicitly setting archive id.')
+	parser_getarchive.add_argument('--region', default=DEFAULT_REGION)
+	parser_getarchive.add_argument('vault')
+	parser_getarchive.add_argument('archive')
+	parser_getarchive.add_argument('filename', nargs='?')
+	parser_getarchive.set_defaults(func=getarchive)
 
-parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
-parser_rmarchive.add_argument('--region', default=DEFAULT_REGION)
-parser_rmarchive.add_argument('vault')
-parser_rmarchive.add_argument('archive')
-parser_rmarchive.set_defaults(func=deletearchive)
+	if BOOKKEEPING:
+		parser_download = subparsers.add_parser('download',
+				help='Download a file by searching through SimpleDB cache for it.')
+		parser_download.add_argument('--region', default=DEFAULT_REGION)
+		parser_download.add_argument('--vault',
+				help="Specify the vault in which archive is located.")
+		parser_download.add_argument('--out-file')
+		parser_download.add_argument('filename', nargs='?')
+		parser_download.set_defaults(func=download)
 
-parser_search = subparsers.add_parser('search', help='Search SimpleDB database (if it was created)')
-parser_search.add_argument('--region')
-parser_search.add_argument('--vault')
-parser_search.add_argument('search_term')
-parser_search.set_defaults(func=search)
+	parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
+	parser_rmarchive.add_argument('--region', default=DEFAULT_REGION)
+	parser_rmarchive.add_argument('vault')
+	parser_rmarchive.add_argument('archive')
+	parser_rmarchive.set_defaults(func=deletearchive)
 
-parser_inventory = subparsers.add_parser('inventory', help='List inventory of a vault')
-parser_inventory.add_argument('--region', default=DEFAULT_REGION)
-parser_inventory.add_argument('--force')
-parser_inventory.add_argument('vault')
-parser_inventory.set_defaults(func=inventory)
+	parser_search = subparsers.add_parser('search',
+                help='Search SimpleDB database (if it was created)')
+	parser_search.add_argument('--region')
+	parser_search.add_argument('--vault')
+	parser_search.add_argument('search_term')
+	parser_search.set_defaults(func=search)
 
-args = parser.parse_args(sys.argv[1:])
+	parser_inventory = subparsers.add_parser('inventory',
+                help='List inventory of a vault')
+	parser_inventory.add_argument('--region', default=DEFAULT_REGION)
+	parser_inventory.add_argument('--force')
+	parser_inventory.add_argument('vault')
+	parser_inventory.set_defaults(func=inventory)
 
-if args.aws_access_key and args.aws_secret_key:
-	AWS_ACCESS_KEY = args.aws_access_key
-	AWS_SECRET_KEY = args.aws_secret_key
+	args = parser.parse_args(sys.argv[1:])
 
-args.func(args)
+	if args.aws_access_key and args.aws_secret_key:
+		AWS_ACCESS_KEY = args.aws_access_key
+		AWS_SECRET_KEY = args.aws_secret_key
+
+	args.func(args)
+
+if __name__ == "__main__":
+    main()
