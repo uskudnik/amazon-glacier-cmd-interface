@@ -441,9 +441,9 @@ def main():
         pass
 
     AWS_ACCESS_KEY = getattr(glacier_settings, "AWS_ACCESS_KEY", None) \
-                        or os.environ.get("AWS_ACCESS_KEY")
+                        or os.environ.get("AWS_ACCESS_KEY_ID")
     AWS_SECRET_KEY = getattr(glacier_settings, "AWS_SECRET_KEY", None) \
-                        or os.environ.get("AWS_SECRET_KEY")
+                        or os.environ.get("AWS_SECRET_ACCESS_KEY")
     DEFAULT_REGION = getattr(glacier_settings, "REGION", None) \
                         or os.environ.get("GLACIER_DEFAULT_REGION") \
                         or "us-east-1"
@@ -454,19 +454,50 @@ def main():
                         or os.environ.get("GLACIER_BOOKKEEPING_DOMAIN_NAME") \
                         or "amazon-glacier"
 
-    program_description = u"""Command line interface for Amazon Glacier\n
-    \n
-    Required libraries are glacier (which is included into repository) and
-    boto - at the moment you still need to use development branch of boto
-    (which you can get by running "pip install --upgrade git+https://github.com/boto/boto.git").
+    program_description = u"""
+	Command line interface for Amazon Glacier
+	-----------------------------------------
 
-    While you can pass in your AWS Access and Secret key (--aws-access-key and --aws-secret-key),
-    it is recommended that you create glacier_settings.py file into which you put
-    AWS_ACCESS_KEY and AWS_SECRET_KEY strings.
+	Required libraries are glaciercorecalls (temporarily, while we wait for glacier 
+	support to land in boto's develop branch) and boto - at the moment you still 
+	need to use development branch of boto (which you can get by
+	 running `pip install --upgrade git+https://github.com/boto/boto.git`).
 
-    You can also put REGION into glacier_settings.py to specify the default region
-    on which you will operate (default is us-east-1). When you want to operate on a
-    non-default region you can pass in the --region settings to the commands.
+	To install simply execute:
+
+	    >>> python setup.py install
+
+	To run:
+
+	    >>> glacier
+
+	There are a couple of options on how to pass in the credentials. One is to set 
+	`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as environmental variables 
+	(if you're using `boto` already, this is the usual method of configuration).
+
+	While you can pass in your AWS Access and Secret key (`--aws-access-key` and `--aws-secret-key`), 
+	it is recommended that you create `glacier_settings.py` file into which you put
+	`AWS_ACCESS_KEY` and `AWS_SECRET_KEY` strings. You can also set these settings
+	by exporting environemnt variables using `export AWS_ACCESS_KEY_ID=key` and
+	`export AWS_SECRET_ACCESS_KEY=key`.
+
+	You can also put `REGION` into `glacier_settings.py` to specify the default region 
+	on which you will operate (default is `us-east-1`). When you want to operate on 
+	a non-default region you can pass in the `--region` settings to the commands.
+	You can also specify this setting by exporting `export GLACIER_DEFAULT_REGION=region`.
+
+	It is recommended that you enable `BOOKKEEPING` in `glacier_settings.py` to allow
+	for saving cache information into Amazon SimpleDB database. Again you can also
+	export `GLACIER_BOOKKEEPING` and `GLACIER_BOOKKEEPING_DOMAIN_NAME` as environemnt
+	variables.
+
+	You have two options to retrieve an archive - first one is `download`, 
+	second one is `getarchive`.
+
+	If you use `download`, you will have to uniquely identify the file either by 
+	its file name, its description, or limit the search by region and vault. 
+	If that is not enough you should use `getarchive` and specify the archive ID of
+	the archive you want to retrieve.
     """
 
     parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -474,7 +505,7 @@ def main():
     subparsers = parser.add_subparsers()
 
     help_msg_access_secret_key = u"Required if you haven't created glacier_settings.py \
-                                file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. \
+                                file with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in it. \
                                 Command line keys will override keys set in glacier_settings.py."
     parser.add_argument('--aws-access-key', required=not AWS_ACCESS_KEY,
                         default=AWS_ACCESS_KEY, help=help_msg_access_secret_key)

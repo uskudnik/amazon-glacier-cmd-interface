@@ -4,9 +4,10 @@ Amazon Glacier CLI
 Command line interface for Amazon Glacier
 -----------------------------------------
 
-Required libraries are glacier (which is included into repository) and 
-boto - at the moment you still need to use development branch of boto 
-(which you can get by running `pip install --upgrade git+https://github.com/boto/boto.git`).
+Required libraries are glaciercorecalls (temporarily, while we wait for glacier 
+support to land in boto's develop branch) and boto - at the moment you still 
+need to use development branch of boto (which you can get by
+ running `pip install --upgrade git+https://github.com/boto/boto.git`).
 
 To install simply execute:
 
@@ -14,13 +15,17 @@ To install simply execute:
 
 To run:
     
-    >>> glacier-cmd
+    >>> glacier
+
+There are a couple of options on how to pass in the credentials. One is to set 
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as environmental variables 
+(if you're using `boto` already, this is the usual method of configuration).
 
 While you can pass in your AWS Access and Secret key (`--aws-access-key` and `--aws-secret-key`), 
 it is recommended that you create `glacier_settings.py` file into which you put
 `AWS_ACCESS_KEY` and `AWS_SECRET_KEY` strings. You can also set these settings
-by exporting environemnt variables using `export AWS_ACCESS_KEY=key` and
-`export AWS_SECRET_KEY=key`.
+by exporting environemnt variables using `export AWS_ACCESS_KEY_ID=key` and
+`export AWS_SECRET_ACCESS_KEY=key`.
 
 You can also put `REGION` into `glacier_settings.py` to specify the default region 
 on which you will operate (default is `us-east-1`). When you want to operate on 
@@ -54,6 +59,7 @@ Positional arguments:
 	getarchive [--region REGION] vault archive [filename]			Download an archive. Specify filename if you want it to output to file, other it will dump plain output into command line.
 	rmarchive [--region REGION] vault archive						Remove archive
 	inventory [--region REGION] vault								List inventar of a vault
+			  [--force]												Use --force to force a new inventory retrieval operation regardless of when the last retrieval was done.
 	search [--region REGION] [--vault VAULT] search_term			If BOOKKEEPING is enabled, search through SimpleDB for search_term
   
 Optional arguments:  
