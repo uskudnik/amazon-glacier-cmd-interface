@@ -9,7 +9,13 @@ support to land in boto's develop branch) and boto - at the moment you still
 need to use development branch of boto (which you can get by
  running `pip install --upgrade git+https://github.com/boto/boto.git`).
 
-To install simply execute:
+Use of `virtualenv` is recommended:
+
+    virtualenv --no-site-packages --python=python2.7 amazon-glacier-cmd-interface
+    python setup.py develop
+    glacier command [args]
+
+Otherwise you can install simply by executing:
 
     >>> python setup.py install
 
