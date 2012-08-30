@@ -6,7 +6,6 @@ import argparse
 import subprocess
 
 import glacier.glacier as glacier
-import glacier as topglacier
 
 glacier.BOOKKEEPING = True
 
