@@ -12,6 +12,7 @@ need to use development branch of boto (which you can get by
 Use of `virtualenv` is recommended:
 
     virtualenv --no-site-packages --python=python2.7 amazon-glacier-cmd-interface
+    cd amazon-glacier-cmd-interface && source bin/activate
     python setup.py develop
     glacier command [args]
 
