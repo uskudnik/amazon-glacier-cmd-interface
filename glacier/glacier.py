@@ -34,10 +34,12 @@ import argparse
 import re
 import json
 import datetime
+import logging
 import dateutil.parser
 import pytz
 
 import boto
+import boto.glacier
 import glaciercorecalls
 
 MAX_VAULT_NAME_LENGTH = 255
@@ -87,14 +89,17 @@ def parse_response(response):
 
 def lsvault(args, print_results=True):
     region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-    
+    #glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    connection_params = {
+        'aws_access_key_id':args.aws_access_key, 
+        'aws_secret_access_key':args.aws_secret_key,
+        'debug':1
+    }
+    glacierconn = boto.boto.glacier.connect_to_region(region_name=region, **connection_params)
     response = glacierconn.list_vaults()
-    parse_response(response)
-    jdata = json.loads(response.read())
-    vault_list = jdata['VaultList']
+    vault_list = response['VaultList']
     repr_str = ""
-    repr_str += "Vault name\tARN\tCreated\tSize\n"
+    repr_str += "Vault name\tARN\tDate of creation\tSize\n"
     for vault in vault_list:
         repr_str += "%s\t%s\t%s\t%s\n" % (vault['VaultName'],
                                   vault['VaultARN'],
