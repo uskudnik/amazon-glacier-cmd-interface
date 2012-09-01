@@ -28,7 +28,7 @@ setup(name='glacier',
       include_package_data=True,
       zip_safe=False,
       dependency_links =
-            ["https://github.com/boto/boto/tarball/master#egg=boto-2.5.9999"],
+            ["https://github.com/boto/boto/tarball/develop#egg=boto-2.5.9999"],
       install_requires=[
           # list project dependencies
           'boto',
