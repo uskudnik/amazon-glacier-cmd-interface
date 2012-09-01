@@ -88,7 +88,7 @@ def parse_response(response):
 
 def lsvault(args):
     region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     response = glacierconn.list_vaults()
     parse_response(response)
@@ -105,7 +105,7 @@ def mkvault(args):
     vault_name = args.vault
     region = args.region
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).create_vault()
@@ -116,7 +116,7 @@ def rmvault(args):
     vault_name = args.vault
     region = args.region
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
@@ -126,7 +126,7 @@ def listjobs(args):
     vault_name = args.vault
     region = args.region
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
     response = gv.list_jobs()
@@ -143,7 +143,7 @@ def listjobs(args):
 def describejob(args):
     job = args.jobid
     region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     gv = glaciercorecalls.GlacierVault(glacierconn, job_id)
     gj = glaciercorecalls.GlacierJob(gv, job_id=job)
@@ -158,11 +158,11 @@ def putarchive(args):
     filename = args.filename
     description = args.description
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                    aws_secret_access_key=AWS_SECRET_KEY)
+        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                    aws_secret_access_key=args.aws_secret_key)
         domain_name = BOOKKEEPING_DOMAIN_NAME
         try:
             domain = sdb_conn.get_domain(domain_name, validate=True)
@@ -213,7 +213,7 @@ def getarchive(args):
     archive = args.archive
     filename = args.filename
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
     
     jobs = gv.list_jobs()
@@ -271,7 +271,7 @@ def download(args):
                specify exactly which archive you want."
         return False
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
     jobs = gv.list_jobs()
@@ -301,15 +301,15 @@ def deletearchive(args):
     archive = args.archive
 
     if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                    aws_secret_access_key=AWS_SECRET_KEY)
+        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                    aws_secret_access_key=args.aws_secret_key)
         domain_name = BOOKKEEPING_DOMAIN_NAME
         try:
             domain = sdb_conn.get_domain(domain_name, validate=True)
         except boto.exception.SDBResponseError:
             domain = sdb_conn.create_domain(domain_name)
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
     print gv.delete_archive(archive)
@@ -326,8 +326,8 @@ def search(args, print_results=True):
     search_term = args.search_term
 
     if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                    aws_secret_access_key=AWS_SECRET_KEY)
+        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                    aws_secret_access_key=args.aws_secret_key)
         domain_name = BOOKKEEPING_DOMAIN_NAME
         try:
             domain = sdb_conn.get_domain(domain_name, validate=True)
@@ -392,7 +392,7 @@ def inventory(args):
     vault = args.vault
     force = args.force
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
     if force:
         job = gv.retrieve_inventory(format="JSON")
@@ -413,8 +413,8 @@ def inventory(args):
             inventory = json.loads(job.get_output().read())
 
             if BOOKKEEPING:
-                sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                            aws_secret_access_key=AWS_SECRET_KEY)
+                sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                            aws_secret_access_key=args.aws_secret_key)
                 try:
                     domain = sdb_conn.get_domain(domain_name, validate=True)
                 except boto.exception.SDBResponseError:
@@ -584,8 +584,8 @@ def main():
     args = parser.parse_args(sys.argv[1:])
 
     if args.aws_access_key and args.aws_secret_key:
-        AWS_ACCESS_KEY = args.aws_access_key
-        AWS_SECRET_KEY = args.aws_secret_key
+        args.aws_access_key = AWS_ACCESS_KEY
+        args.aws_secret_key = AWS_SECRET_KEY
 
     args.func(args)
 
