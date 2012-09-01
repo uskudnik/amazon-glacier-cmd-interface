@@ -1,6 +1,6 @@
 #virtualenv
 bin/*
-glacier_cmd.egg-info/*
+glacier.egg-info/*
 include/*
 lib/*
 local
