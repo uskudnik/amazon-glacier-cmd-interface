@@ -34,6 +34,7 @@ setup(name='glacier',
           'boto',
           'python-dateutil',
           'pytz',
+          'argparse'
       ],
     entry_points="""
           [console_scripts]
