@@ -141,15 +141,16 @@ def listjobs(args):
                                           job['JobId'])
 
 def describejob(args):
-    job = args.jobid
+    vault = args.vault
+    jobid = args.jobid
     region = args.region
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
-    gv = glaciercorecalls.GlacierVault(glacierconn, job_id)
-    gj = glaciercorecalls.GlacierJob(gv, job_id=job)
+    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
+    gj = glaciercorecalls.GlacierJob(gv, job_id=jobid)
     gj.job_status()
     print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id,
-                                                                     job, gj.created,
+                                                                     jobid, gj.created,
                                                                      gj.status_code)
 
 def putarchive(args):
