@@ -178,13 +178,20 @@ def putarchive(args):
     if check_description(description):
         reader = None
         writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
-
-        #if we have data on stdin, use that
-        if select.select([sys.stdin,],[],[],0.0)[0]:
+        
+        # if filename is given, use filename then look at stdio if theres something there
+        if filename:
+            try:
+                reader = open(filename, 'rb')
+            except IOError:
+                print "Couldn't access the file given."
+                return False
+        elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
         else:
-            reader = open(filename, "rb")
-
+            print "Nothing to upload."
+            return False
+        
         #Read file in chunks so we don't fill whole memory
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
             writer.write(part)
