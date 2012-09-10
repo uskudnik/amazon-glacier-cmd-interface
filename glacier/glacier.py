@@ -458,16 +458,17 @@ def main():
 
     # Here we parse config from files in home folder or in current folder
     # We use separate sections for aws and glacier speciffic configs
+    aws = glacier = {}
     config = ConfigParser.SafeConfigParser()
     if config.read([args.conf, os.path.expanduser('~/.glacier')]):
         try:
             aws = dict(config.items("aws"))
         except ConfigParser.NoSectionError:
-            aws= {}
+            pass
         try:
             glacier = dict(config.items("glacier"))
         except ConfigParser.NoSectionError:
-            glacier= {}
+            pass
 
     # Join config options with environemnts
     aws= dict(os.environ.items() + aws.items() )
