@@ -88,7 +88,7 @@ def parse_response(response):
 
 def lsvault(args):
     region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     response = glacierconn.list_vaults()
     parse_response(response)
@@ -105,7 +105,7 @@ def mkvault(args):
     vault_name = args.vault
     region = args.region
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).create_vault()
@@ -116,7 +116,7 @@ def rmvault(args):
     vault_name = args.vault
     region = args.region
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
@@ -126,7 +126,7 @@ def listjobs(args):
     vault_name = args.vault
     region = args.region
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
     response = gv.list_jobs()
@@ -141,15 +141,16 @@ def listjobs(args):
                                           job['JobId'])
 
 def describejob(args):
-    job = args.jobid
+    vault = args.vault
+    jobid = args.jobid
     region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
-    gv = glaciercorecalls.GlacierVault(glacierconn, job_id)
-    gj = glaciercorecalls.GlacierJob(gv, job_id=job)
+    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
+    gj = glaciercorecalls.GlacierJob(gv, job_id=jobid)
     gj.job_status()
     print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj.archive_id,
-                                                                     job, gj.created,
+                                                                     jobid, gj.created,
                                                                      gj.status_code)
 
 def putarchive(args):
@@ -158,11 +159,11 @@ def putarchive(args):
     filename = args.filename
     description = args.description
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                    aws_secret_access_key=AWS_SECRET_KEY)
+        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                    aws_secret_access_key=args.aws_secret_key)
         domain_name = BOOKKEEPING_DOMAIN_NAME
         try:
             domain = sdb_conn.get_domain(domain_name, validate=True)
@@ -177,13 +178,20 @@ def putarchive(args):
     if check_description(description):
         reader = None
         writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
-
-        #if we have data on stdin, use that
-        if select.select([sys.stdin,],[],[],0.0)[0]:
+        
+        # if filename is given, use filename then look at stdio if theres something there
+        if filename:
+            try:
+                reader = open(filename, 'rb')
+            except IOError:
+                print "Couldn't access the file given."
+                return False
+        elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
         else:
-            reader = open(filename, "rb")
-
+            print "Nothing to upload."
+            return False
+        
         #Read file in chunks so we don't fill whole memory
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
             writer.write(part)
@@ -213,7 +221,7 @@ def getarchive(args):
     archive = args.archive
     filename = args.filename
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
     
     jobs = gv.list_jobs()
@@ -271,7 +279,7 @@ def download(args):
                specify exactly which archive you want."
         return False
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
     jobs = gv.list_jobs()
@@ -301,15 +309,15 @@ def deletearchive(args):
     archive = args.archive
 
     if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                    aws_secret_access_key=AWS_SECRET_KEY)
+        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                    aws_secret_access_key=args.aws_secret_key)
         domain_name = BOOKKEEPING_DOMAIN_NAME
         try:
             domain = sdb_conn.get_domain(domain_name, validate=True)
         except boto.exception.SDBResponseError:
             domain = sdb_conn.create_domain(domain_name)
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
     print gv.delete_archive(archive)
@@ -326,8 +334,8 @@ def search(args, print_results=True):
     search_term = args.search_term
 
     if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                    aws_secret_access_key=AWS_SECRET_KEY)
+        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                    aws_secret_access_key=args.aws_secret_key)
         domain_name = BOOKKEEPING_DOMAIN_NAME
         try:
             domain = sdb_conn.get_domain(domain_name, validate=True)
@@ -392,7 +400,7 @@ def inventory(args):
     vault = args.vault
     force = args.force
 
-    glacierconn = glaciercorecalls.GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_KEY, region=region)
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
     if force:
         job = gv.retrieve_inventory(format="JSON")
@@ -413,8 +421,8 @@ def inventory(args):
             inventory = json.loads(job.get_output().read())
 
             if BOOKKEEPING:
-                sdb_conn = boto.connect_sdb(aws_access_key_id=AWS_ACCESS_KEY,
-                                            aws_secret_access_key=AWS_SECRET_KEY)
+                sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+                                            aws_secret_access_key=args.aws_secret_key)
                 try:
                     domain = sdb_conn.get_domain(domain_name, validate=True)
                 except boto.exception.SDBResponseError:
@@ -584,8 +592,8 @@ def main():
     args = parser.parse_args(sys.argv[1:])
 
     if args.aws_access_key and args.aws_secret_key:
-        AWS_ACCESS_KEY = args.aws_access_key
-        AWS_SECRET_KEY = args.aws_secret_key
+        args.aws_access_key = AWS_ACCESS_KEY
+        args.aws_secret_key = AWS_SECRET_KEY
 
     args.func(args)
 
