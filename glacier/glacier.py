@@ -159,6 +159,7 @@ def putarchive(args):
     vault = args.vault
     filename = args.filename
     description = args.description
+    stdin = args.stdin
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
@@ -181,7 +182,7 @@ def putarchive(args):
         writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
 
         # if filename is given, use filename then look at stdio if theres something there
-        if filename:
+        if not stdin:
             try:
                 reader = open(filename, 'rb')
             except IOError:
@@ -475,10 +476,12 @@ def main():
     glacier= dict(os.environ.items() + glacier.items() )
 
     # Helper functions
-    filt = lambda x: dict((k.lower().replace("_","-"), v) for (k, v) in x.iteritems())
-    a_required = lambda x: x not in filt(aws)
+    filt_s= lambda x: x.lower().replace("_","-")
+    filt = lambda x,y="": dict(((y+"-" if y not in filt_s(k) else "") +
+                             filt_s(k), v) for (k, v) in x.iteritems())
+    a_required = lambda x: x not in filt(aws,"aws")
     required = lambda x: x not in filt(glacier)
-    a_default = lambda x: filt(aws).get(x)
+    a_default = lambda x: filt(aws, "aws").get(x)
     default = lambda x: filt(glacier).get(x)
 
     # Main parser
@@ -486,107 +489,82 @@ def main():
                                      description=program_description)
     subparsers = parser.add_subparsers()
 
-    help_msg_config = u"Required if you haven't created .glacier \
-                                   config file"
-    parser.add_argument('--aws-access-key',
+    group = parser.add_argument_group('aws')
+    help_msg_config = u"(Required if you haven't created .glacier config file)"
+    group.add_argument('--aws-access-key',
                         required= a_required("aws-access-key"),
                         default= a_default("aws-access-key"),
                         help="Your aws access key " + help_msg_config)
-    parser.add_argument('--aws-secret-key',
+    group.add_argument('--aws-secret-key',
                         required=a_required("aws-secret-key"),
                         default=a_default("aws-secret-key"),
                         help="Your aws secret key " + help_msg_config)
-    parser.add_argument('--bookkeeping',
+    group = parser.add_argument_group('glacier')
+    group.add_argument('--region',
+                        required=required("region"),
+                        default=default("region"),
+                        help="Region where glacier should take action " + help_msg_config)
+    group.add_argument('--bookkeeping',
                         required= False,
                         default= default("bookkeeping"),
                         action= "store_true",
                         help="Should we keep book of all creatated archives.\
                               This requires a SimpleDB account and it's \
                               bookkeeping domain name set")
-    parser.add_argument('--bookkeeping-domain-name',
+    group.add_argument('--bookkeeping-domain-name',
                         required= False,
                         default= default("bookkeeping-domain-name"),
                         help="SimpleDB domain name for bookkeeping.")
 
     parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
-    parser_lsvault.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_lsvault.set_defaults(func=lsvault)
 
     parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
     parser_mkvault.add_argument('vault')
-    parser_mkvault.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_mkvault.set_defaults(func=mkvault)
 
     parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
-    parser_rmvault.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_rmvault.add_argument('vault')
     parser_rmvault.set_defaults(func=rmvault)
 
     parser_listjobs = subparsers.add_parser('listjobs', help='List jobs')
-    parser_listjobs.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_listjobs.add_argument('vault')
     parser_listjobs.set_defaults(func=listjobs)
 
     parser_describejob = subparsers.add_parser('describejob', help='Describe job')
-    parser_describejob.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_describejob.add_argument('vault')
     parser_describejob.add_argument('jobid')
     parser_describejob.set_defaults(func=describejob)
 
     parser_upload = subparsers.add_parser('upload', help='Upload an archive')
-    parser_upload.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_upload.add_argument('vault')
     parser_upload.add_argument('filename')
-    parser_upload.add_argument('stdio',
-                                help="Input from stdio, instead of file",
+    parser_upload.add_argument('stdin',
+                                help="Input data from stdin, instead of file",
                                 action='store_true')
     parser_upload.add_argument('description', nargs='*')
     parser_upload.set_defaults(func=putarchive)
 
     parser_getarchive = subparsers.add_parser('getarchive',
                 help='Get a file by explicitly setting archive id')
-    parser_getarchive.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_getarchive.add_argument('vault')
     parser_getarchive.add_argument('archive')
     parser_getarchive.add_argument('filename', nargs='?')
     parser_getarchive.set_defaults(func=getarchive)
 
     parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
-    parser_rmarchive.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_rmarchive.add_argument('vault')
     parser_rmarchive.add_argument('archive')
     parser_rmarchive.set_defaults(func=deletearchive)
 
     parser_search = subparsers.add_parser('search',
                 help='Search SimpleDB database (if it was created)')
-    parser_search.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_search.add_argument('--vault')
     parser_search.add_argument('search_term')
     parser_search.set_defaults(func=search)
 
     parser_inventory = subparsers.add_parser('inventory',
                 help='List inventory of a vault')
-    parser_inventory.add_argument('--region',
-                                required=required("region"),
-                                default=default("region"))
     parser_inventory.add_argument('--force')
     parser_inventory.add_argument('vault')
     parser_inventory.set_defaults(func=inventory)
@@ -594,9 +572,6 @@ def main():
     # bookkeeping required
     parser_download = subparsers.add_parser('download',
             help='Download a file by searching through SimpleDB cache for it.')
-    parser_download.add_argument('--region',
-                           required=required("region"),
-                           default=default("region"))
     parser_download.add_argument('--vault',
             help="Specify the vault in which archive is located.")
     parser_download.add_argument('--out-file')
