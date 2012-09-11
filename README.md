@@ -104,41 +104,43 @@ enabled:
 
     $ TODO: example here
 
-positional arguments:
-  {lsvault,mkvault,rmvault,listjobs,describejob,upload,getarchive,rmarchive,search,inventory,download}
-    lsvault             List vaults
-    mkvault             Create a new vault
-    rmvault             Remove vault
-    listjobs            List jobs
-    describejob         Describe job
-    upload              Upload an archive
-    getarchive          Get a file by explicitly setting archive id
-    rmarchive           Remove archive
-    search              Search SimpleDB database (if it was created)
-    inventory           List inventory of a vault
-    download            Download a file by searching through SimpleDB cache
-                        for it.
+Usage description(help):
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -c FILE, --conf FILE  Specify config file
+    positional arguments:
+    {lsvault,mkvault,rmvault,listjobs,describejob,upload,getarchive,rmarchive,search,inventory,download}
+        lsvault             List vaults
+        mkvault             Create a new vault
+        rmvault             Remove vault
+        listjobs            List jobs
+        describejob         Describe job
+        upload              Upload an archive
+        getarchive          Get a file by explicitly setting archive id
+        rmarchive           Remove archive
+        search              Search SimpleDB database (if it was created)
+        inventory           List inventory of a vault
+        download            Download a file by searching through SimpleDB cache
+                            for it.
 
-aws:
-  --aws-access-key AWS_ACCESS_KEY
-                        Your aws access key (Required if you haven't created
-                        .glacier config file)
-  --aws-secret-key AWS_SECRET_KEY
-                        Your aws secret key (Required if you haven't created
-                        .glacier config file)
+    optional arguments:
+    -h, --help            show this help message and exit
+    -c FILE, --conf FILE  Specify config file
 
-glacier:
-  --region REGION       Region where glacier should take action (Required if
-                        you haven't created .glacier config file)
-  --bookkeeping         Should we keep book of all creatated archives. This
-                        requires a SimpleDB account and it's bookkeeping
-                        domain name set
-  --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
-                        SimpleDB domain name for bookkeeping.
+    aws:
+    --aws-access-key AWS_ACCESS_KEY
+                            Your aws access key (Required if you haven't created
+                            .glacier config file)
+    --aws-secret-key AWS_SECRET_KEY
+                            Your aws secret key (Required if you haven't created
+                            .glacier config file)
+
+    glacier:
+    --region REGION       Region where glacier should take action (Required if
+                            you haven't created .glacier config file)
+    --bookkeeping         Should we keep book of all creatated archives. This
+                            requires a SimpleDB account and it's bookkeeping
+                            domain name set
+    --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
+                            SimpleDB domain name for bookkeeping.
 
 TODO:
 -----
