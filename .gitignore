@@ -6,6 +6,13 @@ lib/*
 local
 man/*
 
+#bootstrap
+eggs/
+develop-eggs/
+bootstrap.py
+
+#glacier
+.glacier
 
 #python
 *.pyc
