@@ -6,7 +6,6 @@ glacier.py
 MIT License
 
 Copyright (C) 2012 and beyond by Urban Skudnik (urban.skudnik@gmail.com).
-
 All rights reserved.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -41,9 +40,151 @@ import pytz
 import boto
 import glaciercorecalls
 
+from functools import wraps
+
+from glaciercorecalls import GlacierConnection, GlacierWriter, GlacierVault
+
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-READ_PART_SIZE= glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
+READ_PART_SIZE= GlacierWriter.DEFAULT_PART_SIZE
+
+class Glacier(object):
+    VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
+    MAX_VAULT_NAME_LENGTH = 255
+
+    def glacier_connect(func):
+        """
+        Decorator which connects to glacier
+
+        :param func: Function to wrap
+        :type func: function
+
+        :returns: wrapper function
+        :rtype: function
+        """
+
+        @wraps(func)
+        def glacier_connect_wrap(*args, **kwargs):
+            self= args[0]
+            # TODO: error handling and proper checks for open connection
+            if not self.glacier_conn:
+                self.glacierconn = GlacierConnection(self.aws_access_key,
+                                                      self.aws_secret_key,
+                                                      region=self.region)
+
+            return func(*args, **kwargs)
+        return glacier_connect_wrap
+
+    def sdb_connect(func):
+        """
+        Decorator which connects to simpleDB, and creates new domain if it
+        does not exist yet
+
+        :param func: Function to wrap
+        :type func: function
+
+        :returns : wrapper function
+        :rtype: function
+        """
+
+        @wraps(func)
+        def sdb_connect_wrap(*args, **kwargs):
+            self= args[0]
+
+            # TODO: even more error handling and proper checks for open connection
+            if not self.sdb_conn:
+                self.sdb_conn = boto.connect_sdb(aws_access_key_id=self.aws_access_key,
+                                        aws_secret_access_key=self.aws_secret_key)
+                domain_name = self.bookkeeping_domain_name
+                try:
+                    self.sdb_domain = self.sdb_conn.get_domain(domain_name, validate=True)
+                except boto.exception.SDBResponseError:
+                    self.sdb_domain = self.sdb_conn.create_domain(domain_name)
+
+            return func(*args, **kwargs)
+
+        return sdb_connect_wrap
+
+    def _check_vault_name(self, name):
+        """
+        Checks if vault name is correct
+
+        :param name: Vault name
+        :type name: str
+
+        :returns: True if it's correct, false otherwise
+        :rtype: boolean
+        """
+        # TODO: New exception class
+        m = re.match(self.VAULT_NAME_ALLOWED_CHARACTERS, name)
+        if len(name) > self.MAX_VAULT_NAME_LENGTH:
+            raise Exception(u"Vault name can be at most 255 charecters long.")
+        if len(name) == 0:
+            raise Exception(u"Vault name has to be at least 1 character long.")
+        if m.end() != len(name):
+            raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
+                            '-' (hyphen), and '.' (period)")
+        return True
+
+
+    @glacier_connect
+    def lsvault(self):
+        """
+        List vaults
+
+        :returns : Vault list in format
+                   TODO: Return value example
+        :rtype: json
+        """
+        response = self.glacierconn.list_vaults()
+        parse_response(response)
+        jdata = json.loads(response.read())
+        vault_list = jdata['VaultList']
+
+        return vault_list
+
+    @glacier_connect
+    def mkvault(self, vault_name):
+        """
+        Creates new vault
+
+        :param vault_name: Name of newly created vault
+        :type vault_name: str
+
+        :returns: Location of newly created vault
+        :rtype: str
+        """
+        if check_vault_name(vault_name):
+            response = GlacierVault(self.glacierconn, vault_name).create_vault()
+            parse_response(response)
+
+            return response.getheader("Location")
+
+    @glacier_connect
+    def listjobs(self, vault_name):
+        """
+        Lists glacier jobs
+
+        :param vault_name: Name of vault
+        :type vault_name: str
+
+        :returns: List of jobs
+                  TODO: Return value example
+        :rtype: json
+        """
+
+        gv = GlacierVault(self.glacierconn, name=vault_name)
+        response = gv.list_jobs()
+        parse_response(response)
+
+        return gv.job_list
+
+    def __init__(self, aws_access_key, aws_secret_key, region,
+                 bookkeeping=None, bookkeeping_domain_name=None):
+        self.aws_access_key = aws_access_key
+        self.aws_secret_key = aws_secret_key
+        self.bookkeeping = bookkeeping
+        self.bookkeeping_domain_nam = bookkeeping_domain_name
 
 def check_vault_name(name):
     m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
@@ -56,7 +197,7 @@ def check_vault_name(name):
                           '-' (hyphen), and '.' (period)")
     return True
 
-MAX_DESCRIPTION_LENGTH = 1024
+MAX_DESCRIPTION_LENGTH = 102
 
 def check_description(description):
     if len(description) > 1024:
@@ -401,6 +542,7 @@ def inventory(args):
     vault = args.vault
     force = args.force
     BOOKKEEPING= args.bookkeeping
+    domain_name= args.bookkeeping_domain_name
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
