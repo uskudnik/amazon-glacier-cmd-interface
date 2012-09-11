@@ -401,6 +401,7 @@ def inventory(args):
     vault = args.vault
     force = args.force
     BOOKKEEPING= args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
@@ -425,6 +426,7 @@ def inventory(args):
             if BOOKKEEPING:
                 sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
                                             aws_secret_access_key=args.aws_secret_key)
+                domain_name = BOOKKEEPING_DOMAIN_NAME
                 try:
                     domain = sdb_conn.get_domain(domain_name, validate=True)
                 except boto.exception.SDBResponseError:
