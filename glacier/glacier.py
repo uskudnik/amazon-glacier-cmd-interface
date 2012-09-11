@@ -359,7 +359,8 @@ def search(args, print_results=True):
 
     table_title += "Filename\tArchive ID"
 
-    search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
+    if search_term:
+        search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
     search_params = " and ".join(search_params)
 
     query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
@@ -557,9 +558,10 @@ def main():
     parser_rmarchive.set_defaults(func=deletearchive)
 
     parser_search = subparsers.add_parser('search',
-                help='Search SimpleDB database (if it was created)')
+                help='Search SimpleDB database (if it was created). \
+                      By default returns contents of vault.')
     parser_search.add_argument('--vault')
-    parser_search.add_argument('search_term')
+    parser_search.add_argument('--search_term')
     parser_search.set_defaults(func=search)
 
     parser_inventory = subparsers.add_parser('inventory',
