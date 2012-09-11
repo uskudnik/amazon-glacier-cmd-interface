@@ -45,14 +45,6 @@ MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
 READ_PART_SIZE= glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
 
-# Gets set in main
-# TODO: Rewrite as args and not as global variables
-BOOKKEEPING = None
-BOOKKEEPING_DOMAIN_NAME = None
-AWS_ACCESS_KEY = None
-AWS_SECRET_KEY = None
-DEFAULT_REGION = None
-
 def check_vault_name(name):
     m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
     if len(name) > 255:
@@ -160,6 +152,8 @@ def putarchive(args):
     filename = args.filename
     description = args.description
     stdin = args.stdin
+    BOOKKEEPING= args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
@@ -309,6 +303,8 @@ def deletearchive(args):
     region = args.region
     vault = args.vault
     archive = args.archive
+    BOOKKEEPING= args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
 
     if BOOKKEEPING:
         sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
@@ -334,6 +330,8 @@ def search(args, print_results=True):
     region = args.region
     vault = args.vault
     search_term = args.search_term
+    BOOKKEEPING= args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
 
     if BOOKKEEPING:
         sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
@@ -401,6 +399,7 @@ def inventory(args):
     region = args.region
     vault = args.vault
     force = args.force
+    BOOKKEEPING= args.bookkeeping
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
@@ -506,7 +505,7 @@ def main():
                         help="Region where glacier should take action " + help_msg_config)
     group.add_argument('--bookkeeping',
                         required= False,
-                        default= default("bookkeeping"),
+                        default= default("bookkeeping") and True,
                         action= "store_true",
                         help="Should we keep book of all creatated archives.\
                               This requires a SimpleDB account and it's \
@@ -539,7 +538,7 @@ def main():
     parser_upload = subparsers.add_parser('upload', help='Upload an archive')
     parser_upload.add_argument('vault')
     parser_upload.add_argument('filename')
-    parser_upload.add_argument('stdin',
+    parser_upload.add_argument('--stdin',
                                 help="Input data from stdin, instead of file",
                                 action='store_true')
     parser_upload.add_argument('description', nargs='*')
@@ -579,14 +578,6 @@ def main():
     parser_download.set_defaults(func=download)
 
     args = parser.parse_args(remaining_argv)
-
-    # TODO: Make as local arguments to function or make args global
-    AWS_SECRET_KEY= args.aws_access_key
-    AWS_ACCESS_KEY= args.aws_secret_key
-    BOOKKEEPING= args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
-    DEFAULT_REGION= args.region
-
     args.func(args)
 
 if __name__ == "__main__":
