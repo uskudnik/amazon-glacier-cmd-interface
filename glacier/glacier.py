@@ -37,6 +37,7 @@ import json
 import datetime
 import dateutil.parser
 import pytz
+from prettytable import PrettyTable
 
 import boto
 import glaciercorecalls
@@ -70,6 +71,13 @@ def check_description(description):
                               decimal or 0x20—0x7E hexadecimal.")
     return True
 
+def print_headers(response):
+    table = PrettyTable(["Header", "Value"])
+    for header in response.getheaders():
+        if len(str(header[1])) < 100:
+            table.add_row(header)
+    print table
+
 def parse_response(response):
     if response.status == 403:
         print "403 Forbidden."
@@ -78,6 +86,8 @@ def parse_response(response):
         print response.read()
         print response.msg
     print response.status, response.reason
+    if response.status == 204:
+        print_headers(response)
 
 def lsvault(args):
     region = args.region
@@ -87,12 +97,14 @@ def lsvault(args):
     parse_response(response)
     jdata = json.loads(response.read())
     vault_list = jdata['VaultList']
-    print "Vault name\tARN\tCreated\tSize"
+    table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
     for vault in vault_list:
-        print "%s\t%s\t%s\t%s" % (vault['VaultName'],
-                                  vault['VaultARN'],
-                                  vault['CreationDate'],
-                                  vault['SizeInBytes'])
+        table.add_row([vault['VaultName'],
+                       vault['VaultARN'],
+                       vault['CreationDate'],
+                       vault['SizeInBytes']])
+    table.sortby = "Vault name"
+    print table
 
 def mkvault(args):
     vault_name = args.vault
@@ -124,14 +136,16 @@ def listjobs(args):
     gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
     response = gv.list_jobs()
     parse_response(response)
-    print "Action\tArchive ID\tStatus\tInitiated\tVaultARN\tJob ID"
+    table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
+                         "VaultARN", "Job ID"])
     for job in gv.job_list:
-        print "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'],
-                                          job['ArchiveId'],
-                                          job['StatusCode'],
-                                          job['CreationDate'],
-                                          job['VaultARN'],
-                                          job['JobId'])
+        table.add_row([job['Action'],
+                       job['ArchiveId'],
+                       job['StatusCode'],
+                       job['CreationDate'],
+                       job['VaultARN'],
+                       job['JobId']])
+    print table
 
 def describejob(args):
     vault = args.vault
@@ -325,13 +339,13 @@ def deletearchive(args):
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
-    print gv.delete_archive(archive)
+    parse_response( gv.delete_archive(archive) )
 
     # TODO: can't find a method for counting right now
     query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
     items = domain.select(query)
-    item = items.next()
-    domain.delete_item(item)
+    for item in items:
+        domain.delete_item(item)
 
 def search(args, print_results=True):
     region = args.region
@@ -395,13 +409,14 @@ def render_inventory(inventory):
     print "Inventory of vault %s" % (inventory["VaultARN"],)
     print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
     print "Content:"
-    print "Archive Description\tUploaded\tSize\tArchive ID\tSHA256 hash"
+    table = PrettyTable(["Archive Description", "Uploaded", "Size", "Archive ID", "SHA256 hash"])
     for archive in inventory['ArchiveList']:
-        print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'],
-                                      archive['CreationDate'],
-                                      archive['Size'],
-                                      archive['ArchiveId'],
-                                      archive['SHA256TreeHash'])
+        table.add_row([archive['ArchiveDescription'],
+                       archive['CreationDate'],
+                       archive['Size'],
+                       archive['ArchiveId'],
+                       archive['SHA256TreeHash']])
+    print table
 
 def inventory(args):
     region = args.region
