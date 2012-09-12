@@ -36,6 +36,7 @@ import json
 import datetime
 import dateutil.parser
 import pytz
+from prettytable import PrettyTable
 
 import boto
 import glaciercorecalls
@@ -211,6 +212,13 @@ def check_description(description):
                               decimal or 0x20—0x7E hexadecimal.")
     return True
 
+def print_headers(response):
+    table = PrettyTable(["Header", "Value"])
+    for header in response.getheaders():
+        if len(str(header[1])) < 100:
+            table.add_row(header)
+    print table
+
 def parse_response(response):
     if response.status == 403:
         print "403 Forbidden."
@@ -219,6 +227,8 @@ def parse_response(response):
         print response.read()
         print response.msg
     print response.status, response.reason
+    if response.status == 204:
+        print_headers(response)
 
 def lsvault(args):
     region = args.region
@@ -228,12 +238,14 @@ def lsvault(args):
     parse_response(response)
     jdata = json.loads(response.read())
     vault_list = jdata['VaultList']
-    print "Vault name\tARN\tCreated\tSize"
+    table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
     for vault in vault_list:
-        print "%s\t%s\t%s\t%s" % (vault['VaultName'],
-                                  vault['VaultARN'],
-                                  vault['CreationDate'],
-                                  vault['SizeInBytes'])
+        table.add_row([vault['VaultName'],
+                       vault['VaultARN'],
+                       vault['CreationDate'],
+                       vault['SizeInBytes']])
+    table.sortby = "Vault name"
+    print table
 
 def mkvault(args):
     vault_name = args.vault
@@ -265,14 +277,16 @@ def listjobs(args):
     gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
     response = gv.list_jobs()
     parse_response(response)
-    print "Action\tArchive ID\tStatus\tInitiated\tVaultARN\tJob ID"
+    table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
+                         "VaultARN", "Job ID"])
     for job in gv.job_list:
-        print "%s\t%s\t%s\t%s\t%s\t%s" % (job['Action'],
-                                          job['ArchiveId'],
-                                          job['StatusCode'],
-                                          job['CreationDate'],
-                                          job['VaultARN'],
-                                          job['JobId'])
+        table.add_row([job['Action'],
+                       job['ArchiveId'],
+                       job['StatusCode'],
+                       job['CreationDate'],
+                       job['VaultARN'],
+                       job['JobId']])
+    print table
 
 def describejob(args):
     vault = args.vault
@@ -349,8 +363,15 @@ def putarchive(args):
                 'hash':sha256hash
             }
 
-            domain.put_attributes(filename, file_attrs)
+            if args.name:
+                file_attrs['filename'] = args.name
+            elif stdin:
+                file_attrs['filename'] = description
+
+            domain.put_attributes(file_attrs['filename'], file_attrs)
+
         print "Created archive with ID: ", archive_id
+        print "Archive SHA256 hash: ", sha256hash
 
 def getarchive(args):
     region = args.region
@@ -459,13 +480,13 @@ def deletearchive(args):
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
 
-    print gv.delete_archive(archive)
+    parse_response( gv.delete_archive(archive) )
 
     # TODO: can't find a method for counting right now
     query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
     items = domain.select(query)
-    item = items.next()
-    domain.delete_item(item)
+    for item in items:
+        domain.delete_item(item)
 
 def search(args, print_results=True):
     region = args.region
@@ -526,23 +547,24 @@ def search(args, print_results=True):
         return items
 
 def render_inventory(inventory):
-    print "Inventory of vault %s" % (inventory["VaultARN"],)
+    print "Inventory of vault: %s" % (inventory["VaultARN"],)
     print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
     print "Content:"
-    print "Archive Description\tUploaded\tSize\tArchive ID\tSHA256 hash"
+    table = PrettyTable(["Archive Description", "Uploaded", "Size", "Archive ID", "SHA256 hash"])
     for archive in inventory['ArchiveList']:
-        print "%s\t%s\t%s\t%s\t%s" % (archive['ArchiveDescription'],
-                                      archive['CreationDate'],
-                                      archive['Size'],
-                                      archive['ArchiveId'],
-                                      archive['SHA256TreeHash'])
+        table.add_row([archive['ArchiveDescription'],
+                       archive['CreationDate'],
+                       archive['Size'],
+                       archive['ArchiveId'],
+                       archive['SHA256TreeHash']])
+    print table
 
 def inventory(args):
     region = args.region
     vault = args.vault
     force = args.force
     BOOKKEEPING= args.bookkeeping
-    domain_name= args.bookkeeping_domain_name
+    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
@@ -559,14 +581,17 @@ def inventory(args):
                 inventory_retrievals_done += [job]
 
         if len(inventory_retrievals_done):
-            sorted(inventory_retrievals_done, key=lambda i: i['inventory_date'], reverse=True)
+            list.sort(inventory_retrievals_done,
+                      key=lambda i: i['inventory_date'], reverse=True)
             job = inventory_retrievals_done[0]
+            print "Inventory with JobId:", job['JobId']
             job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
             inventory = json.loads(job.get_output().read())
 
             if BOOKKEEPING:
                 sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
                                             aws_secret_access_key=args.aws_secret_key)
+                domain_name = BOOKKEEPING_DOMAIN_NAME
                 try:
                     domain = sdb_conn.get_domain(domain_name, validate=True)
                 except boto.exception.SDBResponseError:
@@ -629,7 +654,8 @@ def main():
     # Main parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
                                      description=program_description)
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(title='Subcommands',
+                                       help=u"For subcommand help, use: glacier <subcommand> -h")
 
     group = parser.add_argument_group('aws')
     help_msg_config = u"(Required if you haven't created .glacier config file)"
@@ -684,6 +710,10 @@ def main():
     parser_upload.add_argument('--stdin',
                                 help="Input data from stdin, instead of file",
                                 action='store_true')
+    parser_upload.add_argument('--name', default=None,
+                                help='Use the given name as the filename for bookkeeping purposes. \
+                               This option is useful in conjunction with --stdin \
+                               or when the file being uploaded is a temporary file.')
     parser_upload.add_argument('description', nargs='*')
     parser_upload.set_defaults(func=putarchive)
 
@@ -708,7 +738,8 @@ def main():
 
     parser_inventory = subparsers.add_parser('inventory',
                 help='List inventory of a vault')
-    parser_inventory.add_argument('--force')
+    parser_inventory.add_argument('--force', action='store_true',
+                                 help="Create a new inventory job")
     parser_inventory.add_argument('vault')
     parser_inventory.set_defaults(func=inventory)
 
