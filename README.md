@@ -63,22 +63,38 @@ remove use `rmvault` obvious:
 
     $ glacier mkvault
     $ 201 Created
-    $ /487528549940/vaults/test1
+    $ /487528549940/vaults/test
 
     $ glacier lsvault      
     $ 200 OK
-    $ Vault name	ARN	Created	Size
-    $ test1	arn:aws:glacier:us-east-1:487528549940:vaults/test1	2012-09-11T08:52:56.309Z	0
+    $ +------------+----------------------------------------------------+--------------------------+----------+
+    $ | Vault name |                        ARN                         |         Created          |   Size   |
+    $ +------------+----------------------------------------------------+--------------------------+----------+
+    $ |    test    | arn:aws:glacier:us-east-1:771747372727:vaults/Test | 2012-08-30T03:26:05.507Z | 56932337 |
+    $ +------------+----------------------------------------------------+--------------------------+----------+
+
 
     $ glacier rmvault test1
     $ 204 No Content
+    $ +------------------+-------------------------------------------------+
+    $ |      Header      |                      Value                      |
+    $ +------------------+-------------------------------------------------+
+    $ | x-amzn-requestid | 5Ckitc3kUKC30UWrflkKNLK_hJFm1c_Y7lm4ZG2MAkcInI8 |
+    $ |       date       |          Wed, 12 Sep 2012 05:51:00 GMT          |
+    $ +------------------+-------------------------------------------------+
+
 
 You can list active jobs by using `listjobs`:
 
     $ glacier listjobs test
     $ 200 OK
-    $ Action	Archive ID	Status	Initiated	VaultARN	Job ID
-    $ InventoryRetrieval	None	InProgress	2012-09-11T08:50:11.224Z	arn:aws:glacier:us-east-1:487528549940:vaults/test	yvBx6FG7yo5Vocr4Aq-Rv7yY0Cfx0Gpcapr6IevhvJvEgIUwC1yI-s74RQlsd0ESOriFiKO7uHkhmZ9zih069eNsPi-0
+    $ +--------------------+------------+-----------+--------------------------+----------------------------------------------------+----------------------------------------------------------------------------------------------+
+    $ |       Action       | Archive ID |   Status  |        Initiated         |                      VaultARN                      |                                            Job ID                                            |
+    $ +--------------------+------------+-----------+--------------------------+----------------------------------------------------+----------------------------------------------------------------------------------------------+
+    $ | InventoryRetrieval |    None    | Succeeded | 2012-09-12T01:03:13.991Z | arn:aws:glacier:us-east-1:771747372727:vaults/Test | tOMuoC8Y0B9S867fZsczjZBUS02mnELuS1-WqTY_SCCnNPWQg85YRI3GoJe6eObGuPEBdRz6BeXb35PQWBokHBhPqZ0X |
+    $ | InventoryRetrieval |    None    | Succeeded | 2012-09-11T06:37:22.950Z | arn:aws:glacier:us-east-1:771747372727:vaults/Test | TK27LnflXEXN9ACn-ShfvQXHnJxFRVWnwnPiR-2d0eyePFHs_xrFRkAq1TEgxzM1oWo06tTUPbtGCnHmiL7Hon9anlik |
+    $ +--------------------+------------+-----------+--------------------------+----------------------------------------------------+----------------------------------------------------------------------------------------------+
+
 
 To upload archive use `upload`. You can upload data from file or data from
 stdin. To upload from file:
@@ -122,6 +138,20 @@ To search for uploaded arhives in your cache use `search`. This requires bookkee
 enabled:
 
     $ TODO: example here
+
+To list the inventory of a vault use `inventory`:
+
+    $ glacier inventory test
+    $ Inventory of vault arn:aws:glacier:us-east-1:771747372727:vaults/Test
+    $ Inventory Date: 2012-09-11T22:03:37Z
+    $ 
+    $ Content:
+    $ +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
+    $ |             Archive Description             |       Uploaded       |   Size   |                                                                 Archive ID                                                                 |                           SHA256 hash                            |
+    $ +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
+    $ |                 DSC01600.xcf                | 2012-08-31T03:49:34Z | 38679745 | riTD8lqS96TvEwrqMy79jziF-l0vc_jbhYeCli1qtCAEH4IfzvvIU96VSiSOIytGRKJfw8Pf0SRk5i1ruxIIZuyfH7W7jTEW_h-Zd5Ho6aveZdfW8JfoYXXMRz6Dn_Yg0FsgYCLGQw | cb7ca5b0fa02af0180e0c172489c2f40f3469db2dfc86ae41e713b7bacea68e7 |
+    $ |                     2016                    | 2012-09-10T05:09:20Z |  250178  | JZ8Xsys9LnN0djnOaC-5YNQYoKnd2jL0eLp8H3SlMexls0tqLdlvZQGnS56Q3Hb3ahsle7XNKQv5ouZjY2fOu9gI6BRErK8gKHAKxlFtdIeGFD6w_KVElczfehJV4XJIz8zCtGcjsg | d8f50c77cdef296ae57b0a3386e3f3d73435c94f5e6d320d5426bd1b239397d4 |
+    $ +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
 
 Usage description(help):
 

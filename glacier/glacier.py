@@ -406,7 +406,7 @@ def search(args, print_results=True):
         return items
 
 def render_inventory(inventory):
-    print "Inventory of vault %s" % (inventory["VaultARN"],)
+    print "Inventory of vault: %s" % (inventory["VaultARN"],)
     print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
     print "Content:"
     table = PrettyTable(["Archive Description", "Uploaded", "Size", "Archive ID", "SHA256 hash"])
@@ -440,8 +440,10 @@ def inventory(args):
                 inventory_retrievals_done += [job]
 
         if len(inventory_retrievals_done):
-            sorted(inventory_retrievals_done, key=lambda i: i['inventory_date'], reverse=True)
+            inventory_retrievals_done = sorted(inventory_retrievals_done,
+                                               key=lambda i: i['inventory_date'], reverse=True)
             job = inventory_retrievals_done[0]
+            print "Inventory with JobId:", job['JobId']
             job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
             inventory = json.loads(job.get_output().read())
 
