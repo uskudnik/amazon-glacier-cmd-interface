@@ -208,8 +208,15 @@ def putarchive(args):
                 'hash':sha256hash
             }
 
-            domain.put_attributes(filename, file_attrs)
+            if args.name:
+                file_attrs['filename'] = args.name
+            elif stdin:
+                file_attrs['filename'] = description
+
+            domain.put_attributes(file_attrs['filename'], file_attrs)
+
         print "Created archive with ID: ", archive_id
+        print "Archive SHA256 hash: ", sha256hash
 
 def getarchive(args):
     region = args.region
@@ -489,7 +496,8 @@ def main():
     # Main parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
                                      description=program_description)
-    subparsers = parser.add_subparsers()
+    subparsers = parser.add_subparsers(title='Subcommands',
+                                       help=u"For subcommand help, use: glacier <subcommand> -h")
 
     group = parser.add_argument_group('aws')
     help_msg_config = u"(Required if you haven't created .glacier config file)"
@@ -544,6 +552,10 @@ def main():
     parser_upload.add_argument('--stdin',
                                 help="Input data from stdin, instead of file",
                                 action='store_true')
+    parser_upload.add_argument('--name', default=None,
+                                help='Use the given name as the filename for bookkeeping purposes. \
+                               This option is useful in conjunction with --stdin \
+                               or when the file being uploaded is a temporary file.')
     parser_upload.add_argument('description', nargs='*')
     parser_upload.set_defaults(func=putarchive)
 
@@ -568,7 +580,8 @@ def main():
 
     parser_inventory = subparsers.add_parser('inventory',
                 help='List inventory of a vault')
-    parser_inventory.add_argument('--force')
+    parser_inventory.add_argument('--force', action='store_true',
+                                 help="Create a new inventory job")
     parser_inventory.add_argument('vault')
     parser_inventory.set_defaults(func=inventory)
 

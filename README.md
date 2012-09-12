@@ -50,8 +50,8 @@ You can also pass in all these options as environemnt variables:
 It doesn't matter if option names are upper-case or lower-case or if they have 
 `aws_` in string. Currently only section names must be lower-case.
 
-We created speciall feature called bookkeeping, where we keep cache of all uploaded
-archive and it's names, hashes, sizes and similar meta-data in amazon SimpleDB.
+We created a special feature called bookkeeping, where we keep a cache of all uploaded
+archive and their names, hashes, sizes and similar meta-data in an Amazon SimpleDB.
 This is still work in progress and can be enabled by setting bookkeeping to True.
 Some commands like search require bookkeeping to be enabled. You will also have
 to set bookkeeping-domain-name:
@@ -67,7 +67,7 @@ remove use `rmvault` obvious:
 
     $ glacier lsvault      
     $ 200 OK
-    $ Vault name	ARN	Created	Sizei
+    $ Vault name	ARN	Created	Size
     $ test1	arn:aws:glacier:us-east-1:487528549940:vaults/test1	2012-09-11T08:52:56.309Z	0
 
     $ glacier rmvault test1
@@ -80,9 +80,28 @@ You can list active jobs by using `listjobs`:
     $ Action	Archive ID	Status	Initiated	VaultARN	Job ID
     $ InventoryRetrieval	None	InProgress	2012-09-11T08:50:11.224Z	arn:aws:glacier:us-east-1:487528549940:vaults/test	yvBx6FG7yo5Vocr4Aq-Rv7yY0Cfx0Gpcapr6IevhvJvEgIUwC1yI-s74RQlsd0ESOriFiKO7uHkhmZ9zih069eNsPi-0
 
-To upload archive use `upload`. You can upload data from file or data from stdin:
+To upload archive use `upload`. You can upload data from file or data from
+stdin. To upload from file:
 
-    $ TODO: example here
+    $ glacier upload test /path/SomeFile "The file description"
+    $ Created archive with ID: EQocIYw9ZmofbWixjD2oKb8faeIg4D1uSi1PxpdyBVy__lDMCWcmXLIzNKBP4ikPH3Ngn4w8ApqCMN7XJqNL7V4sxRzq42Zu74DctpLG9GSPSNjLc1_vorGVk3YqVEdjd2cqnWTdiA
+    $ Archive SHA256 hash: e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0
+
+You can compare the SHA256 returned by AWS with the locally computed one to
+make sure the upload was successful:
+
+    $ shasum -a 256 SomeFile
+    $ e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0  SomeFile
+
+If you are uploading a temp file with a meaningless name, or using --stdin, you
+can use the --name option to tell glacier to ignore the filename and use the
+given name when it creates the bookkeeping entry:
+
+    $ glacier upload --name /path/BetterName test /tmp/temp.tQ6948 "Some description"
+
+To upload from stdin:
+
+    $ TODO: example for using --stdin
 
 You have two options to retrieve an archive - first one is `download`, 
 second one is `getarchive`
