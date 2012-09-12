@@ -440,8 +440,8 @@ def inventory(args):
                 inventory_retrievals_done += [job]
 
         if len(inventory_retrievals_done):
-            inventory_retrievals_done = sorted(inventory_retrievals_done,
-                                               key=lambda i: i['inventory_date'], reverse=True)
+            list.sort(inventory_retrievals_done,
+                      key=lambda i: i['inventory_date'], reverse=True)
             job = inventory_retrievals_done[0]
             print "Inventory with JobId:", job['JobId']
             job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
