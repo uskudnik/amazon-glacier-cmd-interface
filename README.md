@@ -130,9 +130,16 @@ the archive you want to retrieve:
     $ TODO: example here
 
 To remove uploaded archive use `rmarchive`. You can currently delete only by
-archive id:
+archive id (notice the use of `--` when the archive ID starts with a dash):
 
-    $ TODO: example here
+    $ glacier rmarchive Test -- -6AKuLSU3wxtSqq_GeeAss9zLvto8Xr1su4mqmvluTTv4HcXbFJJNy0yiTu9tG5vFjrBXvmQKXGwFJpNMghqYBerUKpsjq56mrzv1wUbe6DWuzl6Ntb8WSQHYo0kzw8rcLaVx5MFug
+    204 No Content
+    +------------------+-------------------------------------------------+
+    |      Header      |                      Value                      |
+    +------------------+-------------------------------------------------+
+    | x-amzn-requestid | 1-UC36MM2ZxNwdf-Q2yyT0f7j5KVJ1neGwf-FzsU2H6YDyo |
+    |       date       |          Fri, 14 Sep 2012 02:48:46 GMT          |
+    +------------------+-------------------------------------------------+
 
 To search for uploaded arhives in your cache use `search`. This requires bookkeeping
 enabled:
@@ -144,7 +151,7 @@ To list the inventory of a vault use `inventory`:
     $ glacier inventory Test
     Inventory of vault arn:aws:glacier:us-east-1:771747372727:vaults/Test
     Inventory Date: 2012-09-11T22:03:37Z
-    
+
     Content:
     +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
     |             Archive Description             |       Uploaded       |   Size   |                                                                 Archive ID                                                                 |                           SHA256 hash                            |
