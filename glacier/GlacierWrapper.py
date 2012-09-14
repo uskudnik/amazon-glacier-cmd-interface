@@ -64,10 +64,11 @@ class GlacierWrapper(object):
         VaultCreateError= 2
         JobListError= 3
         ArchiveRetriveError= 4
-        InvertoryRetriveError= 5
-        SdbReadError= 6
-        SdbWriteError= 7
-        SdbDomainCreationError= 8
+        ArchiveDeleteError= 5
+        InvertoryRetriveError= 6
+        SdbReadError= 7
+        SdbWriteError= 8
+        SdbDomainCreationError= 9
 
         def __init__(self, message, code=None, cause=None):
                 GlacierWrapper.GlacierWrapperException.__init__(self, message, code, cause)
@@ -326,6 +327,33 @@ class GlacierWrapper(object):
             raise GlacierWrapper.CommunicationException("Cannot retrive archive",
                                             cause=e, code="ArchiveRetriveError")
         return (job, None)
+
+    @glacier_connect
+    @sdb_connect
+    def deletearchive(self, vault, archive):
+        try:
+            gv = GlacierVault(self.glacierconn, vault)
+            self._check_response( gv.delete_archive(archive) )
+        except Exception, e:
+            raise GlacierWrapper.CommunicationException("Cannot delete archive",
+                                            code="ArchiveDeleteError", cause=e)
+
+        if self.bookkeeping:
+            try:
+                # TODO: can't find a method for counting right now
+                query = ('select * from `%s` where archive_id="%s"' %
+                            (self.bookkeeping_domain_name, archive))
+                items = self.sdb_domain.select(query)
+            except boto.exception.SDBResponseError as e:
+                raise GlacierWrapper.CommunicationException("Cannot get archive from SDB",
+                                            code="SdbReadError", cause=e)
+            try:
+                for item in items:
+                    self.sdb_domain.delete_item(item)
+            except boto.exception.SDBResponseError as e:
+                raise GlacierWrapper.CommunicationException("Cannot delete item from SDB",
+                                            code="SdbWriteError", cause=e)
+
 
     @glacier_connect
     @sdb_connect
