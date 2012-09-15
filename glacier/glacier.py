@@ -180,9 +180,9 @@ def putarchive(args, print_results=True):
     stdin = args.stdin
     BOOKKEEPING= args.bookkeeping
     BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
-
+    
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-
+    
     if BOOKKEEPING:
         sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
                                     aws_secret_access_key=args.aws_secret_key)
@@ -191,15 +191,25 @@ def putarchive(args, print_results=True):
             domain = sdb_conn.get_domain(domain_name, validate=True)
         except boto.exception.SDBResponseError:
             domain = sdb_conn.create_domain(domain_name)
-
+    
+    file_attrs = {
+        'region':region,
+        'vault':vault,
+        'filename':filename,
+        'date':'%s' % datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
+    }
+    file_attrs_str = json.dumps(file_attrs)
+    
     if description:
         description = " ".join(description)
-    else:
-        description = filename
-
+        file_attrs['description'] = description
+    
+    if args.name:
+        filename = args.name
+    
     if check_description(description):
         reader = None
-        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
+        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=file_attrs_str)
 
         # if filename is given, use filename then look at stdio if theres something there
         if not stdin:
@@ -223,23 +233,12 @@ def putarchive(args, print_results=True):
         location = writer.get_location()
         sha256hash = writer.get_hash()
         if BOOKKEEPING:
-            file_attrs = {
-                'region':region,
-                'vault':vault,
-                'filename':filename,
+            file_attrs.update({
                 'archive_id': archive_id,
                 'location':location,
-                'description':description,
-                'date':'%s' % datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
-                'hash':sha256hash
-            }
-
-            if args.name:
-                file_attrs['filename'] = args.name
-            elif stdin:
-                file_attrs['filename'] = description
-
-            domain.put_attributes(file_attrs['filename'], file_attrs)
+                'hash':sha256hash,
+            })
+            domain.put_attributes(archive_id, file_attrs)
 
         print "Created archive with ID: ", archive_id
         print "Archive SHA256 hash: ", sha256hash
@@ -436,8 +435,8 @@ def inventory(args, print_results=True):
     region = args.region
     vault = args.vault
     force = args.force
-    BOOKKEEPING= args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
+    BOOKKEEPING = args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
@@ -452,7 +451,7 @@ def inventory(args, print_results=True):
                 d = dateutil.parser.parse(job['CompletionDate']).replace(tzinfo=pytz.utc)
                 job['inventory_date'] = d
                 inventory_retrievals_done += [job]
-
+        
         if len(inventory_retrievals_done):
             list.sort(inventory_retrievals_done,
                       key=lambda i: i['inventory_date'], reverse=True)
@@ -464,7 +463,7 @@ def inventory(args, print_results=True):
             if BOOKKEEPING:
                 sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
                                             aws_secret_access_key=args.aws_secret_key)
-                domain_name = BOOKKEEPING_DOMAIN_NAME
+                domain_name = BOOKKEEPING_DOMAIN_NAME + "-inventory"
                 try:
                     domain = sdb_conn.get_domain(domain_name, validate=True)
                 except boto.exception.SDBResponseError:
@@ -472,15 +471,41 @@ def inventory(args, print_results=True):
 
                 d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
                 item = domain.put_attributes("%s" % (d,), inventory)
-
+                
+                # Let's update the cache index while we're at it
+                domain_name = BOOKKEEPING_DOMAIN_NAME
+                try:
+                    domain = sdb_conn.get_domain(domain_name, validate=True)
+                except boto.exception.SDBResponseError:
+                    domain = sdb_conn.create_domain(domain_name)
+                
+                query = 'select * from `%s` where region="%s" and vault="%s"' % (BOOKKEEPING_DOMAIN_NAME, region, vault)                
+                items = domain.select(query)
+                for item in items:
+                    domain.delete_item(item)
+                
+                archive_list = inventory['ArchiveList']
+                for archive in archive_list:
+                    description_vals = json.loads(archive['ArchiveDescription'])
+                    archive_id = archive['ArchiveId']
+                    file_attrs = {
+                        "archive_id":archive_id,
+                        "date":archive['CreationDate'],
+                        "hash":archive['SHA256TreeHash'],
+                        "size":archive['Size'],
+                    }
+                    file_attrs.update(description_vals)
+                    domain.put_attributes(archive['ArchiveId'], file_attrs)
+                    
             if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
                 gv.retrieve_inventory(format="JSON")
             
-            if print_results:
-                render_inventory(inventory)
-            return inventory
+            render_inventory(inventory)
         else:
-            job = gv.retrieve_inventory(format="JSON")
+            if not len(gv.job_list):
+                job = gv.retrieve_inventory(format="JSON")
+            else:
+                print "Inventory retrieval for this vault is already in progress. If you want to start it anyway, pass in the --force option."
     except Exception, e:
         print "Exception: ", e
         return json.loads(e[1])['message']
