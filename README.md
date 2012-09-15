@@ -1,84 +1,211 @@
 Amazon Glacier CLI
 ==================
 
-Command line interface for Amazon Glacier
------------------------------------------
+Command line interface for Amazon Glacier. Allows managing vaults, uploading
+and downloading archives and bookkeeping of created archives.
 
-Required libraries are `glaciercorecalls` (temporarily, while we wait for glacier 
-support to land in boto's develop branch) and `boto` - at the moment you still 
-need to use development branch of `boto` (which you can get by
- running `pip install --upgrade git+https://github.com/boto/boto.git`).
+Installation:
+-------------
 
-Use of `virtualenv` is recommended:
-
-    virtualenv --no-site-packages --python=python2.7 amazon-glacier-cmd-interface
-    python setup.py develop
-    glacier command [args]
-
-Otherwise you can install simply by executing:
+Required libraries are glaciercorecalls (temporarily, while we wait for glacier 
+support to land in boto's develop branch) and boto - at the moment you still 
+need to use development branch of boto.
 
     >>> python setup.py install
+    >>> glacier [args] 
 
-To run:
-    
+Development:
+------------
+
+Currently use of `virtualenv` is recommended, but we will migrate to buildout shortly:
+
+    >>> virtualenv --no-site-packages --python=python2.7 amazon-glacier-cmd-interface
+    >>> cd amazon-glacier-cmd-interface && source bin/activate
+    >>> python setup.py develop
     >>> glacier command [args]
 
-There are a couple of options on how to pass in the credentials. One is to set 
-`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` by exporting environment
- variables using `export AWS_ACCESS_KEY_ID=key` and 
- `export AWS_SECRET_ACCESS_KEY=key` (if you're using `boto` already you're 
- good to go).
+Usage:
+------
 
-While you can pass in your AWS Access and Secret key (`--aws-access-key` and
- `--aws-secret-key`) it is recommended that you create `glacier_settings.py`
- with `AWS_ACCESS_KEY` and `AWS_SECRET_KEY` in it if you're not using 
- environment variables.
+There are a couple of ways to pass in settings. While you can pass in everything
+on command line you can also cretate config file `.glacier` in your home folder
+or in folder where you run glacier(current working directory). To speciffy speciall
+location of your config file use `-c` option on command line.
 
-You can also put `REGION` into `glacier_settings.py` to specify the default region 
-on which you will operate (default is `us-east-1`). When you want to operate on 
-a non-default region you can pass in the `--region` settings to the commands.
-You can also specify this setting by exporting `export GLACIER_DEFAULT_REGION=region`.
+Here is an example configuration:
 
-It is recommended that you enable `BOOKKEEPING` in `glacier_settings.py` to allow
-for saving cache information into Amazon SimpleDB database. Again you can also
-export `GLACIER_BOOKKEEPING` and `GLACIER_BOOKKEEPING_DOMAIN_NAME` as environemnt
-variables.
+    [aws]
+    access_key=your_access_key
+    secret_key=your_secret_key
+
+    [glacier]
+    region=us-east-1
+    bookkeeping=True
+    bookkeeping-domain-name=your_simple_db_domain_name
+
+You can also pass in all these options as environemnt variables:
+
+    $ aws_access_key=your_access_key aws_secret_key=your_secret_key region=us-east-1 bookkeeping=True bookkeeping-domain-name=your_simple_db_domain_name glacier [args]
+
+It doesn't matter if option names are upper-case or lower-case or if they have 
+`aws_` in string. Currently only section names must be lower-case.
+
+We created a special feature called bookkeeping, where we keep a cache of all uploaded
+archive and their names, hashes, sizes and similar meta-data in an Amazon SimpleDB.
+This is still work in progress and can be enabled by setting bookkeeping to True.
+Some commands like search require bookkeeping to be enabled. You will also have
+to set bookkeeping-domain-name:
+
+    $ TODO: example here
+
+To list your vault contents use `lsvault`, to create vault use `mkvault` and to
+remove use `rmvault` obvious:
+
+    $ glacier mkvault Test
+    201 Created
+    /487528549940/vaults/Test
+
+    $ glacier lsvault
+    200 OK
+    +------------+----------------------------------------------------+--------------------------+----------+
+    | Vault name |                        ARN                         |         Created          |   Size   |
+    +------------+----------------------------------------------------+--------------------------+----------+
+    |    Test    | arn:aws:glacier:us-east-1:771747372727:vaults/Test | 2012-08-30T03:26:05.507Z | 56932337 |
+    +------------+----------------------------------------------------+--------------------------+----------+
+
+    $ glacier rmvault Test
+    204 No Content
+    +------------------+-------------------------------------------------+
+    |      Header      |                      Value                      |
+    +------------------+-------------------------------------------------+
+    | x-amzn-requestid | 5Ckitc3kUKC30UWrflkKNLK_hJFm1c_Y7lm4ZG2MAkcInI8 |
+    |       date       |          Wed, 12 Sep 2012 05:51:00 GMT          |
+    +------------------+-------------------------------------------------+
+
+
+You can list active jobs by using `listjobs`:
+
+    $ glacier listjobs Test
+    200 OK
+    +--------------------+------------+-----------+--------------------------+----------------------------------------------------+----------------------------------------------------------------------------------------------+
+    |       Action       | Archive ID |   Status  |        Initiated         |                      VaultARN                      |                                            Job ID                                            |
+    +--------------------+------------+-----------+--------------------------+----------------------------------------------------+----------------------------------------------------------------------------------------------+
+    | InventoryRetrieval |    None    | Succeeded | 2012-09-12T01:03:13.991Z | arn:aws:glacier:us-east-1:771747372727:vaults/Test | tOMuoC8Y0B9S867fZsczjZBUS02mnELuS1-WqTY_SCCnNPWQg85YRI3GoJe6eObGuPEBdRz6BeXb35PQWBokHBhPqZ0X |
+    | InventoryRetrieval |    None    | Succeeded | 2012-09-11T06:37:22.950Z | arn:aws:glacier:us-east-1:771747372727:vaults/Test | TK27LnflXEXN9ACn-ShfvQXHnJxFRVWnwnPiR-2d0eyePFHs_xrFRkAq1TEgxzM1oWo06tTUPbtGCnHmiL7Hon9anlik |
+    +--------------------+------------+-----------+--------------------------+----------------------------------------------------+----------------------------------------------------------------------------------------------+
+
+
+To upload archive use `upload`. You can upload data from file or data from
+stdin. To upload from file:
+
+    $ glacier upload Test /path/SomeFile "The file description"
+    Created archive with ID: EQocIYw9ZmofbWixjD2oKb8faeIg4D1uSi1PxpdyBVy__lDMCWcmXLIzNKBP4ikPH3Ngn4w8ApqCMN7XJqNL7V4sxRzq42Zu74DctpLG9GSPSNjLc1_vorGVk3YqVEdjd2cqnWTdiA
+    Archive SHA256 hash: e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0
+
+You can compare the SHA256 returned by AWS with the locally computed one to
+make sure the upload was successful:
+
+    $ shasum -a 256 SomeFile
+    e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0  SomeFile
+
+If you are uploading a temp file with a meaningless name, or using --stdin, you
+can use the --name option to tell glacier to ignore the filename and use the
+given name when it creates the bookkeeping entry:
+
+    $ glacier upload --name /path/BetterName Test /tmp/temp.tQ6948 "Some description"
+
+To upload from stdin:
+
+    $ TODO: example for using --stdin
 
 You have two options to retrieve an archive - first one is `download`, 
-second one is `getarchive`.
+second one is `getarchive`
 
 If you use `download`, you will have to uniquely identify the file either by 
 its file name, its description, or limit the search by region and vault. 
 If that is not enough you should use `getarchive` and specify the archive ID of
-the archive you want to retrieve.
+the archive you want to retrieve:
 
-Positional arguments:  
+    $ TODO: example here
 
-	lsvault	[--region REGION]										List vaults
-	mkvault	[--region REGION] vault									Create a new vault
-	rmvault	[--region REGION] vault									Remove vault
-	listjobs [--region REGION] vault								List jobs
-	describejob [--region REGION] vault jobid						Describe job
-	upload [--region REGION] vault filename [description ...]		Upload an archive
-	download [--region REGION] filename								Only if BOOKKEEPING is enabled: Download an archive by searching through SimpleDB cache. Result must be unique (one archive) - if not, specify --region, --vault, or use getarchive to specify archive ID of the archive you want to download. 
-			 [--vault VAULT]										
-			 [--out-file OUT_FILE]									If you pass in --out-file parameter, output will be downloaded into out_file. Otherwise it will be outputted straight into command line (stdout).
-	getarchive [--region REGION] vault archive [filename]			Download an archive. Specify filename if you want it to output to file, other it will dump plain output into command line.
-	rmarchive [--region REGION] vault archive						Remove archive
-	inventory [--region REGION] vault								List inventar of a vault
-			  [--force]												Use --force to force a new inventory retrieval operation regardless of when the last retrieval was done.
-	search [--region REGION] [--vault VAULT] search_term			If BOOKKEEPING is enabled, search through SimpleDB for search_term
-  
-Optional arguments:  
-  
-	--aws-access-key AWS_ACCESS_KEY
-                      Required if you haven't created glacier_settings.py
-                      file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. Command
-                      line keys will override keys set in
-                      glacier_settings.py.
-	--aws-secret-key AWS_SECRET_KEY
-                      Required if you haven't created glacier_settings.py
-                      file with AWS_ACCESS_KEY and AWS_SECRET_KEY in it. Command
-                      line keys will override keys set in
-                      glacier_settings.py.
+To remove uploaded archive use `rmarchive`. You can currently delete only by
+archive id:
 
+    $ TODO: example here
+
+To search for uploaded arhives in your cache use `search`. This requires bookkeeping
+enabled:
+
+    $ TODO: example here
+
+To list the inventory of a vault use `inventory`:
+
+    $ glacier inventory Test
+    Inventory of vault arn:aws:glacier:us-east-1:771747372727:vaults/Test
+    Inventory Date: 2012-09-11T22:03:37Z
+    
+    Content:
+    +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
+    |             Archive Description             |       Uploaded       |   Size   |                                                                 Archive ID                                                                 |                           SHA256 hash                            |
+    +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
+    |                 DSC01600.xcf                | 2012-08-31T03:49:34Z | 38679745 | riTD8lqS96TvEwrqMy79jziF-l0vc_jbhYeCli1qtCAEH4IfzvvIU96VSiSOIytGRKJfw8Pf0SRk5i1ruxIIZuyfH7W7jTEW_h-Zd5Ho6aveZdfW8JfoYXXMRz6Dn_Yg0FsgYCLGQw | cb7ca5b0fa02af0180e0c172489c2f40f3469db2dfc86ae41e713b7bacea68e7 |
+    |                     2016                    | 2012-09-10T05:09:20Z |  250178  | JZ8Xsys9LnN0djnOaC-5YNQYoKnd2jL0eLp8H3SlMexls0tqLdlvZQGnS56Q3Hb3ahsle7XNKQv5ouZjY2fOu9gI6BRErK8gKHAKxlFtdIeGFD6w_KVElczfehJV4XJIz8zCtGcjsg | d8f50c77cdef296ae57b0a3386e3f3d73435c94f5e6d320d5426bd1b239397d4 |
+    +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
+
+Usage description(help):
+
+    positional arguments:
+    {lsvault,mkvault,rmvault,listjobs,describejob,upload,getarchive,rmarchive,search,inventory,download}
+        lsvault             List vaults
+        mkvault             Create a new vault
+        rmvault             Remove vault
+        listjobs            List jobs
+        describejob         Describe job
+        upload              Upload an archive
+        getarchive          Get a file by explicitly setting archive id
+        rmarchive           Remove archive
+        search              Search SimpleDB database (if it was created)
+        inventory           List inventory of a vault
+        download            Download a file by searching through SimpleDB cache
+                            for it.
+
+    optional arguments:
+    -h, --help            show this help message and exit
+    -c FILE, --conf FILE  Specify config file
+
+    aws:
+    --aws-access-key AWS_ACCESS_KEY
+                            Your aws access key (Required if you haven't created
+                            .glacier config file)
+    --aws-secret-key AWS_SECRET_KEY
+                            Your aws secret key (Required if you haven't created
+                            .glacier config file)
+
+    glacier:
+    --region REGION       Region where glacier should take action (Required if
+                            you haven't created .glacier config file)
+    --bookkeeping         Should we keep book of all creatated archives. This
+                            requires a SimpleDB account and it's bookkeeping
+                            domain name set
+    --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
+                            SimpleDB domain name for bookkeeping.
+
+TODO:
+-----
+
+- Integrate with boto
+- Support for output status codes
+- Migrate documentation to sphinx
+- Documentation examples of output from speciffic commands
+- Description for command line arguments
+- Tests
+
+Changelog:
+----------
+
+    TODO
+
+License:
+--------
+
+MIT License
