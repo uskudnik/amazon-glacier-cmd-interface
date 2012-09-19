@@ -138,6 +138,9 @@ class GlacierVault(object):
     def delete_vault(self):
         return self.make_request("DELETE", extra_path=None)
 
+    def describe_vault(self):
+        return self.make_request("GET", extra_path=None)
+
     def delete_archive(self, archive_id):
         return self.make_request("DELETE", extra_path="/archives/%s" % (archive_id, ))
 

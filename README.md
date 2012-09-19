@@ -160,6 +160,17 @@ To list the inventory of a vault use `inventory`:
     |                     2016                    | 2012-09-10T05:09:20Z |  250178  | JZ8Xsys9LnN0djnOaC-5YNQYoKnd2jL0eLp8H3SlMexls0tqLdlvZQGnS56Q3Hb3ahsle7XNKQv5ouZjY2fOu9gI6BRErK8gKHAKxlFtdIeGFD6w_KVElczfehJV4XJIz8zCtGcjsg | d8f50c77cdef296ae57b0a3386e3f3d73435c94f5e6d320d5426bd1b239397d4 |
     +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
 
+To describe a vault use `describevault`. It shows the time of the last inventory among other things:
+
+    $ glacier describevault Test
+    200 OK
+    +--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+    |      LastInventory       | Archives |   Size   |                        ARN                         |         Created          |
+    +--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+    | 2012-09-14T20:14:31.609Z |    19    | 44056372 | arn:aws:glacier:us-east-1:771548372826:vaults/Test | 2012-08-30T03:26:05.507Z |
+    +--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+
+
 Usage description(help):
 
     positional arguments:
@@ -176,6 +187,7 @@ Usage description(help):
         inventory           List inventory of a vault
         download            Download a file by searching through SimpleDB cache
                             for it.
+        describevault       Describe a vault
 
     optional arguments:
     -h, --help            show this help message and exit

@@ -46,6 +46,11 @@ MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
 READ_PART_SIZE= glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
 
+def progress(msg):
+    # TODO: Don't show progress unless we're in a terminal
+    print msg,
+    sys.stdout.flush()
+
 def check_vault_name(name):
     m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
     if len(name) > 255:
@@ -127,6 +132,21 @@ def rmvault(args):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
         parse_response(response)
 
+def describevault(args):
+    vault_name = args.vault
+    region = args.region
+
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+
+    if check_vault_name(vault_name):
+        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).describe_vault()
+        parse_response(response)
+        jdata = json.loads(response.read())
+        table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
+        table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
+                      jdata['SizeInBytes'], jdata['VaultARN'], jdata['CreationDate']])
+        print table
+
 def listjobs(args):
     vault_name = args.vault
     region = args.region
@@ -205,7 +225,9 @@ def putarchive(args):
         #Read file in chunks so we don't fill whole memory
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
             writer.write(part)
+            progress('\rWrote %d bytes.' % (writer.uploaded_size))
         writer.close()
+        progress('\n')
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
@@ -601,6 +623,11 @@ def main():
                                  help="Create a new inventory job")
     parser_inventory.add_argument('vault')
     parser_inventory.set_defaults(func=inventory)
+
+    parser_describevault = subparsers.add_parser('describevault', help='Describe vault')
+    parser_describevault.add_argument('vault')
+    parser_describevault.set_defaults(func=describevault)
+
 
     # bookkeeping required
     parser_download = subparsers.add_parser('download',
