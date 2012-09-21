@@ -141,8 +141,17 @@ class GlacierVault(object):
     def describe_vault(self):
         return self.make_request("GET", extra_path=None)
 
+    def list_multipart_uploads(self):
+        return self.make_request("GET", extra_path="/multipart-uploads")
+
+    def list_parts(self, multipart_id):
+        return self.make_request("GET", extra_path="/multipart-uploads/%s" % (multipart_id, ))
+
     def delete_archive(self, archive_id):
         return self.make_request("DELETE", extra_path="/archives/%s" % (archive_id, ))
+
+    def abort_multipart(self, multipart_id):
+        return self.make_request("DELETE", extra_path="/multipart-uploads/%s" % (multipart_id, ))
 
 
 class GlacierJob(object):

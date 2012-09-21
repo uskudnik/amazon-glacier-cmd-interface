@@ -37,6 +37,7 @@ import json
 import datetime
 import dateutil.parser
 import pytz
+import locale
 from prettytable import PrettyTable
 
 import boto
@@ -44,12 +45,13 @@ import glaciercorecalls
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-READ_PART_SIZE= glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
+READ_PART_SIZE = 4 * 1024 * 1024 # Using a smaller size to see upload progress
+locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
 
 def progress(msg):
-    # TODO: Don't show progress unless we're in a terminal
-    print msg,
-    sys.stdout.flush()
+    if sys.stdout.isatty():
+        print msg,
+        sys.stdout.flush()
 
 def check_vault_name(name):
     m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
@@ -147,6 +149,34 @@ def describevault(args):
                       jdata['SizeInBytes'], jdata['VaultARN'], jdata['CreationDate']])
         print table
 
+def listmultiparts(args):
+    vault_name = args.vault
+    region = args.region
+
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+
+    if check_vault_name(vault_name):
+        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).list_multipart_uploads()
+        parse_response(response)
+        jdata = json.loads(response.read())
+        print "Marker: ", jdata['Marker']
+        if len(jdata['UploadsList']) > 0:
+            headers = sorted(jdata['UploadsList'][0].keys())
+            table = PrettyTable(headers)
+            for entry in jdata['UploadsList']:
+                table.add_row([ entry[k] for k in headers ])
+            print table
+
+def abortmultipart(args):
+    vault_name = args.vault
+    region = args.region
+
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+
+    if check_vault_name(vault_name):
+        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).abort_multipart(args.uploadId)
+        parse_response(response)
+
 def listjobs(args):
     vault_name = args.vault
     region = args.region
@@ -207,7 +237,7 @@ def putarchive(args):
 
     if check_description(description):
         reader = None
-        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
+        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description, part_size=READ_PART_SIZE)
 
         # if filename is given, use filename then look at stdio if theres something there
         if not stdin:
@@ -225,7 +255,8 @@ def putarchive(args):
         #Read file in chunks so we don't fill whole memory
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
             writer.write(part)
-            progress('\rWrote %d bytes.' % (writer.uploaded_size))
+            progress('\rWrote %s bytes.' %
+                     (locale.format('%d', writer.uploaded_size, grouping=True)))
         writer.close()
         progress('\n')
 
@@ -627,6 +658,15 @@ def main():
     parser_describevault = subparsers.add_parser('describevault', help='Describe vault')
     parser_describevault.add_argument('vault')
     parser_describevault.set_defaults(func=describevault)
+
+    parser_listmultiparts = subparsers.add_parser('listmultiparts', help='List multipart uploads')
+    parser_listmultiparts.add_argument('vault')
+    parser_listmultiparts.set_defaults(func=listmultiparts)
+
+    parser_abortmultipart = subparsers.add_parser('abortmultipart', help='Abort multipart upload')
+    parser_abortmultipart.add_argument('vault')
+    parser_abortmultipart.add_argument('uploadId')
+    parser_abortmultipart.set_defaults(func=abortmultipart)
 
 
     # bookkeeping required
