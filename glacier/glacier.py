@@ -109,7 +109,7 @@ def lsvault(args):
         table.add_row([vault['VaultName'],
                        vault['VaultARN'],
                        vault['CreationDate'],
-                       vault['SizeInBytes']])
+                       locale.format('%d', vault['SizeInBytes'], grouping=True) ])
     table.sortby = "Vault name"
     print table
 
@@ -146,7 +146,8 @@ def describevault(args):
         jdata = json.loads(response.read())
         table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
         table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
-                      jdata['SizeInBytes'], jdata['VaultARN'], jdata['CreationDate']])
+                       locale.format('%d', jdata['SizeInBytes'], grouping=True),
+                       jdata['VaultARN'], jdata['CreationDate']])
         print table
 
 def listmultiparts(args):
@@ -164,7 +165,8 @@ def listmultiparts(args):
             headers = sorted(jdata['UploadsList'][0].keys())
             table = PrettyTable(headers)
             for entry in jdata['UploadsList']:
-                table.add_row([ entry[k] for k in headers ])
+                table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
+                               else entry[k] for k in headers ])
             print table
 
 def abortmultipart(args):
@@ -466,7 +468,7 @@ def render_inventory(inventory):
     for archive in inventory['ArchiveList']:
         table.add_row([archive['ArchiveDescription'],
                        archive['CreationDate'],
-                       archive['Size'],
+                       locale.format('%d', archive['Size'], grouping=True),
                        archive['ArchiveId'],
                        archive['SHA256TreeHash']])
     print table
