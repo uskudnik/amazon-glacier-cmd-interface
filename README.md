@@ -130,9 +130,16 @@ the archive you want to retrieve:
     $ TODO: example here
 
 To remove uploaded archive use `rmarchive`. You can currently delete only by
-archive id:
+archive id (notice the use of `--` when the archive ID starts with a dash):
 
-    $ TODO: example here
+    $ glacier rmarchive Test -- -6AKuLSU3wxtSqq_GeeAss9zLvto8Xr1su4mqmvluTTv4HcXbFJJNy0yiTu9tG5vFjrBXvmQKXGwFJpNMghqYBerUKpsjq56mrzv1wUbe6DWuzl6Ntb8WSQHYo0kzw8rcLaVx5MFug
+    204 No Content
+    +------------------+-------------------------------------------------+
+    |      Header      |                      Value                      |
+    +------------------+-------------------------------------------------+
+    | x-amzn-requestid | 1-UC36MM2ZxNwdf-Q2yyT0f7j5KVJ1neGwf-FzsU2H6YDyo |
+    |       date       |          Fri, 14 Sep 2012 02:48:46 GMT          |
+    +------------------+-------------------------------------------------+
 
 To search for uploaded arhives in your cache use `search`. This requires bookkeeping
 enabled:
@@ -144,7 +151,7 @@ To list the inventory of a vault use `inventory`:
     $ glacier inventory Test
     Inventory of vault arn:aws:glacier:us-east-1:771747372727:vaults/Test
     Inventory Date: 2012-09-11T22:03:37Z
-    
+
     Content:
     +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
     |             Archive Description             |       Uploaded       |   Size   |                                                                 Archive ID                                                                 |                           SHA256 hash                            |
@@ -153,10 +160,35 @@ To list the inventory of a vault use `inventory`:
     |                     2016                    | 2012-09-10T05:09:20Z |  250178  | JZ8Xsys9LnN0djnOaC-5YNQYoKnd2jL0eLp8H3SlMexls0tqLdlvZQGnS56Q3Hb3ahsle7XNKQv5ouZjY2fOu9gI6BRErK8gKHAKxlFtdIeGFD6w_KVElczfehJV4XJIz8zCtGcjsg | d8f50c77cdef296ae57b0a3386e3f3d73435c94f5e6d320d5426bd1b239397d4 |
     +---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
 
+To describe a vault use `describevault`. It shows the time of the last inventory among other things:
+
+    $ glacier describevault Test
+    200 OK
+    +--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+    |      LastInventory       | Archives |   Size   |                        ARN                         |         Created          |
+    +--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+    | 2012-09-14T20:14:31.609Z |    19    | 44056372 | arn:aws:glacier:us-east-1:771747372727:vaults/Test | 2012-08-30T03:26:05.507Z |
+    +--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+
+To see the multipart uploads currently in progress, use `listmultiparts`:
+
+    $ glacier listmultiparts Test
+    200 OK
+    Marker:  None
+    +--------------------+--------------------------+----------------------------------------------------------------------------------------------+-----------------+----------------------------------------------------+
+    | ArchiveDescription |       CreationDate       |                                      MultipartUploadId                                       | PartSizeInBytes |                      VaultARN                      |
+    +--------------------+--------------------------+----------------------------------------------------------------------------------------------+-----------------+----------------------------------------------------+
+    |  fancyme.glacier   | 2012-09-20T04:29:21.485Z | D18RNXeq5ffV99PITXrHBvJOULDt15EJJl0eBD5GFD-pc76ptWCz0k9mrJy4W4oUu2fQ0ljWxiqDXIKGLZVIfFIexErC |     4194304     | arn:aws:glacier:us-east-1:771747372727:vaults/Test |
+    +--------------------+--------------------------+----------------------------------------------------------------------------------------------+-----------------+----------------------------------------------------+
+
+To abort one of the multipart uploads, use `abortmultipart` subcommand:
+
+    $ glacier abortmultipart Test D18RNXeq5ffV99PITXrHBvJOULDt15EJJl0eBD5GFD-pc76ptWCz0k9mrJy4W4oUu2fQ0ljWxiqDXIKGLZVIfFIexErC
+
+
 Usage description(help):
 
-    positional arguments:
-    {lsvault,mkvault,rmvault,listjobs,describejob,upload,getarchive,rmarchive,search,inventory,download}
+    positional arguments (subcommands):
         lsvault             List vaults
         mkvault             Create a new vault
         rmvault             Remove vault
@@ -169,6 +201,9 @@ Usage description(help):
         inventory           List inventory of a vault
         download            Download a file by searching through SimpleDB cache
                             for it.
+        describevault       Describe a vault
+        listmultipart       List multipart uploads currently in progress
+        abortmultipart      Abort one of the multipart uploads currently in progress
 
     optional arguments:
     -h, --help            show this help message and exit
