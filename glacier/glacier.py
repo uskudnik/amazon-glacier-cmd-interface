@@ -548,7 +548,7 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter,
                                 add_help=False)
 
-    conf_parser.add_argument("-c", "--conf", default=".glacier",
+    conf_parser.add_argument("-c", "--conf", default=".glacier-cmd",
                         help="Specify config file", metavar="FILE")
     args, remaining_argv = conf_parser.parse_known_args()
 
@@ -557,7 +557,7 @@ def main():
     aws = glacier = {}
     config = ConfigParser.SafeConfigParser()
     if config.read(['/etc/glacier-cmd.conf',
-                    os.path.expanduser('~/.glacier'),
+                    os.path.expanduser('~/.glacier-cmd'),
                     args.conf]):
         try:
             aws = dict(config.items("aws"))
@@ -588,7 +588,7 @@ def main():
                                        help=u"For subcommand help, use: glacier <subcommand> -h")
 
     group = parser.add_argument_group('aws')
-    help_msg_config = u"(Required if you haven't created .glacier or /etc/glacier-cmd.conf config file)"
+    help_msg_config = u"(Required if you haven't created .glacier-cmd or /etc/glacier-cmd.conf config file)"
     group.add_argument('--aws-access-key',
                         required= a_required("aws-access-key"),
                         default= a_default("aws-access-key"),

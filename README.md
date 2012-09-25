@@ -1,6 +1,9 @@
 **Glacier command line utility was renamed from `glacier` to `glacier-cmd`,   
 because of inconsistencies with boto.**
 
+**Renamed configuration file from `.glacier` to `.glacier-cmd` to reflect new
+name of this utility.** 
+
 **For everybody having problems with install, don't forget to install git**
 
 Amazon Glacier CLI
@@ -36,7 +39,7 @@ Usage:
 ------
 
 There are a couple of ways to pass in settings. While you can pass in everything
-on command line you can also create a config file `.glacier` in your home folder
+on command line you can also create a config file `.glacier-cmd` in your home folder
 or in folder where you run glacier (current working directory) or a global
 configuration file called `/etc/glacier-cmd.conf`. To specify special
 location of your config file use `-c` option on command line.
@@ -221,14 +224,14 @@ Usage description(help):
     aws:
     --aws-access-key AWS_ACCESS_KEY
                             Your aws access key (Required if you haven't created
-                            .glacier or /etc/glacier-cmd.conf config file)
+                            .glacier-cmd or /etc/glacier-cmd.conf config file)
     --aws-secret-key AWS_SECRET_KEY
                             Your aws secret key (Required if you haven't created
-                            .glacier or /etc/glacier-cmd.conf config file)
+                            .glacier-cmd or /etc/glacier-cmd.conf config file)
 
     glacier:
     --region REGION       Region where glacier should take action (Required if
-                            you haven't created .glacier config or 
+                            you haven't created .glacier-cmd config or 
                             /etc/glacier-cmd.conf file)
     --bookkeeping         Should we keep book of all created archives. This
                             requires a SimpleDB account and it's bookkeeping
