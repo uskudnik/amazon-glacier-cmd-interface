@@ -45,7 +45,7 @@ import glaciercorecalls
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-READ_PART_SIZE = 4 * 1024 * 1024 # Using a smaller size to see upload progress
+READ_PART_SIZE = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
 locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
 
 def progress(msg):
@@ -239,7 +239,7 @@ def putarchive(args):
 
     if check_description(description):
         reader = None
-        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description, part_size=READ_PART_SIZE)
+        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
 
         # if filename is given, use filename then look at stdio if theres something there
         if not stdin:
@@ -260,7 +260,7 @@ def putarchive(args):
             progress('\rWrote %s bytes.' %
                      (locale.format('%d', writer.uploaded_size, grouping=True)))
         writer.close()
-        progress('\n')
+        progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
