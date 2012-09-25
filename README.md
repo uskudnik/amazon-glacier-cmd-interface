@@ -1,3 +1,8 @@
+**Glacier command line utility was renamed from `glacier` to `glacier-cmd`,   
+because of inconsistencies with boto.**
+
+**For everybody having problems with install, don't forget to install git**
+
 Amazon Glacier CLI
 ==================
 
@@ -10,6 +15,9 @@ Installation:
 Required libraries are glaciercorecalls (temporarily, while we wait for glacier 
 support to land in boto's develop branch) and boto - at the moment you still 
 need to use development branch of boto.
+
+You also need to install GIT, with something like `apt-get install git`, 
+because boto sources are downloaded from repository.
 
     >>> python setup.py install
     >>> glacier [args] 
