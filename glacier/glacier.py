@@ -242,9 +242,11 @@ def putarchive(args):
         writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
 
         # if filename is given, use filename then look at stdio if theres something there
+        total_size = 0
         if not stdin:
             try:
                 reader = open(filename, 'rb')
+                total_size = os.path.getsize(filename)
             except IOError:
                 print "Couldn't access the file given."
                 return False
@@ -257,10 +259,22 @@ def putarchive(args):
         #Read file in chunks so we don't fill whole memory
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
             writer.write(part)
-            progress('\rWrote %s bytes.' %
-                     (locale.format('%d', writer.uploaded_size, grouping=True)))
+            if total_size > 0:
+                progress('\rWrote %s of %s bytes (%s%%).' %
+                         (locale.format('%d', writer.uploaded_size, grouping=True),
+                          locale.format('%d', total_size, grouping=True),
+                          int(100 * writer.uploaded_size/total_size)))
+            else:
+                progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
+
         writer.close()
-        progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
+        if total_size > 0:
+            progress('\rWrote %s of %s bytes (%s%%).' %
+                     (locale.format('%d', writer.uploaded_size, grouping=True),
+                      locale.format('%d', total_size, grouping=True),
+                      int(100 * writer.uploaded_size/total_size)))
+        else:
+            progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
