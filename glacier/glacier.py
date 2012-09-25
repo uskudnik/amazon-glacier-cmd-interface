@@ -245,6 +245,7 @@ def putarchive(args):
         if not stdin:
             try:
                 reader = open(filename, 'rb')
+                total_size = os.path.getsize(filename)
             except IOError:
                 print "Couldn't access the file given."
                 return False
@@ -257,10 +258,27 @@ def putarchive(args):
         #Read file in chunks so we don't fill whole memory
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
             writer.write(part)
-            progress('\rWrote %s bytes.' %
-                     (locale.format('%d', writer.uploaded_size, grouping=True)))
+            if total_size > 0:
+                progress('\rWrote %s of %s bytes (%s%%).' %
+                        (locale.format('%d', writer.uploaded_size, grouping=True),
+                        locale.format('%d', total_size, grouping=True),
+                        int(100 * writer.uploaded_size/total_size)))
+            else:
+                progress('\rWrote %s bytes.\n' %
+                    (locale.format('%d', writer.uploaded_size, grouping=True)))
+
         writer.close()
-        progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
+        if total_size > 0:
+            progress('\rWrote %s of %s bytes (%s%%).' %
+                    (locale.format('%d', writer.uploaded_size, grouping=True),
+                    locale.format('%d', total_size, grouping=True),
+                    int(100 * writer.uploaded_size/total_size)))
+        else:
+            progress('\rWrote %s bytes.\n' %
+                (locale.format('%d', writer.uploaded_size, grouping=True)))
+
+        # Additional new line on output
+        print
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
@@ -285,7 +303,7 @@ def putarchive(args):
             domain.put_attributes(file_attrs['filename'], file_attrs)
 
         print "Created archive with ID: ", archive_id
-        print "Archive SHA256 hash: ", sha256hash
+        print "Archive SHA256 tree hash: ", sha256hash
 
 def getarchive(args):
     region = args.region
