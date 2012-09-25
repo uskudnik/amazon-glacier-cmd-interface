@@ -553,10 +553,12 @@ def main():
     args, remaining_argv = conf_parser.parse_known_args()
 
     # Here we parse config from files in home folder or in current folder
-    # We use separate sections for aws and glacier speciffic configs
+    # We use separate sections for aws and glacier specific configs
     aws = glacier = {}
     config = ConfigParser.SafeConfigParser()
-    if config.read([args.conf, os.path.expanduser('~/.glacier')]):
+    if config.read(['/etc/glacier-cmd.conf',
+                    os.path.expanduser('~/.glacier'),
+                    args.conf]):
         try:
             aws = dict(config.items("aws"))
         except ConfigParser.NoSectionError:
@@ -586,7 +588,7 @@ def main():
                                        help=u"For subcommand help, use: glacier <subcommand> -h")
 
     group = parser.add_argument_group('aws')
-    help_msg_config = u"(Required if you haven't created .glacier config file)"
+    help_msg_config = u"(Required if you haven't created .glacier or /etc/glacier-cmd.conf config file)"
     group.add_argument('--aws-access-key',
                         required= a_required("aws-access-key"),
                         default= a_default("aws-access-key"),
@@ -604,7 +606,7 @@ def main():
                         required= False,
                         default= default("bookkeeping") and True,
                         action= "store_true",
-                        help="Should we keep book of all creatated archives.\
+                        help="Should we keep book of all created archives.\
                               This requires a SimpleDB account and it's \
                               bookkeeping domain name set")
     group.add_argument('--bookkeeping-domain-name',
