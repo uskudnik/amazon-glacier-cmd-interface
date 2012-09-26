@@ -1,15 +1,67 @@
+# -*- coding: utf-8 -*-
+"""
+.. module:: GlacierWrapper
+   :platform: Unix, Windows
+   :synopsis: Wrapper for glacier, with amazon sdb support and other features
+"""
+
 import json
 import pytz
 import re
+import logging
 import boto
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
-from datetime.datetime import utcnow
+from datetime import datetime
+from pprint import pformat
 
 from glaciercorecalls import GlacierConnection, GlacierWriter
 from glaciercorecalls import GlacierVault, GlacierJob
 from chain_exception import CausedException
+
+class log_class_call(object):
+    """
+    Decorator that logs class call to speciffic function
+    """
+
+    def __init__(self, enter, exit, getter=None):
+        """
+        Decorator constructor
+
+        :param enter: Message to display on class enter
+        :type enter: str
+        :param exit: Message to display on class exit
+        :type exit: str
+        """
+        self.enter = enter
+        self.exit = exit
+        self.getter = getter
+
+    def __call__(self, fn):
+        def wrapper(*args, **kwargs):
+            that= args[0]
+
+            that.logger.info(self.enter)
+            ret= fn(*args,**kwargs)
+            that.logger.info(self.exit)
+            if self.getter:
+                that.logger.info(pformat(self.getter(ret)))
+            else:
+                that.logger.info(pformat(ret))
+
+            return ret
+
+        wrapper.func_name = fn.func_name
+        if hasattr(fn, '__name__'):
+            wrapper.__name__ = self.name = fn.__name__
+        if hasattr(fn, '__doc__'):
+            wrapper.__doc__ = fn.__doc__
+        if hasattr(fn, '__module__'):
+            wrapper.__module__ = fn.__module__
+
+        return wrapper
+
 
 class GlacierWrapper(object):
     """
@@ -60,15 +112,8 @@ class GlacierWrapper(object):
         with external library like boto
         """
 
-        VaultListError= 1
-        VaultCreateError= 2
-        JobListError= 3
-        ArchiveRetriveError= 4
-        ArchiveDeleteError= 5
-        InvertoryRetriveError= 6
-        SdbReadError= 7
-        SdbWriteError= 8
-        SdbDomainCreationError= 9
+        SdbReadError= 8
+        SdbWriteError= 9
 
         def __init__(self, message, code=None, cause=None):
                 GlacierWrapper.GlacierWrapperException.__init__(self, message, code, cause)
@@ -99,8 +144,15 @@ class GlacierWrapper(object):
         def glacier_connect_wrap(*args, **kwargs):
             self= args[0]
 
-            if not self.glacier_conn:
+            if not hasattr(self,"glacierconn") or \
+                (hasattr(self,"glacierconn") and not self.glacierconn):
                 try:
+                    self.logger.debug("""Connecting to glacier with
+                                         aws_access_key %s
+                                         aws_secret_key %s
+                                         region %s""", self.aws_access_key,
+                                                       self.aws_access_key,
+                                                       self.region)
                     self.glacierconn = GlacierConnection(self.aws_access_key,
                                                          self.aws_secret_key,
                                                          region=self.region)
@@ -108,6 +160,7 @@ class GlacierWrapper(object):
                     raise GlacierWrapper.ConnectionException("Cannot connect to glacier",
                                                 code="GlacierConnectionError")
 
+                self.logger.debug("Sucesfully connected to glacier!")
             return func(*args, **kwargs)
         return glacier_connect_wrap
 
@@ -129,20 +182,20 @@ class GlacierWrapper(object):
 
             if not self.sdb_conn:
                 try:
+                    self.logger.debug("""Connecting to sdb with
+                                         aws_access_key %s
+                                         aws_secret_key %s""",
+                                                       self.aws_access_key,
+                                                       self.aws_access_key)
                     self.sdb_conn = boto.connect_sdb(aws_access_key_id=self.aws_access_key,
                                         aws_secret_access_key=self.aws_secret_key)
                     domain_name = self.bookkeeping_domain_name
                     self.sdb_domain = self.sdb_conn.get_domain(domain_name, validate=True)
-                except boto.exception.SDBResponseError as e:
-                    try:
-                        self.sdb_domain = self.sdb_conn.create_domain(domain_name)
-                    except boto.exception.SDBResponseError as e:
-                        raise GlacierWrapper.CommunicationException("Cannot create sdb domain",
-                                        cause=e, code="SdbDomainCreationError")
                 except boto.exception.AWSConnectionError as e:
                     raise GlacierWrapper.ConnectionException("Cannot connect to sdb",
                                         cause=e, code="SdbConnectionError")
 
+                self.debugger.log("Succesfully connected to sdb")
             return func(*args, **kwargs)
 
         return sdb_connect_wrap
@@ -212,6 +265,7 @@ class GlacierWrapper(object):
         return True
 
     @glacier_connect
+    @log_class_call("Listing vaults", "Listing vaults complete")
     def lsvault(self):
         """
         Lists vaults
@@ -225,18 +279,20 @@ class GlacierWrapper(object):
             response = self.glacierconn.list_vaults()
         except Exception, e:
             raise GlacierWrapper.CommunicationException("Problem listing vaults",
-                                        cause=e, code="VaultListError")
+                                                        cause=e)
 
         self._check_response(response)
         try:
             jdata = json.loads(response.read())
             vault_list = jdata['VaultList']
         except Exception, e:
-            raise GlacierWrapper.ResponseExceptiion
+            raise GlacierWrapper.ResponseExceptiion("Problem parsing vault list",
+                                                    cause=e)
 
         return vault_list
 
     @glacier_connect
+    @log_class_call("Creating vault", "Vault creation complete")
     def mkvault(self, vault_name):
         """
         Creates new vault
@@ -244,7 +300,7 @@ class GlacierWrapper(object):
         :param vault_name: Name of newly created vault
         :type vault_name: str
 
-        :returns: Location of newly created vault
+        :returns: Response data
                   TODO: Return value example
         :rtype: str
         """
@@ -254,15 +310,40 @@ class GlacierWrapper(object):
                 response = GlacierVault(self.glacierconn, vault_name).create_vault()
             except Exception, e:
                 raise GlacierWrapper.CommunicationException("Cannot create vault",
-                                        cause=e, code="VaultCreateError")
+                                                            cause=e)
             self._check_response(response)
 
-            return response.getheader("Location")
+            return response.getheaders()
 
     @glacier_connect
-    def listjobs(self, vault_name):
+    @log_class_call("Removing vault", "Vault creation complete")
+    def rmvault(self, vault_name):
         """
-        Lists glacier jobs
+        Creates new vault
+
+        :param vault_name: Name of newly created vault
+        :type vault_name: str
+
+        :returns: Response data
+                  TODO: Return value example
+        :rtype: str
+        """
+
+        if self._check_vault_name(vault_name):
+            try:
+                response = GlacierVault(self.glacierconn, vault_name).delete_vault()
+            except Exception, e:
+                raise GlacierWrapper.CommunicationException("Cannot create vault",
+                                                            cause=e)
+            self._check_response(response)
+
+            return response.getheaders()
+
+    @glacier_connect
+    @log_class_call("Describing vault", "Response from describe vault")
+    def describevault(self, vault_name):
+        """
+        Describes vault invertory
 
         :param vault_name: Name of vault
         :type vault_name: str
@@ -272,17 +353,48 @@ class GlacierWrapper(object):
         :rtype: json
         """
 
-        try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
-            response = gv.list_jobs()
-        except Exception, e:
-            raise GlacierWrapper.CommunicationException("Cannot list jobs",
-                                        cause=e, code="JobListError")
-        self._check_response(response)
+        if self._check_vault_name(vault_name):
+            try:
+                gv = GlacierVault(self.glacierconn, name=vault_name)
+                response = gv.describe_vault()
+            except Exception, e:
+                raise GlacierWrapper.CommunicationException("Cannot describe vault",
+                                                            cause=e)
+            self._check_response(response)
 
-        return gv.job_list
+            jdata = json.loads(response.read())
+            return jdata
 
     @glacier_connect
+    @log_class_call("Listing jobs", "Jobs listed")
+    def listjobs(self, vault_name):
+        if self._check_vault_name(vault_name):
+            try:
+                gv = GlacierVault(self.glacierconn, name=vault_name)
+                response = gv.list_jobs()
+            except Exception, e:
+                raise GlacierWrapper.CommunicationException("Cannot list jobs",
+                                                            cause=e)
+            self._check_response(response)
+
+            return (response.getheaders(), gv.job_list)
+
+    @glacier_connect
+    @log_class_call("Aborting multipart upload", "Multipart upload aborted")
+    def abortmultipart(self, vault_name, upload_id):
+        if self._check_vault_name(vault_name):
+            try:
+                gv = GlacierVault(self.glacierconn, name=vault_name)
+                response = gv.abort_multipart(upload_id)
+            except Exception, e:
+                raise GlacierWrapper.CommunicationException("Cannot abort multipart upload",
+                                                            cause=e)
+            self._check_response(response)
+
+            return response.getheaders()
+
+    @glacier_connect
+    @log_class_call("Getting archive", "Response for getting archive")
     def getarchive(self, vault, archive):
         """
         Gets archive
@@ -330,6 +442,7 @@ class GlacierWrapper(object):
 
     @glacier_connect
     @sdb_connect
+    @log_class_call("Deleting archive", "Archive deleted")
     def deletearchive(self, vault, archive):
         try:
             gv = GlacierVault(self.glacierconn, vault)
@@ -357,6 +470,7 @@ class GlacierWrapper(object):
 
     @glacier_connect
     @sdb_connect
+    @log_class_call("Retriving invertory", "Response from invertory retrival")
     def inventory(self, vault, force):
         """
         Retrives invertory and returns retrival job, or if it's already retrived
@@ -425,7 +539,7 @@ class GlacierWrapper(object):
                     ex= "Cannot update invertory cache, sdb is not happy"
                     raise GlacierWrapper.CommunicationException(ex, cause=e, code="SdbWriteError")
 
-                if ((utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
+                if ((datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
                     try:
                         gv.retrieve_inventory(format="JSON")
                     except Exception, e:
@@ -443,8 +557,16 @@ class GlacierWrapper(object):
 
     def __init__(self, aws_access_key, aws_secret_key, region,
                  bookkeeping=None, bookkeeping_domain_name=None):
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+        self.logger.debug("""Creating GlacierWrapper with aws_access_key=%s,
+                             aws_secret_key=%s, bookkeeping=%r,
+                             bookkeeping_domain_name=%s, region=%s""",
+                          aws_access_key, aws_secret_key, bookkeeping,
+                          bookkeeping_domain_name, region)
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.bookkeeping = bookkeeping
-        self.bookkeeping_domain_nam = bookkeeping_domain_name
+        self.bookkeeping_domain_name = bookkeeping_domain_name
+        self.region = region
 

@@ -15,7 +15,7 @@ class CausedException(Exception):
             self.cause = ()
             return
         self.wrapped = None
-        self.stack = traceback.format_stack()[:-1]  # cut off current frame
+        self.stack = traceback.format_stack()[:-2]  # cut off current frame
         try:
             cause = kwargs['cause']
             del kwargs['cause']
@@ -44,22 +44,32 @@ class CausedException(Exception):
             yield ("caused by: %d exception%s\n" %
                 (len(self.cause), "" if len(self.cause) == 1 else "s"))
             for causePart in self.cause:
-                for line in causePart.causeTree(indentation, self.stack):
-                    yield re.sub(r'([^\n]*\n)', indentation + r'\1', line)
+                if hasattr(causePart,"causeTree"):
+                    for line in causePart.causeTree(indentation, self.stack):
+                        yield re.sub(r'([^\n]*\n)', indentation + r'\1', line)
+                else:
+                    for line in traceback.format_exception_only(causePart.__class__, causePart):
+                        yield re.sub(r'([^\n]*\n)', indentation + r'\1', line)
 
     def write(self, stream=None, indentation='  '):
         stream = sys.stderr if stream is None else stream
-        for line in self.causeTree(indentation):
-            stream.write(line)
+        if hasattr(self,"causeTree"):
+            for line in self.causeTree(indentation):
+                stream.write(line)
+        else:
+            stream.write(self.msg)
 
 if __name__ == '__main__':
-    class ChildrenException(CausedException):
+    class ChildrenException(Exception):
         def __init__(self, message):
-            CausedException.__init__(self, message)
+            Exception.__init__(self, message)
 
     class ParentException(CausedException):
-        def __init__(self, message, cause):
-            CausedException.__init__(self, message, cause=cause)
+        def __init__(self, message, cause=None):
+            if cause:
+                CausedException.__init__(self, message, cause=cause)
+            else:
+                 CausedException.__init__(self, message)
 
     try:
         try:

@@ -1,31 +1,10 @@
 #!/usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
 """
-glacier.py
-
-MIT License
-
-Copyright (C) 2012 and beyond by Urban Skudnik (urban.skudnik@gmail.com).
-
-All rights reserved.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE."""
+.. module:: glacier.py
+   :platform: Unix, Windows
+   :synopsis: Command line interface for amazon glacier
+"""
 
 import sys
 import os
@@ -34,14 +13,20 @@ import ConfigParser
 import argparse
 import re
 import json
+import logging
 import datetime
 import dateutil.parser
 import pytz
 import locale
-from prettytable import PrettyTable
 
 import boto
 import glaciercorecalls
+
+from functools import wraps
+
+from prettytable import PrettyTable
+
+from GlacierWrapper import GlacierWrapper
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
@@ -93,9 +78,9 @@ def next_power_of_2(v):
     v |= v >> 16
     return v + 1
 
-def print_headers(response):
+def print_headers(headers):
     table = PrettyTable(["Header", "Value"])
-    for header in response.getheaders():
+    for header in headers:
         if len(str(header[1])) < 100:
             table.add_row(header)
     print table
@@ -111,14 +96,27 @@ def parse_response(response):
     if response.status == 204:
         print_headers(response)
 
-def lsvault(args):
-    region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+def default_glacier_wrapper(args):
+        return GlacierWrapper(args.aws_access_key,
+                              args.aws_secret_key,
+                              args.region)
 
-    response = glacierconn.list_vaults()
-    parse_response(response)
-    jdata = json.loads(response.read())
-    vault_list = jdata['VaultList']
+def handle_errors(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except GlacierWrapper.GlacierWrapperException as e:
+            print "her"
+            e.write(indentation='||  ')
+
+    return wrapper
+
+@handle_errors
+def lsvault(args):
+    glacier= default_glacier_wrapper(args)
+
+    vault_list = glacier.lsvault()
     table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
     for vault in vault_list:
         table.add_row([vault['VaultName'],
@@ -128,84 +126,63 @@ def lsvault(args):
     table.sortby = "Vault name"
     print table
 
+@handle_errors
 def mkvault(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    response= glacier.mkvault(args.vault)
+    print response["Location"]
+    print print_headers(response)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).create_vault()
-        parse_response(response)
-        print response.getheader("Location")
-
+@handle_errors
 def rmvault(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    response= glacier.mkvault(args.vault)
+    print print_headers(response)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
-        parse_response(response)
-
+@handle_errors
 def describevault(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    jdata = glacier.describevault(args.vault)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).describe_vault()
-        parse_response(response)
-        jdata = json.loads(response.read())
-        table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
-        table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
-                       locale.format('%d', jdata['SizeInBytes'], grouping=True),
-                       jdata['VaultARN'], jdata['CreationDate']])
+    table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
+    table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
+                    locale.format('%d', jdata['SizeInBytes'], grouping=True),
+                    jdata['VaultARN'], jdata['CreationDate']])
+    print table
+
+@handle_errors
+def listmultiparts(args):
+    glacier= default_glacier_wrapper(args)
+
+    response = glacier.listmultiparts(args.vault)
+    jdata = json.loads(response.read())
+
+    print "Marker: ", jdata['Marker']
+    if len(jdata['UploadsList']) > 0:
+        headers = sorted(jdata['UploadsList'][0].keys())
+        table = PrettyTable(headers)
+        for entry in jdata['UploadsList']:
+            table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
+                            else entry[k] for k in headers ])
         print table
 
-def listmultiparts(args):
-    vault_name = args.vault
-    region = args.region
-
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).list_multipart_uploads()
-        parse_response(response)
-        jdata = json.loads(response.read())
-        print "Marker: ", jdata['Marker']
-        if len(jdata['UploadsList']) > 0:
-            headers = sorted(jdata['UploadsList'][0].keys())
-            table = PrettyTable(headers)
-            for entry in jdata['UploadsList']:
-                table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
-                               else entry[k] for k in headers ])
-            print table
-
 def abortmultipart(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    response = glacier.abortmultipart(args.vault)
+    print_headers(response)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).abort_multipart(args.uploadId)
-        parse_response(response)
-
+@handle_errors
 def listjobs(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-
-    gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
-    response = gv.list_jobs()
-    parse_response(response)
+    response, job_list = glacier.listjobs(args.vault)
     table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
                          "VaultARN", "Job ID"])
-    for job in gv.job_list:
+    for job in job_list:
         table.add_row([job['Action'],
                        job['ArchiveId'],
                        job['StatusCode'],
@@ -573,6 +550,16 @@ def inventory(args):
         print "exception: ", e
         print json.loads(e[1])['message']
 
+def setuplogging(loglevel,printtostdout):
+    #print "starting up with loglevel",loglevel,logging.getLevelName(loglevel)
+    logging.basicConfig(level=loglevel, filename="glacier.log",
+                                       format='%(levelname)-8s %(message)s')
+    if printtostdout:
+        soh = logging.StreamHandler(sys.stderr)
+        soh.setLevel(loglevel)
+        logger = logging.getLogger()
+        logger.addHandler(soh)
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
@@ -585,7 +572,26 @@ def main():
 
     conf_parser.add_argument("-c", "--conf", default=".glacier",
                         help="Specify config file", metavar="FILE")
+    conf_parser.add_argument('-d','--debug', default="INFO",
+                      choices=["-1","0","1","2","3","CRITICAL","ERROR","WARNING", "INFO", "DEGUB"],
+                      help="""Available levels are CRITICAL (3), ERROR (2),
+                              WARNING (1), INFO (0), DEBUG (-1)',default='INFO""")
+    conf_parser.add_argument('-p','--printtostdout',action='store_true',default=False,
+                      help='Print all log messages to stdout')
+
     args, remaining_argv = conf_parser.parse_known_args()
+
+    try:
+        loglevel = getattr(logging,args.debug)
+    except AttributeError:
+        loglevel = {3:logging.CRITICAL,
+                    2:logging.ERROR,
+                    1:logging.WARNING,
+                    0:logging.INFO,
+                    -1:logging.DEBUG,
+                    }[int(args.debug)]
+
+    setuplogging(loglevel,args.printtostdout)
 
     # Here we parse config from files in home folder or in current folder
     # We use separate sections for aws and glacier speciffic configs
