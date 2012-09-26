@@ -38,6 +38,7 @@ import datetime
 import dateutil.parser
 import pytz
 import locale
+import time
 from prettytable import PrettyTable
 
 import boto
@@ -212,6 +213,16 @@ def describejob(args):
                                                                      jobid, gj.created,
                                                                      gj.status_code)
 
+# Formats file sizes in human readable format. Anything bigger than TB
+# is returned is TB. Number of decimals is optional, defaults to 1.
+def size_fmt(num, decimals = 1):
+    fmt = "%%3.%sf %%s"% decimals
+    for x in ['bytes','KB','MB','GB']:
+        if num < 1024.0:
+            return fmt % (num, x)
+        num /= 1024.0
+    return fmt % (num, 'TB')
+
 def putarchive(args):
     region = args.region
     vault = args.vault
@@ -256,23 +267,47 @@ def putarchive(args):
             return False
 
         #Read file in chunks so we don't fill whole memory
+        start_time = current_time = previous_time = time.time()
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
+
             writer.write(part)
+
             if total_size > 0:
-                progress('\rWrote %s of %s bytes (%s%%).' %
-                        (locale.format('%d', writer.uploaded_size, grouping=True),
-                        locale.format('%d', total_size, grouping=True),
-                        int(100 * writer.uploaded_size/total_size)))
+                # Calculate transfer rates in bytes per second.
+                current_time = time.time()
+                current_rate = int(READ_PART_SIZE/(current_time - previous_time))
+                overall_rate = int(writer.uploaded_size/(current_time - start_time))
+
+                # Estimate finish time, based on overall transfer rate.
+                if overall_rate > 0:
+                    time_left = (total_size - writer.uploaded_size)/overall_rate
+                    eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+                else:
+                    time_left = "Unknown"
+                    eta = "Unknown"
+
+                progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
+                         (size_fmt(writer.uploaded_size),
+                          size_fmt(total_size),
+                          int(100 * writer.uploaded_size/total_size),
+                          size_fmt(current_rate, 2),
+                          size_fmt(overall_rate, 2),
+                          eta))
+
             else:
                 progress('\rWrote %s bytes.\n' %
                     (locale.format('%d', writer.uploaded_size, grouping=True)))
 
+            previous_time = current_time
+
         writer.close()
+        current_time = time.time()
         if total_size > 0:
-            progress('\rWrote %s of %s bytes (%s%%).' %
-                    (locale.format('%d', writer.uploaded_size, grouping=True),
-                    locale.format('%d', total_size, grouping=True),
-                    int(100 * writer.uploaded_size/total_size)))
+            progress('\rWrote %s of %s bytes (%s%%). Transfer rate %s.' %
+                     (locale.format('%d', writer.uploaded_size, grouping=True),
+                      locale.format('%d', total_size, grouping=True),
+                      int(100 * writer.uploaded_size/total_size),
+                      locale.format('%d', overall_rate, grouping=True)))
         else:
             progress('\rWrote %s bytes.\n' %
                 (locale.format('%d', writer.uploaded_size, grouping=True)))
