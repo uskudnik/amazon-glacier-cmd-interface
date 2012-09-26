@@ -37,6 +37,7 @@ import json
 import datetime
 import dateutil.parser
 import pytz
+import locale
 from prettytable import PrettyTable
 
 import boto
@@ -44,7 +45,13 @@ import glaciercorecalls
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-READ_PART_SIZE= glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
+READ_PART_SIZE = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
+locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
+
+def progress(msg):
+    if sys.stdout.isatty():
+        print msg,
+        sys.stdout.flush()
 
 def check_vault_name(name):
     m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
@@ -102,7 +109,7 @@ def lsvault(args):
         table.add_row([vault['VaultName'],
                        vault['VaultARN'],
                        vault['CreationDate'],
-                       vault['SizeInBytes']])
+                       locale.format('%d', vault['SizeInBytes'], grouping=True) ])
     table.sortby = "Vault name"
     print table
 
@@ -125,6 +132,51 @@ def rmvault(args):
 
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
+        parse_response(response)
+
+def describevault(args):
+    vault_name = args.vault
+    region = args.region
+
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+
+    if check_vault_name(vault_name):
+        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).describe_vault()
+        parse_response(response)
+        jdata = json.loads(response.read())
+        table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
+        table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
+                       locale.format('%d', jdata['SizeInBytes'], grouping=True),
+                       jdata['VaultARN'], jdata['CreationDate']])
+        print table
+
+def listmultiparts(args):
+    vault_name = args.vault
+    region = args.region
+
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+
+    if check_vault_name(vault_name):
+        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).list_multipart_uploads()
+        parse_response(response)
+        jdata = json.loads(response.read())
+        print "Marker: ", jdata['Marker']
+        if len(jdata['UploadsList']) > 0:
+            headers = sorted(jdata['UploadsList'][0].keys())
+            table = PrettyTable(headers)
+            for entry in jdata['UploadsList']:
+                table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
+                               else entry[k] for k in headers ])
+            print table
+
+def abortmultipart(args):
+    vault_name = args.vault
+    region = args.region
+
+    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+
+    if check_vault_name(vault_name):
+        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).abort_multipart(args.uploadId)
         parse_response(response)
 
 def listjobs(args):
@@ -193,6 +245,7 @@ def putarchive(args):
         if not stdin:
             try:
                 reader = open(filename, 'rb')
+                total_size = os.path.getsize(filename)
             except IOError:
                 print "Couldn't access the file given."
                 return False
@@ -205,7 +258,27 @@ def putarchive(args):
         #Read file in chunks so we don't fill whole memory
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
             writer.write(part)
+            if total_size > 0:
+                progress('\rWrote %s of %s bytes (%s%%).' %
+                        (locale.format('%d', writer.uploaded_size, grouping=True),
+                        locale.format('%d', total_size, grouping=True),
+                        int(100 * writer.uploaded_size/total_size)))
+            else:
+                progress('\rWrote %s bytes.\n' %
+                    (locale.format('%d', writer.uploaded_size, grouping=True)))
+
         writer.close()
+        if total_size > 0:
+            progress('\rWrote %s of %s bytes (%s%%).' %
+                    (locale.format('%d', writer.uploaded_size, grouping=True),
+                    locale.format('%d', total_size, grouping=True),
+                    int(100 * writer.uploaded_size/total_size)))
+        else:
+            progress('\rWrote %s bytes.\n' %
+                (locale.format('%d', writer.uploaded_size, grouping=True)))
+
+        # Additional new line on output
+        print
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
@@ -230,7 +303,7 @@ def putarchive(args):
             domain.put_attributes(file_attrs['filename'], file_attrs)
 
         print "Created archive with ID: ", archive_id
-        print "Archive SHA256 hash: ", sha256hash
+        print "Archive SHA256 tree hash: ", sha256hash
 
 def getarchive(args):
     region = args.region
@@ -413,7 +486,7 @@ def render_inventory(inventory):
     for archive in inventory['ArchiveList']:
         table.add_row([archive['ArchiveDescription'],
                        archive['CreationDate'],
-                       archive['Size'],
+                       locale.format('%d', archive['Size'], grouping=True),
                        archive['ArchiveId'],
                        archive['SHA256TreeHash']])
     print table
@@ -601,6 +674,20 @@ def main():
                                  help="Create a new inventory job")
     parser_inventory.add_argument('vault')
     parser_inventory.set_defaults(func=inventory)
+
+    parser_describevault = subparsers.add_parser('describevault', help='Describe vault')
+    parser_describevault.add_argument('vault')
+    parser_describevault.set_defaults(func=describevault)
+
+    parser_listmultiparts = subparsers.add_parser('listmultiparts', help='List multipart uploads')
+    parser_listmultiparts.add_argument('vault')
+    parser_listmultiparts.set_defaults(func=listmultiparts)
+
+    parser_abortmultipart = subparsers.add_parser('abortmultipart', help='Abort multipart upload')
+    parser_abortmultipart.add_argument('vault')
+    parser_abortmultipart.add_argument('uploadId')
+    parser_abortmultipart.set_defaults(func=abortmultipart)
+
 
     # bookkeeping required
     parser_download = subparsers.add_parser('download',

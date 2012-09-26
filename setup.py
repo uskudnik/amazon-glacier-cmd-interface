@@ -39,6 +39,6 @@ setup(name='glacier',
       ],
     entry_points="""
           [console_scripts]
-          glacier = glacier.glacier:main
+          glacier-cmd = glacier.glacier:main
           """,
       )
