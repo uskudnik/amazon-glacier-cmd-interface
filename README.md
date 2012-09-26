@@ -127,6 +127,12 @@ To upload from stdin:
 
     $ TODO: example for using --stdin
 
+IMPORTANT NOTE: If you're uploading from stdin, and you don't specify a
+--partsize option, your upload will be limited to 1.3Tb, and the progress
+report will come out every 128Mb. For more details, run:
+
+    $ glacier-cmd upload -h
+
 You have two options to retrieve an archive - first one is `download`, 
 second one is `getarchive`
 
