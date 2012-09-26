@@ -361,7 +361,8 @@ def getarchive(args):
                 job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
                 if filename:
                     ffile = open(filename, "w")
-                    ffile.write(job2.get_output().read())
+                    for part in iter((lambda:job2.get_output().read(READ_PART_SIZE)), ''):
+                        ffile.write(part)
                     ffile.close()
                 else:
                     print job2.get_output().read()
