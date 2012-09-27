@@ -272,14 +272,13 @@ def putarchive(args):
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
 
             writer.write(part)
-
+            
+            # Calculate transfer rates in bytes per second.
+            current_rate = int(READ_PART_SIZE/(current_time - previous_time))
+            current_time = time.time()
+            overall_rate = int(writer.uploaded_size/(current_time - start_time))
             if total_size > 0:
                 
-                # Calculate transfer rates in bytes per second.
-                current_time = time.time()
-                current_rate = int(READ_PART_SIZE/(current_time - previous_time))
-                overall_rate = int(writer.uploaded_size/(current_time - start_time))
-
                 # Estimate finish time, based on overall transfer rate.
                 if overall_rate > 0:
                     time_left = (total_size - writer.uploaded_size)/overall_rate
@@ -288,13 +287,6 @@ def putarchive(args):
                     time_left = "Unknown"
                     eta = "Unknown"
                     
-##                progress('\rWrote %s of %s bytes (%s%%). Rrate %s B/s, average %s B/s, eta %s.' %
-##                         (locale.format('%d', writer.uploaded_size, grouping=True),
-##                          locale.format('%d', total_size, grouping=True),
-##                          int(100 * writer.uploaded_size/total_size),
-##                          locale.format('%d', current_rate, grouping=True),
-##                          locale.format('%d', overall_rate, grouping=True),
-##                          eta))
                 progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
                          (size_fmt(writer.uploaded_size),
                           size_fmt(total_size),
@@ -304,20 +296,20 @@ def putarchive(args):
                           eta))
 
             else:
-                progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
+                progress('\rWrote %s. Rate %s/s, average %s/s.' %
+                         (size_fmt(writer.uploaded_size),
+                          size_fmt(current_rate, 2),
+                          size_fmt(overall_rate, 2)))
 
             previous_time = current_time
 
         writer.close()
         current_time = time.time()
-        if total_size > 0:
-            progress('\rWrote %s of %s bytes (%s%%). Transfer rate %s.' %
-                     (locale.format('%d', writer.uploaded_size, grouping=True),
-                      locale.format('%d', total_size, grouping=True),
-                      int(100 * writer.uploaded_size/total_size),
-                      locale.format('%d', overall_rate, grouping=True)))
-        else:
-            progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
+        overall_rate = int(writer.uploaded_size/(current_time - start_time))
+        progress('\rWrote %s. Average rate %s/s. Finished at %s.' %
+                 (size_fmt(writer.uploaded_size),
+                  size_fmt(overall_rate, 2),
+                  time.strftime("%H:%M:%S", time.localtime(current_time + time_left))))
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
