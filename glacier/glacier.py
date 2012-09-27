@@ -295,12 +295,12 @@ def putarchive(args):
                         locale.format('%d', total_size, grouping=True),
                         int(100 * writer.uploaded_size/total_size)))
             else:
-                progress('\rWrote %s bytes.\n' %
+                progress('\rWrote %s bytes.' %
                     (locale.format('%d', writer.uploaded_size, grouping=True)))
 
         writer.close()
         if total_size > 0:
-            progress('\rWrote %s of %s bytes (%s%%).' %
+            progress('\rWrote %s of %s bytes (%s%%).\n' %
                     (locale.format('%d', writer.uploaded_size, grouping=True),
                     locale.format('%d', total_size, grouping=True),
                     int(100 * writer.uploaded_size/total_size)))
@@ -308,8 +308,6 @@ def putarchive(args):
             progress('\rWrote %s bytes.\n' %
                 (locale.format('%d', writer.uploaded_size, grouping=True)))
 
-        # Additional new line on output
-        print
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
