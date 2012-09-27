@@ -1,31 +1,10 @@
 #!/usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
 """
-glacier.py
-
-MIT License
-
-Copyright (C) 2012 and beyond by Urban Skudnik (urban.skudnik@gmail.com).
-
-All rights reserved.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE."""
+.. module:: glacier.py
+   :platform: Unix, Windows
+   :synopsis: Command line interface for amazon glacier
+"""
 
 import sys
 import os
@@ -34,15 +13,16 @@ import ConfigParser
 import argparse
 import re
 import json
+import logging
 import datetime
 import dateutil.parser
-import pytz
 import locale
 import time
-from prettytable import PrettyTable
-
 import boto
 import glaciercorecalls
+
+from prettytable import PrettyTable
+from GlacierWrapper import GlacierWrapper
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
@@ -79,9 +59,24 @@ def check_description(description):
                               decimal or 0x20—0x7E hexadecimal.")
     return True
 
-def print_headers(response):
+def is_power_of_2(v):
+    return (v & (v - 1)) == 0
+
+def next_power_of_2(v):
+    """
+    Returns the next power of 2, or the argument if it's already a power of 2.
+    """
+    v -= 1
+    v |= v >> 1
+    v |= v >> 2
+    v |= v >> 4
+    v |= v >> 8
+    v |= v >> 16
+    return v + 1
+
+def print_headers(headers):
     table = PrettyTable(["Header", "Value"])
-    for header in response.getheaders():
+    for header in headers:
         if len(str(header[1])) < 100:
             table.add_row(header)
     print table
@@ -97,14 +92,27 @@ def parse_response(response):
     if response.status == 204:
         print_headers(response)
 
-def lsvault(args):
-    region = args.region
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+def default_glacier_wrapper(args):
+        return GlacierWrapper(args.aws_access_key,
+                              args.aws_secret_key,
+                              args.region)
 
-    response = glacierconn.list_vaults()
-    parse_response(response)
-    jdata = json.loads(response.read())
-    vault_list = jdata['VaultList']
+def handle_errors(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except GlacierWrapper.GlacierWrapperException as e:
+            print "her"
+            e.write(indentation='||  ')
+
+    return wrapper
+
+@handle_errors
+def lsvault(args):
+    glacier= default_glacier_wrapper(args)
+
+    vault_list = glacier.lsvault()
     table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
     for vault in vault_list:
         table.add_row([vault['VaultName'],
@@ -114,84 +122,63 @@ def lsvault(args):
     table.sortby = "Vault name"
     print table
 
+@handle_errors
 def mkvault(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    response= glacier.mkvault(args.vault)
+    print response["Location"]
+    print print_headers(response)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).create_vault()
-        parse_response(response)
-        print response.getheader("Location")
-
+@handle_errors
 def rmvault(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    response= glacier.mkvault(args.vault)
+    print print_headers(response)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).delete_vault()
-        parse_response(response)
-
+@handle_errors
 def describevault(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    jdata = glacier.describevault(args.vault)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).describe_vault()
-        parse_response(response)
-        jdata = json.loads(response.read())
-        table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
-        table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
-                       locale.format('%d', jdata['SizeInBytes'], grouping=True),
-                       jdata['VaultARN'], jdata['CreationDate']])
+    table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
+    table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
+                    locale.format('%d', jdata['SizeInBytes'], grouping=True),
+                    jdata['VaultARN'], jdata['CreationDate']])
+    print table
+
+@handle_errors
+def listmultiparts(args):
+    glacier= default_glacier_wrapper(args)
+
+    response = glacier.listmultiparts(args.vault)
+    jdata = json.loads(response.read())
+
+    print "Marker: ", jdata['Marker']
+    if len(jdata['UploadsList']) > 0:
+        headers = sorted(jdata['UploadsList'][0].keys())
+        table = PrettyTable(headers)
+        for entry in jdata['UploadsList']:
+            table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
+                            else entry[k] for k in headers ])
         print table
 
-def listmultiparts(args):
-    vault_name = args.vault
-    region = args.region
-
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).list_multipart_uploads()
-        parse_response(response)
-        jdata = json.loads(response.read())
-        print "Marker: ", jdata['Marker']
-        if len(jdata['UploadsList']) > 0:
-            headers = sorted(jdata['UploadsList'][0].keys())
-            table = PrettyTable(headers)
-            for entry in jdata['UploadsList']:
-                table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
-                               else entry[k] for k in headers ])
-            print table
-
 def abortmultipart(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+    response = glacier.abortmultipart(args.vault)
+    print_headers(response)
 
-    if check_vault_name(vault_name):
-        response = glaciercorecalls.GlacierVault(glacierconn, vault_name).abort_multipart(args.uploadId)
-        parse_response(response)
-
+@handle_errors
 def listjobs(args):
-    vault_name = args.vault
-    region = args.region
+    glacier= default_glacier_wrapper(args)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-
-    gv = glaciercorecalls.GlacierVault(glacierconn, name=vault_name)
-    response = gv.list_jobs()
-    parse_response(response)
+    response, job_list = glacier.listjobs(args.vault)
     table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
                          "VaultARN", "Job ID"])
-    for job in gv.job_list:
+    for job in job_list:
         table.add_row([job['Action'],
                        job['ArchiveId'],
                        job['StatusCode'],
@@ -250,7 +237,6 @@ def putarchive(args):
 
     if check_description(description):
         reader = None
-        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
 
         # if filename is given, use filename then look at stdio if theres something there
         total_size = 0
@@ -263,22 +249,38 @@ def putarchive(args):
                 return False
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
+            total_size = 0
         else:
             print "Nothing to upload."
             return False
+
+        if args.partsize < 0:
+            # User did not specify part_size. Compute the optimal value.
+            if total_size > 0:
+                part_size = next_power_of_2(total_size / (1024*1024*10000))
+            else:
+                part_size = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
+        else:
+            part_size = next_power_of_2(args.partsize)
+
+        if total_size > part_size * 1024 * 1024 * 10000:
+            # User specified a value that is too small. Adjust.
+            part_size = next_power_of_2(total_size / (1024*1024*10000))
+
+        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description,
+                                                part_size=(part_size*1024*1024))
 
         #Read file in chunks so we don't fill whole memory
         start_time = current_time = previous_time = time.time()
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
 
             writer.write(part)
-
+            current_time = time.time()
+            overall_rate = int(writer.uploaded_size/(current_time - start_time))
             if total_size > 0:
                 
                 # Calculate transfer rates in bytes per second.
-                current_time = time.time()
                 current_rate = int(READ_PART_SIZE/(current_time - previous_time))
-                overall_rate = int(writer.uploaded_size/(current_time - start_time))
 
                 # Estimate finish time, based on overall transfer rate.
                 if overall_rate > 0:
@@ -288,13 +290,6 @@ def putarchive(args):
                     time_left = "Unknown"
                     eta = "Unknown"
                     
-##                progress('\rWrote %s of %s bytes (%s%%). Rrate %s B/s, average %s B/s, eta %s.' %
-##                         (locale.format('%d', writer.uploaded_size, grouping=True),
-##                          locale.format('%d', total_size, grouping=True),
-##                          int(100 * writer.uploaded_size/total_size),
-##                          locale.format('%d', current_rate, grouping=True),
-##                          locale.format('%d', overall_rate, grouping=True),
-##                          eta))
                 progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
                          (size_fmt(writer.uploaded_size),
                           size_fmt(total_size),
@@ -304,20 +299,18 @@ def putarchive(args):
                           eta))
 
             else:
-                progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
+                progress('\rWrote %s. Rate %s/s.' %
+                         (size_fmt(writer.uploaded_size),
+                          size_fmt(overall_rate, 2)))
 
             previous_time = current_time
 
         writer.close()
         current_time = time.time()
-        if total_size > 0:
-            progress('\rWrote %s of %s bytes (%s%%). Transfer rate %s.' %
-                     (locale.format('%d', writer.uploaded_size, grouping=True),
-                      locale.format('%d', total_size, grouping=True),
-                      int(100 * writer.uploaded_size/total_size),
-                      locale.format('%d', overall_rate, grouping=True)))
-        else:
-            progress('\rWrote %s bytes.\n' % (locale.format('%d', writer.uploaded_size, grouping=True)))
+        overall_rate = int(writer.uploaded_size/(current_time - start_time))
+        progress('\rWrote %s. Rate %s/s.' %
+                 (size_fmt(writer.uploaded_size),
+                  size_fmt(overall_rate, 2)))
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
@@ -342,7 +335,7 @@ def putarchive(args):
             domain.put_attributes(file_attrs['filename'], file_attrs)
 
         print "Created archive with ID: ", archive_id
-        print "Archive SHA256 hash: ", sha256hash
+        print "Archive SHA256 tree hash: ", sha256hash
 
 def getarchive(args):
     region = args.region
@@ -581,6 +574,16 @@ def inventory(args):
         print "exception: ", e
         print json.loads(e[1])['message']
 
+def setuplogging(loglevel,printtostdout):
+    #print "starting up with loglevel",loglevel,logging.getLevelName(loglevel)
+    logging.basicConfig(level=loglevel, filename="glacier.log",
+                                       format='%(levelname)-8s %(message)s')
+    if printtostdout:
+        soh = logging.StreamHandler(sys.stderr)
+        soh.setLevel(loglevel)
+        logger = logging.getLogger()
+        logger.addHandler(soh)
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
@@ -588,12 +591,31 @@ def main():
 
     # Config parser
     conf_parser = argparse.ArgumentParser(
-                                formatter_class=argparse.RawDescriptionHelpFormatter,
+                                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 add_help=False)
 
     conf_parser.add_argument("-c", "--conf", default=".glacier-cmd",
                         help="Specify config file", metavar="FILE")
+    conf_parser.add_argument('-d','--debug', default="INFO",
+                      choices=["-1","0","1","2","3","CRITICAL","ERROR","WARNING", "INFO", "DEGUB"],
+                      help="""Available levels are CRITICAL (3), ERROR (2),
+                              WARNING (1), INFO (0), DEBUG (-1)',default='INFO""")
+    conf_parser.add_argument('-p','--printtostdout',action='store_true',default=False,
+                      help='Print all log messages to stdout')
+
     args, remaining_argv = conf_parser.parse_known_args()
+
+    try:
+        loglevel = getattr(logging,args.debug)
+    except AttributeError:
+        loglevel = {3:logging.CRITICAL,
+                    2:logging.ERROR,
+                    1:logging.WARNING,
+                    0:logging.INFO,
+                    -1:logging.DEBUG,
+                    }[int(args.debug)]
+
+    setuplogging(loglevel,args.printtostdout)
 
     # Here we parse config from files in home folder or in current folder
     # We use separate sections for aws and glacier specific configs
@@ -626,6 +648,7 @@ def main():
 
     # Main parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      description=program_description)
     subparsers = parser.add_subparsers(title='Subcommands',
                                        help=u"For subcommand help, use: glacier <subcommand> -h")
@@ -677,16 +700,45 @@ def main():
     parser_describejob.add_argument('jobid')
     parser_describejob.set_defaults(func=describejob)
 
-    parser_upload = subparsers.add_parser('upload', help='Upload an archive')
+    parser_upload = subparsers.add_parser('upload', help='Upload an archive',
+                               formatter_class=argparse.RawTextHelpFormatter)
     parser_upload.add_argument('vault')
     parser_upload.add_argument('filename')
     parser_upload.add_argument('--stdin',
                                 help="Input data from stdin, instead of file",
                                 action='store_true')
     parser_upload.add_argument('--name', default=None,
-                                help='Use the given name as the filename for bookkeeping purposes. \
-                               This option is useful in conjunction with --stdin \
-                               or when the file being uploaded is a temporary file.')
+                                help='''\
+Use the given name as the filename for bookkeeping
+purposes. This option is useful in conjunction with
+--stdin or when the file being uploaded is a
+temporary file.''')
+    parser_upload.add_argument('--partsize', type=int, default=-1,
+                               help='''\
+Part size to use for upload (in Mb). Must
+be a power of 2 in the range:
+    1 .. 4,294,967,296 (2^0 .. 2^32).
+Values that are not a power of 2 will be
+adjusted upwards to the next power of 2.
+
+Amazon accepts up to 10,000 parts per upload.
+
+Smaller parts result in more frequent progress
+updates, and less bandwidth wasted if a part
+needs to be re-transmitted. On the other hand,
+smaller parts limit the size of the archive that
+can be uploaded. Some examples:
+
+partsize  MaxArchiveSize
+    1        1*1024*1024*10000 ~= 10Gb
+    4        4*1024*1024*10000 ~= 41Gb
+   16       16*1024*1024*10000 ~= 137Gb
+  128      128*1024*1024*10000 ~= 1.3Tb
+
+By default, the smallest possible value is used
+when the archive size is known ahead of time.
+Otherwise (when reading from STDIN) a value of
+128 is used.''')
     parser_upload.add_argument('description', nargs='*')
     parser_upload.set_defaults(func=putarchive)
 
