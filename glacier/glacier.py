@@ -38,6 +38,8 @@ import datetime
 import dateutil.parser
 import locale
 import time
+import pytz
+
 from prettytable import PrettyTable
 
 import boto
@@ -308,7 +310,7 @@ def putarchive(args):
         progress('\rWrote %s. Average rate %s/s. Finished at %s.' %
                  (size_fmt(writer.uploaded_size),
                   size_fmt(overall_rate, 2),
-                  time.strftime("%H:%M:%S", time.localtime(current_time + time_left))))
+                  time.strftime("%H:%M:%S", time.localtime(current_time))))
         print
 
         archive_id = writer.get_archive_id()
