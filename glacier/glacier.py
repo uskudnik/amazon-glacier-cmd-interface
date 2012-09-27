@@ -36,7 +36,6 @@ import re
 import json
 import datetime
 import dateutil.parser
-import pytz
 import locale
 import time
 from prettytable import PrettyTable
@@ -274,8 +273,8 @@ def putarchive(args):
             writer.write(part)
             
             # Calculate transfer rates in bytes per second.
-            current_rate = int(READ_PART_SIZE/(current_time - previous_time))
             current_time = time.time()
+            current_rate = int(READ_PART_SIZE/(current_time - previous_time))
             overall_rate = int(writer.uploaded_size/(current_time - start_time))
             if total_size > 0:
                 
@@ -310,6 +309,7 @@ def putarchive(args):
                  (size_fmt(writer.uploaded_size),
                   size_fmt(overall_rate, 2),
                   time.strftime("%H:%M:%S", time.localtime(current_time + time_left))))
+        print
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
