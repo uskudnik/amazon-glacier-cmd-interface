@@ -202,15 +202,17 @@ class GlacierJob(object):
         self.status_msg = jdata['StatusMessage']
         return self
 
-def chunk_hashes(str):
+def chunk_hashes(data):
     """
     Break up the byte-string into 1MB chunks and return sha256 hashes
     for each.
     """
     chunk = 1024*1024
-    chunk_count = int(math.ceil(len(str)/float(chunk)))
-    chunks = [str[i*chunk:(i+1)*chunk] for i in range(chunk_count)]
-    return [hashlib.sha256(x).digest() for x in chunks]
+    chunk_count = int(math.ceil(len(data)/float(chunk)))
+##    chunks = [data[i*chunk:(i+1)*chunk] for i in range(chunk_count)]
+##    return [hashlib.sha256(x).digest() for x in chunks]
+
+    return [hashlib.sha256(data[i*chunk:(i+1)*chunk]).digest() for i in range(chunk_count)]
 
 def tree_hash(fo):
     """
@@ -243,7 +245,7 @@ class GlacierWriter(object):
     Presents a file-like object for writing to a Amazon Glacier
     Archive. The data is written using the multi-part upload API.
     """
-    DEFAULT_PART_SIZE = 128*1024*1024 #128MB
+    DEFAULT_PART_SIZE = 32*1024*1024 #32MB
     def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE):
         self.part_size = part_size
         self.buffer_size = 0
@@ -274,20 +276,23 @@ class GlacierWriter(object):
 
     def send_part(self):
         buf = "".join(self.buffer)
+        
         # Put back any data remaining over the part size into the
         # buffer
         if len(buf) > self.part_size:
             self.buffer = [buf[self.part_size:]]
             self.buffer_size = len(self.buffer[0])
+            
         else:
             self.buffer = []
             self.buffer_size = 0
+            
         # The part we will send
         part = buf[:self.part_size]
+        
         # Create a request and sign it
         part_tree_hash = tree_hash(chunk_hashes(part))
         self.tree_hashes.append(part_tree_hash)
-
         headers = {
                    "x-amz-glacier-version": "2012-06-01",
                     "Content-Range": "bytes %d-%d/*" % (self.uploaded_size,

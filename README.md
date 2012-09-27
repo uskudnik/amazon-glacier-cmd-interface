@@ -1,6 +1,9 @@
 **Glacier command line utility was renamed from `glacier` to `glacier-cmd`,   
 because of inconsistencies with boto.**
 
+**Renamed configuration file from `.glacier` to `.glacier-cmd` to reflect new
+name of this utility.** 
+
 **For everybody having problems with install, don't forget to install git**
 
 Amazon Glacier CLI
@@ -36,8 +39,9 @@ Usage:
 ------
 
 There are a couple of ways to pass in settings. While you can pass in everything
-on command line you can also cretate config file `.glacier` in your home folder
-or in folder where you run glacier(current working directory). To speciffy speciall
+on command line you can also create a config file `.glacier-cmd` in your home folder
+or in folder where you run glacier (current working directory) or a global
+configuration file called `/etc/glacier-cmd.conf`. To specify special
 location of your config file use `-c` option on command line.
 
 Here is an example configuration:
@@ -51,11 +55,11 @@ Here is an example configuration:
     bookkeeping=True
     bookkeeping-domain-name=your_simple_db_domain_name
 
-You can also pass in all these options as environemnt variables:
+You can also pass in all these options as environment variables:
 
     $ aws_access_key=your_access_key aws_secret_key=your_secret_key region=us-east-1 bookkeeping=True bookkeeping-domain-name=your_simple_db_domain_name glacier [args]
 
-It doesn't matter if option names are upper-case or lower-case or if they have 
+It does not matter if option names are upper-case or lower-case or if they have 
 `aws_` in string. Currently only section names must be lower-case.
 
 We created a special feature called bookkeeping, where we keep a cache of all uploaded
@@ -118,7 +122,7 @@ make sure the upload was successful:
     e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0  SomeFile
 
 If you are uploading a temp file with a meaningless name, or using --stdin, you
-can use the --name option to tell glacier to ignore the filename and use the
+can use the --name option to tell glacier to ignore the file name and use the
 given name when it creates the bookkeeping entry:
 
     $ glacier-cmd upload --name /path/BetterName Test /tmp/temp.tQ6948 "Some description"
@@ -126,6 +130,12 @@ given name when it creates the bookkeeping entry:
 To upload from stdin:
 
     $ TODO: example for using --stdin
+
+IMPORTANT NOTE: If you're uploading from stdin, and you don't specify a
+--partsize option, your upload will be limited to 1.3Tb, and the progress
+report will come out every 128Mb. For more details, run:
+
+    $ glacier-cmd upload -h
 
 You have two options to retrieve an archive - first one is `download`, 
 second one is `getarchive`
@@ -149,7 +159,7 @@ archive id (notice the use of `--` when the archive ID starts with a dash):
     |       date       |          Fri, 14 Sep 2012 02:48:46 GMT          |
     +------------------+-------------------------------------------------+
 
-To search for uploaded arhives in your cache use `search`. This requires bookkeeping
+To search for uploaded archives in your cache use `search`. This requires bookkeeping
 enabled:
 
     $ TODO: example here
@@ -220,15 +230,16 @@ Usage description(help):
     aws:
     --aws-access-key AWS_ACCESS_KEY
                             Your aws access key (Required if you haven't created
-                            .glacier config file)
+                            .glacier-cmd or /etc/glacier-cmd.conf config file)
     --aws-secret-key AWS_SECRET_KEY
                             Your aws secret key (Required if you haven't created
-                            .glacier config file)
+                            .glacier-cmd or /etc/glacier-cmd.conf config file)
 
     glacier:
     --region REGION       Region where glacier should take action (Required if
-                            you haven't created .glacier config file)
-    --bookkeeping         Should we keep book of all creatated archives. This
+                            you haven't created .glacier-cmd config or 
+                            /etc/glacier-cmd.conf file)
+    --bookkeeping         Should we keep book of all created archives. This
                             requires a SimpleDB account and it's bookkeeping
                             domain name set
     --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
@@ -240,7 +251,7 @@ TODO:
 - Integrate with boto
 - Support for output status codes
 - Migrate documentation to sphinx
-- Documentation examples of output from speciffic commands
+- Documentation examples of output from specific commands
 - Description for command line arguments
 - Tests
 
