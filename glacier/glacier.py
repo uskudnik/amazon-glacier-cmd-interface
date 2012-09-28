@@ -20,11 +20,13 @@ import locale
 import time
 import boto
 import glaciercorecalls
+import pytz
 
 from prettytable import PrettyTable
 from GlacierWrapper import GlacierWrapper
 
 MAX_VAULT_NAME_LENGTH = 255
+MAX_DESCRIPTION_LENGTH = 1024
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
 READ_PART_SIZE = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE
 locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
@@ -37,15 +39,14 @@ def progress(msg):
 def check_vault_name(name):
     m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
     if len(name) > 255:
-        raise Exception(u"Vault name can be at most 255 charecters long.")
+        raise Exception(u"Vault name can be at most 255 characters long.")
     if len(name) == 0:
         raise Exception(u"Vault name has to be at least 1 character long.")
     if m.end() != len(name):
-        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
-                          '-' (hyphen), and '.' (period)")
+        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), \
+'-' (hyphen), and '.' (period)")
     return True
 
-MAX_DESCRIPTION_LENGTH = 1024
 
 def check_description(description):
     if len(description) > 1024:
@@ -54,9 +55,8 @@ def check_description(description):
     for char in description:
         n = ord(char)
         if n < 32 or n > 126:
-            raise Exception(u"The allowable characters are 7-bit ASCII without \
-                              control codes, specifically ASCII values 32—126 \
-                              decimal or 0x20—0x7E hexadecimal.")
+            raise Exception(u"The allowed characters are 7-bit ASCII without \
+control codes, specifically ASCII values 32—126 decimal or 0x20—0x7E hexadecimal.")
     return True
 
 def is_power_of_2(v):
@@ -79,6 +79,7 @@ def print_headers(headers):
     for header in headers:
         if len(str(header[1])) < 100:
             table.add_row(header)
+
     print table
 
 def parse_response(response):
@@ -88,17 +89,18 @@ def parse_response(response):
         print "Reason:"
         print response.read()
         print response.msg
+
     print response.status, response.reason
     if response.status == 204:
         print_headers(response)
 
 def default_glacier_wrapper(args):
-        return GlacierWrapper(args.aws_access_key,
-                              args.aws_secret_key,
-                              args.region)
+    return GlacierWrapper(args.aws_access_key,
+                          args.aws_secret_key,
+                          args.region)
 
 def handle_errors(fn):
-    @wraps(fn)
+##    @wraps(fn)
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
@@ -110,8 +112,8 @@ def handle_errors(fn):
 
 @handle_errors
 def lsvault(args):
-    glacier= default_glacier_wrapper(args)
-
+    glacier = default_glacier_wrapper(args)
+    
     vault_list = glacier.lsvault()
     table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
     for vault in vault_list:
@@ -124,34 +126,34 @@ def lsvault(args):
 
 @handle_errors
 def mkvault(args):
-    glacier= default_glacier_wrapper(args)
+    glacier = default_glacier_wrapper(args)
 
-    response= glacier.mkvault(args.vault)
-    print response["Location"]
+    response = glacier.mkvault(args.vault)
+    print dict(response)["location"]
     print print_headers(response)
 
 @handle_errors
 def rmvault(args):
-    glacier= default_glacier_wrapper(args)
+    glacier = default_glacier_wrapper(args)
 
-    response= glacier.mkvault(args.vault)
+    response = glacier.rmvault(args.vault)
     print print_headers(response)
 
 @handle_errors
 def describevault(args):
-    glacier= default_glacier_wrapper(args)
+    glacier = default_glacier_wrapper(args)
 
     jdata = glacier.describevault(args.vault)
 
     table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
     table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
-                    locale.format('%d', jdata['SizeInBytes'], grouping=True),
-                    jdata['VaultARN'], jdata['CreationDate']])
+                   locale.format('%d', jdata['SizeInBytes'], grouping=True),
+                   jdata['VaultARN'], jdata['CreationDate']])
     print table
 
 @handle_errors
 def listmultiparts(args):
-    glacier= default_glacier_wrapper(args)
+    glacier = default_glacier_wrapper(args)
 
     response = glacier.listmultiparts(args.vault)
     jdata = json.loads(response.read())
@@ -162,18 +164,18 @@ def listmultiparts(args):
         table = PrettyTable(headers)
         for entry in jdata['UploadsList']:
             table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
-                            else entry[k] for k in headers ])
+                           else entry[k] for k in headers ])
         print table
 
 def abortmultipart(args):
-    glacier= default_glacier_wrapper(args)
+    glacier = default_glacier_wrapper(args)
 
     response = glacier.abortmultipart(args.vault)
     print_headers(response)
 
 @handle_errors
 def listjobs(args):
-    glacier= default_glacier_wrapper(args)
+    glacier = default_glacier_wrapper(args)
 
     response, job_list = glacier.listjobs(args.vault)
     table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
@@ -207,7 +209,9 @@ def size_fmt(num, decimals = 1):
     for x in ['bytes','KB','MB','GB']:
         if num < 1024.0:
             return fmt % (num, x)
+        
         num /= 1024.0
+        
     return fmt % (num, 'TB')
 
 def putarchive(args):
@@ -216,8 +220,8 @@ def putarchive(args):
     filename = args.filename
     description = args.description
     stdin = args.stdin
-    BOOKKEEPING= args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
+    BOOKKEEPING = args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
@@ -238,7 +242,8 @@ def putarchive(args):
     if check_description(description):
         reader = None
 
-        # if filename is given, use filename then look at stdio if theres something there
+        # If filename is given, try to use this file.
+        # Otherwise try to read data from stdin.
         total_size = 0
         if not stdin:
             try:
@@ -247,6 +252,7 @@ def putarchive(args):
             except IOError:
                 print "Couldn't access the file given."
                 return False
+            
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
@@ -255,17 +261,21 @@ def putarchive(args):
             return False
 
         if args.partsize < 0:
+            
             # User did not specify part_size. Compute the optimal value.
             if total_size > 0:
                 part_size = next_power_of_2(total_size / (1024*1024*10000))
             else:
                 part_size = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
+                
         else:
             part_size = next_power_of_2(args.partsize)
 
         if total_size > part_size * 1024 * 1024 * 10000:
+            
             # User specified a value that is too small. Adjust.
             part_size = next_power_of_2(total_size / (1024*1024*10000))
+            print "WARNING: Part size given is too small; using %s MB parts to upload."% part_size
 
         writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description,
                                                 part_size=(part_size*1024*1024))
@@ -351,9 +361,11 @@ def getarchive(args):
     for job in gv.job_list:
         if job['ArchiveId'] == archive:
             found = True
+            
             # no need to start another archive retrieval
             if filename or not job['Completed']:
                 print "ArchiveId: ", archive
+                
             if job['Completed']:
                 job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
                 if filename:
@@ -363,6 +375,7 @@ def getarchive(args):
                 else:
                     print job2.get_output().read()
                 return
+            
     if not found:
         job = gv.retrieve_archive(archive)
         print "Started"
@@ -374,15 +387,15 @@ def download(args):
     out_file = args.out_file
 
     if not filename:
-        raise Exception(u"You have to pass in the file name or the search term \
-                          of it's description to search through archive.")
+        raise Exception(u"You must supply either a file name or a search\
+term to search the descriptions.")
 
     args.search_term = filename
     items = search(args, print_results=False)
 
     n_items = 0
     if not items:
-        print "Sorry, didn't find anything."
+        print "No results."
         return False
 
     print "Region\tVault\tFilename\tArchive ID"
@@ -396,9 +409,9 @@ def download(args):
                                   item['archive_id'])
 
     if n_items > 1:
-        print "You need to uniquely identify file with either region, vault or \
-               filename parameters. If that is not enough, use getarchive to \
-               specify exactly which archive you want."
+        print "You need to uniquely identify file using region, vault and/or \
+the file name. Alternatively use getarchive <Archive ID> to retrieve \
+the archive."
         return False
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
@@ -409,10 +422,13 @@ def download(args):
     for job in gv.job_list:
         if job['ArchiveId'] == archive:
             found = True
+            
             # no need to start another archive retrieval
             if not job['Completed']:
-                print "Waiting for Amazon Glacier to assamble the archive."
+                print "Waiting for Amazon Glacier to retrieve the archive."
+                
             if job['Completed']:
+                print "File is available, starting download now."
                 job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
                 if out_file:
                     ffile = open(out_file, "w")
@@ -420,17 +436,20 @@ def download(args):
                     ffile.close()
                 else:
                     print job2.get_output().read()
+
             return True
+
     if not found:
         job = gv.retrieve_archive(archive)
-        print "Started"
+        print "Archive retrieve request sent to Amazon Glacier, your archive \
+be available for download in about four hours."
 
-def deletearchive(args):
+def rmarchive(args):
     region = args.region
     vault = args.vault
     archive = args.archive
-    BOOKKEEPING= args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
+    BOOKKEEPING = args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
 
     if BOOKKEEPING:
         sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
@@ -456,8 +475,8 @@ def search(args, print_results=True):
     region = args.region
     vault = args.vault
     search_term = args.search_term
-    BOOKKEEPING= args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
+    BOOKKEEPING = args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
 
     if BOOKKEEPING:
         sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
@@ -467,9 +486,9 @@ def search(args, print_results=True):
             domain = sdb_conn.get_domain(domain_name, validate=True)
         except boto.exception.SDBResponseError:
             domain = sdb_conn.create_domain(domain_name)
+            
     else:
-        raise Exception(u"You have to enable bookkeeping in your settings \
-                          before you can perform search.")
+        raise Exception(u"You must enable bookkeeping to be able to do searches.")
 
     search_params = []
     table_title = ""
@@ -487,8 +506,8 @@ def search(args, print_results=True):
 
     if search_term:
         search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
-    search_params = " and ".join(search_params)
 
+    search_params = " and ".join(search_params)
     query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
     items = domain.select(query)
 
@@ -496,12 +515,15 @@ def search(args, print_results=True):
         print table_title
 
     for item in items:
+        
         # print item, item.keys()
         item_attrs = []
         if not region:
             item_attrs += [item[u'region']]
+            
         if not vault:
             item_attrs += [item[u'vault']]
+            
         item_attrs += [item[u'filename']]
         item_attrs += [item[u'archive_id']]
         if print_results:
@@ -527,14 +549,16 @@ def inventory(args):
     region = args.region
     vault = args.vault
     force = args.force
-    BOOKKEEPING= args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME= args.bookkeeping_domain_name
+    BOOKKEEPING = args.bookkeeping
+    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
 
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
     gv = glaciercorecalls.GlacierVault(glacierconn, vault)
     if force:
         job = gv.retrieve_inventory(format="JSON")
+        print "Forced start of a new inventory retrieval job."
         return True
+    
     try:
         gv.list_jobs()
         inventory_retrievals_done = []
@@ -546,9 +570,10 @@ def inventory(args):
 
         if len(inventory_retrievals_done):
             list.sort(inventory_retrievals_done,
-                      key=lambda i: i['inventory_date'], reverse=True)
+                      key=lambda i: i['inventory_date'],
+                      reverse=True)
             job = inventory_retrievals_done[0]
-            print "Inventory with JobId:", job['JobId']
+            print "Inventory taken by JobId:", job['JobId']
             job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
             inventory = json.loads(job.get_output().read())
 
@@ -566,18 +591,38 @@ def inventory(args):
 
             if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
                 gv.retrieve_inventory(format="JSON")
-
+                print "Started a new inventory retrieval job."
+        
             render_inventory(inventory)
         else:
             job = gv.retrieve_inventory(format="JSON")
+            print "Started a new inventory retrieval job."
+            
     except Exception, e:
         print "exception: ", e
         print json.loads(e[1])['message']
 
-def setuplogging(loglevel,printtostdout):
+def setuplogging(args):
     #print "starting up with loglevel",loglevel,logging.getLevelName(loglevel)
-    logging.basicConfig(level=loglevel, filename="glacier.log",
-                                       format='%(levelname)-8s %(message)s')
+
+    printtostdout = args.printtostdout
+    logfile = args.logfile
+    loglevel = {'3': logging.CRITICAL,
+                'CRITICAL': logging.CRITICAL,
+                '2': logging.ERROR,
+                'ERROR': logging.ERROR,
+                '1': logging.WARNING,
+                'WARNING': logging.WARNING,
+                '0': logging.INFO,
+                'INFO': logging.INFO,
+                '-1': logging.DEBUG,
+                'DEBUG': logging.DEBUG
+                }[args.loglevel]
+
+    logging.basicConfig(level=loglevel,
+                        filename=logfile,
+                        format='%(levelname)-8s %(message)s')
+    
     if printtostdout:
         soh = logging.StreamHandler(sys.stderr)
         soh.setLevel(loglevel)
@@ -596,26 +641,15 @@ def main():
 
     conf_parser.add_argument("-c", "--conf", default=".glacier-cmd",
                         help="Specify config file", metavar="FILE")
-    conf_parser.add_argument('-d','--debug', default="INFO",
-                      choices=["-1","0","1","2","3","CRITICAL","ERROR","WARNING", "INFO", "DEGUB"],
-                      help="""Available levels are CRITICAL (3), ERROR (2),
-                              WARNING (1), INFO (0), DEBUG (-1)',default='INFO""")
+    conf_parser.add_argument('-l', '--loglevel', default="INFO",
+                      choices=["-1", "0", "1", "2", "3", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
+                      help="""Available levels are CRITICAL (3), ERROR (2), \
+WARNING (1), INFO (0), DEBUG (-1). Default: INFO.""")
     conf_parser.add_argument('-p','--printtostdout',action='store_true',default=False,
                       help='Print all log messages to stdout')
 
     args, remaining_argv = conf_parser.parse_known_args()
 
-    try:
-        loglevel = getattr(logging,args.debug)
-    except AttributeError:
-        loglevel = {3:logging.CRITICAL,
-                    2:logging.ERROR,
-                    1:logging.WARNING,
-                    0:logging.INFO,
-                    -1:logging.DEBUG,
-                    }[int(args.debug)]
-
-    setuplogging(loglevel,args.printtostdout)
 
     # Here we parse config from files in home folder or in current folder
     # We use separate sections for aws and glacier specific configs
@@ -679,6 +713,11 @@ def main():
                         required= False,
                         default= default("bookkeeping-domain-name"),
                         help="SimpleDB domain name for bookkeeping.")
+
+    group.add_argument('--logfile',
+                       required = False,
+                       default = os.path.expanduser('~/.glacier-cmd.log'),
+                       help = 'File to write log messages to.')
 
     parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
     parser_lsvault.set_defaults(func=lsvault)
@@ -752,7 +791,7 @@ Otherwise (when reading from STDIN) a value of
     parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
     parser_rmarchive.add_argument('vault')
     parser_rmarchive.add_argument('archive')
-    parser_rmarchive.set_defaults(func=deletearchive)
+    parser_rmarchive.set_defaults(func=rmarchive)
 
     parser_search = subparsers.add_parser('search',
                 help='Search SimpleDB database (if it was created). \
@@ -792,6 +831,9 @@ Otherwise (when reading from STDIN) a value of
     parser_download.set_defaults(func=download)
 
     args = parser.parse_args(remaining_argv)
+
+    setuplogging(args)
+    
     args.func(args)
 
 if __name__ == "__main__":
