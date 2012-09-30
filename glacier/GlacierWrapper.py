@@ -10,6 +10,9 @@ import pytz
 import re
 import logging
 import boto
+import os.path
+import time
+import sys
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -73,6 +76,8 @@ class GlacierWrapper(object):
     VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
     MAX_VAULT_NAME_LENGTH = 255
     MAX_VAULT_DESCRIPTION_LENGTH = 1024
+    MAX_PARTS = 10000
+    DEFAULT_PART_SIZE = GlacierWriter.DEFAULT_PART_SIZE
 
     class GlacierWrapperException(CausedException):
         """
@@ -180,14 +185,16 @@ class GlacierWrapper(object):
         """
 
         @wraps(func)
+        @log_class_call("Connecting to Amazon SimpleDB.", "Connection to Amazon SimpleDB successful.")
         def sdb_connect_wrap(*args, **kwargs):
             self = args[0]
             
-            if not self.sdb_conn:
+            if not hasattr(self, 'sdb_conn'):
                 try:
-                    self.logger.debug("""Connecting to Amazon SimpleDB with\naws_access_key %s\naws_secret_key %s""",
+                    self.logger.debug("""Connecting to Amazon SimpleDB domain %s with\naws_access_key %s\naws_secret_key %s""",
+                                      self.bookkeeping_domain_name,
                                       self.aws_access_key,
-                                      self.aws_access_key)
+                                      self.aws_secret_key)
                     self.sdb_conn = boto.connect_sdb(aws_access_key_id=self.aws_access_key,
                                                      aws_secret_access_key=self.aws_secret_key)
                     domain_name = self.bookkeeping_domain_name
@@ -198,7 +205,8 @@ class GlacierWrapper(object):
                                                              cause=e,
                                                              code="SdbConnectionError")
 
-                self.debugger.log("Succesfully connected to Amazon SimpleDB.")
+                self.logger.debug("Succesfully connected to Amazon SimpleDB.")
+                
             return func(*args, **kwargs)
 
         return sdb_connect_wrap
@@ -213,13 +221,13 @@ class GlacierWrapper(object):
         :returns : a
         :rtype: a
         """
-        if response.status == 403:
-            raise GlacierWrapper.ResponseException("403 Forbidden " + response.read() + response.msg,
-                                                   code="Error_403")
-
-        if response.status == 404:
-            raise GlacierWrapper.ResponseException("404 Not found " + response.read() + response.msg,
-                                                   code="Error_404")
+        if response.status in [403, 404]:
+            message = '%s %s\n%s'% (response.status,
+                                   response.reason,
+                                   json.loads(response.read())['message'])
+            code = {403: 'Error_403',
+                    404: 'Error_404'}[response.status]
+            raise GlacierWrapper.ResponseException(message, code=code)
 
     def _check_vault_name(self, name):
         """
@@ -251,7 +259,7 @@ class GlacierWrapper(object):
         """
         Checks if vault description is valid.
 
-        :param description: Vault sescription
+        :param description: Vault description
         :type description: str
 
         :returns: True if correct, false otherwise
@@ -259,7 +267,7 @@ class GlacierWrapper(object):
         """
 
         if len(description) > self.MAX_VAULT_DESCRIPTION_LENGTH:
-            ex= u"Description must be less or equal to %s characters."% self.MAX_VAULT_DESCRIPTION_LENGTH,
+            ex= u"Description must be no more than %s characters."% self.MAX_VAULT_DESCRIPTION_LENGTH,
             raise GlacierWrapper.InputException(ex, code="VaultDescriptionError")
 
         for char in description:
@@ -269,6 +277,54 @@ class GlacierWrapper(object):
 specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
                 raise GlacierWrapper.InputException(ex, code="VaultDescriptionError")
         return True
+
+    def _check_id(self, amazon_id):
+        """
+        Checks if an id (jobID, uploadID, archiveID) is valid.
+
+        :param description: id to be validated
+        :type description: str
+
+        :returns: True if correct, false otherwise
+        :rtype: boolean
+        """
+
+        #TODO: implement amazon_id validation check (correct length; characters valid)
+        
+        return True
+
+    def _next_power_of_2(self, v):
+        """
+        Returns the next power of 2, or the argument if it's already a power of 2.
+        """
+        if v == 0:
+            return 1
+        
+        v -= 1
+        v |= v >> 1
+        v |= v >> 2
+        v |= v >> 4
+        v |= v >> 8
+        v |= v >> 16
+        print 'v: %s'% v
+        return v + 1
+
+    def _progress(self, msg):
+        if sys.stdout.isatty():
+            print msg,
+            sys.stdout.flush()
+
+    # Formats file sizes in human readable format. Anything bigger than TB
+    # is returned is TB. Number of decimals is optional, defaults to 1.
+    def _size_fmt(self, num, decimals = 1):
+        fmt = "%%3.%sf %%s"% decimals
+        for x in ['bytes','KB','MB','GB']:
+            if num < 1024.0:
+                return fmt % (num, x)
+            
+            num /= 1024.0
+            
+        return fmt % (num, 'TB')
 
     @glacier_connect
     @log_class_call("Listing vaults.", "Listing vaults complete.")
@@ -367,9 +423,7 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
                 raise GlacierWrapper.CommunicationException("Cannot get vault description.",
                                                             cause=e)
             self._check_response(response)
-
-            jdata = json.loads(response.read())
-            return jdata
+            return json.loads(response.read())
 
     @glacier_connect
     @log_class_call("Requesting jobs list.", "Active jobs list received.")
@@ -386,6 +440,22 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
             return (response.getheaders(), gv.job_list)
 
     @glacier_connect
+    @log_class_call("Requesting job description.", "Job description received.")
+    def describejob(self, vault_name, job_id):
+        if self._check_vault_name(vault_name) and self._check_id:
+            try:
+                gv = GlacierVault(self.glacierconn, name=vault_name)
+                gj = GlacierJob(gv, job_id=job_id)
+                response = gj.job_status()
+            except Exception, e:
+                raise GlacierWrapper.CommunicationException("Cannot get jobs list.",
+                                                            cause=e)
+
+            self._check_response(response)
+            return json.loads(response.read())
+        
+
+    @glacier_connect
     @log_class_call("Aborting multipart upload.", "Multipart upload successfully aborted.")
     def abortmultipart(self, vault_name, upload_id):
         if self._check_vault_name(vault_name):
@@ -398,6 +468,141 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
             self._check_response(response)
 
             return response.getheaders()
+
+    @glacier_connect
+    @log_class_call("Listing multipart uploads.", "Multipart uploads list received successfully.")
+    def listmultiparts(self, vault_name):
+        if self._check_vault_name(vault_name):
+            try:
+                gv = GlacierVault(self.glacierconn, name=vault_name)
+                response = gv.list_multipart_uploads()
+            except Exception, e:
+                raise GlacierWrapper.CommunicationException("Cannot abort multipart upload.",
+                                                            cause=e)
+            self._check_response(response)
+
+            return json.loads(response.read())
+
+    @glacier_connect
+    @sdb_connect
+    @log_class_call("Uploading archive.", "Upload of archive finished.")
+    def upload(self, vault_name, file_name, description, region, stdin, part_size):
+
+        if description:
+            description = " ".join(description)
+        else:
+            description = file_name
+
+        if self._check_vault_description(description):
+            reader = None
+
+            # If filename is given, try to use this file.
+            # Otherwise try to read data from stdin.
+            total_size = 0
+            if not stdin:
+                try:
+                    reader = open(file_name, 'rb')
+                    total_size = os.path.getsize(file_name)
+                except IOError, e:
+                    raise GlacierWrapper.InputException("Couldn't access the file given.",
+                                                        cause=e)
+                
+            elif select.select([sys.stdin,],[],[],0.0)[0]:
+                reader = sys.stdin
+                total_size = 0
+            else:
+                print "Nothing to upload."
+                return False
+
+            if part_size < 0:
+                
+                # User did not specify part_size. Compute the optimal value.
+                if total_size > 0:
+                    part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+                else:
+                    part_size = GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
+                    
+            else:
+                part_size = self._next_power_of_2(part_size)
+
+            if total_size > part_size*1024*1024*self.MAX_PARTS:
+                
+                # User specified a value that is too small. Adjust.
+                part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+                print "WARNING: Part size given is too small; using %s MB parts to upload."% part_size
+
+            read_part_size = part_size * 1024 * 1024
+            writer = GlacierWriter(self.glacierconn, vault_name, description=description,
+                                   part_size=read_part_size)
+
+            # Read file in parts so we don't fill the whole memory.
+            start_time = current_time = previous_time = time.time()
+            for part in iter((lambda:reader.read(read_part_size)), ''):
+
+                writer.write(part)
+                current_time = time.time()
+                overall_rate = int(writer.uploaded_size/(current_time - start_time))
+                if total_size > 0:
+                    
+                    # Calculate transfer rates in bytes per second.
+                    current_rate = int(read_part_size/(current_time - previous_time))
+
+                    # Estimate finish time, based on overall transfer rate.
+                    if overall_rate > 0:
+                        time_left = (total_size - writer.uploaded_size)/overall_rate
+                        eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+                    else:
+                        time_left = "Unknown"
+                        eta = "Unknown"
+
+                    self._progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
+                                   (self._size_fmt(writer.uploaded_size),
+                                    self._size_fmt(total_size),
+                                    int(100 * writer.uploaded_size/total_size),
+                                    self._size_fmt(current_rate, 2),
+                                    self._size_fmt(overall_rate, 2),
+                                    eta))
+
+                else:
+                    self._progress('\rWrote %s. Rate %s/s.' %
+                                   (self._size_fmt(writer.uploaded_size),
+                                    self._size_fmt(overall_rate, 2)))
+
+                previous_time = current_time
+
+            writer.close()
+            current_time = time.time()
+            overall_rate = int(writer.uploaded_size/(current_time - start_time))
+            self._progress('\rWrote %s. Rate %s/s.\n' %
+                           (self._size_fmt(writer.uploaded_size),
+                            self._size_fmt(overall_rate, 2)))
+
+            archive_id = writer.get_archive_id()
+            location = writer.get_location()
+            sha256hash = writer.get_hash()
+
+            if self.bookkeeping:
+                file_attrs = {
+                    'region': region,
+                    'vault': vault_name,
+                    'filename': file_name,
+                    'archive_id': archive_id,
+                    'location': location,
+                    'description': description,
+                    'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
+                    'hash': sha256hash
+                }
+
+                if file_name:
+                    file_attrs['filename'] = file_name
+                elif stdin:
+                    file_attrs['filename'] = description
+
+                self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
+
+            print "Created archive with ID: ", archive_id
+            print "Archive SHA256 tree hash: ", sha256hash
+
 
     @glacier_connect
     @log_class_call("Retrieving archive.", "Archive retrieval job response received.")
