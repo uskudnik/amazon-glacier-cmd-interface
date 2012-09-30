@@ -305,7 +305,7 @@ def putarchive(args):
         if args.partsize < 0:
             # User did not specify part_size. Compute the optimal value.
             if total_size > 0:
-                part_size = next_power_of_2(total_size / (1024*1024*10000))
+                part_size = max(1, next_power_of_2(total_size / (1024*1024*10000)))
             else:
                 part_size = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
         else:
