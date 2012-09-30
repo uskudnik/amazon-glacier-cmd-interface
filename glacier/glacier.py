@@ -117,17 +117,27 @@ def lsvault(args):
     glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
 
     response = glacierconn.list_vaults()
-    parse_response(response)
-    jdata = json.loads(response.read())
-    vault_list = jdata['VaultList']
-    table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
-    for vault in vault_list:
-        table.add_row([vault['VaultName'],
-                       vault['VaultARN'],
-                       vault['CreationDate'],
-                       locale.format('%d', vault['SizeInBytes'], grouping=True) ])
-    table.sortby = "Vault name"
-    print table
+    table = None
+    while True:
+        parse_response(response)
+        jdata = json.loads(response.read())
+        if response.status == 200 and len(jdata['VaultList']) > 0:
+            if not table:
+                headers = sorted(jdata['VaultList'][0].keys())
+                table = PrettyTable(headers)
+            for entry in jdata['VaultList']:
+                table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'SizeInBytes'
+                              else entry[k] for k in headers])
+            if jdata['Marker']:
+                response = glacierconn.list_vaults(jdata['Marker'])
+            else:
+                break
+        else:
+            break
+
+    if table:
+        table.sortby = "VaultName"
+        print table
 
 def mkvault(args):
     vault_name = args.vault
@@ -174,15 +184,26 @@ def listmultiparts(args):
 
     if check_vault_name(vault_name):
         response = glaciercorecalls.GlacierVault(glacierconn, vault_name).list_multipart_uploads()
-        parse_response(response)
-        jdata = json.loads(response.read())
-        print "Marker: ", jdata['Marker']
-        if len(jdata['UploadsList']) > 0:
-            headers = sorted(jdata['UploadsList'][0].keys())
-            table = PrettyTable(headers)
-            for entry in jdata['UploadsList']:
-                table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
-                               else entry[k] for k in headers ])
+        table = None
+        while True:
+            parse_response(response)
+            jdata = json.loads(response.read())
+            print "Marker: ", jdata['Marker']
+            if response.status == 200 and len(jdata['UploadsList']) > 0:
+                if not table:
+                    headers = sorted(jdata['UploadsList'][0].keys())
+                    table = PrettyTable(headers)
+                for entry in jdata['UploadsList']:
+                    table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
+                                   else entry[k] for k in headers ])
+                if jdata['Marker']:
+                    response = glaciercorecalls.GlacierVault(glacierconn, vault_name).list_multipart_uploads(jdata['Marker'])
+                else:
+                    break
+            else:
+                break
+
+        if table:
             print table
 
 def abortmultipart(args):
@@ -334,7 +355,7 @@ def putarchive(args):
         writer.close()
         current_time = time.time()
         if total_size > 0:
-            progress('\rWrote %s of %s bytes (%s%%). Transfer rate %s.' %
+            progress('\rWrote %s of %s bytes (%s%%). Transfer rate %s.\n' %
                      (locale.format('%d', writer.uploaded_size, grouping=True),
                       locale.format('%d', total_size, grouping=True),
                       int(100 * writer.uploaded_size/total_size),
