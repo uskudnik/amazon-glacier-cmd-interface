@@ -25,6 +25,7 @@ import urllib
 import hashlib
 import math
 import json
+import sys
 
 from boto.connection import AWSAuthConnection
 
@@ -275,8 +276,11 @@ class GlacierWriter(object):
         self.upload_url = response.getheader("location")
 
     def send_part(self):
-        # Usage of memoryview should speed up execution and be more mem friendly
-        buf = memoryview("".join(self.buffer))
+        if sys.version_info < (2, 7, 0):
+            buf = "".join(self.buffer)
+        else:
+            # Usage of memoryview should speed up execution and be more mem friendly
+            buf = memoryview("".join(self.buffer))
 
         # Put back any data remaining over the part size into the
         # buffer
