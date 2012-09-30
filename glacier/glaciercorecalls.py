@@ -275,7 +275,11 @@ class GlacierWriter(object):
         self.upload_url = response.getheader("location")
 
     def send_part(self):
-        buf = "".join(self.buffer)
+##        buf = "".join(self.buffer)
+        
+        # Usage of memoryview should speed up execution and be more mem friendly
+        buf = memoryview("".join(self.buffer))
+
         # Put back any data remaining over the part size into the
         # buffer
         if len(buf) > self.part_size:
@@ -284,8 +288,10 @@ class GlacierWriter(object):
         else:
             self.buffer = []
             self.buffer_size = 0
+            
         # The part we will send
         part = buf[:self.part_size]
+        
         # Create a request and sign it
         part_tree_hash = tree_hash(chunk_hashes(part))
         self.tree_hashes.append(part_tree_hash)

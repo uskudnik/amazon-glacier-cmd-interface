@@ -36,8 +36,10 @@ import re
 import json
 import datetime
 import dateutil.parser
-import pytz
 import locale
+import time
+import pytz
+
 from prettytable import PrettyTable
 
 import boto
@@ -77,6 +79,23 @@ def check_description(description):
                               control codes, specifically ASCII values 32—126 \
                               decimal or 0x20—0x7E hexadecimal.")
     return True
+
+def is_power_of_2(v):
+    return (v & (v - 1)) == 0
+
+def next_power_of_2(v):
+    """
+    Returns the next power of 2, or the argument if it's already a power of 2.
+    """
+    if v == 0:
+        return 1
+    v -= 1
+    v |= v >> 1
+    v |= v >> 2
+    v |= v >> 4
+    v |= v >> 8
+    v |= v >> 16
+    return v + 1
 
 def print_headers(response):
     table = PrettyTable(["Header", "Value"])
@@ -212,6 +231,16 @@ def describejob(args):
                                                                      jobid, gj.created,
                                                                      gj.status_code)
 
+# Formats file sizes in human readable format. Anything bigger than TB
+# is returned is TB. Number of decimals is optional, defaults to 1.
+def size_fmt(num, decimals = 1):
+    fmt = "%%3.%sf %%s"% decimals
+    for x in ['bytes','KB','MB','GB']:
+        if num < 1024.0:
+            return fmt % (num, x)
+        num /= 1024.0
+    return fmt % (num, 'TB')
+
 def putarchive(args):
     region = args.region
     vault = args.vault
@@ -315,7 +344,7 @@ def putarchive(args):
                  (size_fmt(writer.uploaded_size),
                   size_fmt(overall_rate, 2),
                   time.strftime("%H:%M:%S", time.localtime(current_time))))
-
+        
         archive_id = writer.get_archive_id()
         location = writer.get_location()
         sha256hash = writer.get_hash()
