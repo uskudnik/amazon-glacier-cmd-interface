@@ -36,9 +36,10 @@ import re
 import json
 import datetime
 import dateutil.parser
-import pytz
 import locale
 import time
+import pytz
+
 from prettytable import PrettyTable
 
 import boto
@@ -86,6 +87,8 @@ def next_power_of_2(v):
     """
     Returns the next power of 2, or the argument if it's already a power of 2.
     """
+    if v == 0:
+        return 1
     v -= 1
     v |= v >> 1
     v |= v >> 2
@@ -267,6 +270,7 @@ def putarchive(args):
         reader = None
 
         # if filename is given, use filename then look at stdio if theres something there
+        total_size = 0
         if not stdin:
             try:
                 reader = open(filename, 'rb')
@@ -302,13 +306,13 @@ def putarchive(args):
         for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
 
             writer.write(part)
-
+            
+            # Calculate transfer rates in bytes per second.
+            current_time = time.time()
+            current_rate = int(READ_PART_SIZE/(current_time - previous_time))
+            overall_rate = int(writer.uploaded_size/(current_time - start_time))
             if total_size > 0:
-                # Calculate transfer rates in bytes per second.
-                current_time = time.time()
-                current_rate = int(READ_PART_SIZE/(current_time - previous_time))
-                overall_rate = int(writer.uploaded_size/(current_time - start_time))
-
+                
                 # Estimate finish time, based on overall transfer rate.
                 if overall_rate > 0:
                     time_left = (total_size - writer.uploaded_size)/overall_rate
@@ -326,24 +330,21 @@ def putarchive(args):
                           eta))
 
             else:
-                progress('\rWrote %s bytes.' %
-                    (locale.format('%d', writer.uploaded_size, grouping=True)))
+                progress('\rWrote %s. Rate %s/s, average %s/s.' %
+                         (size_fmt(writer.uploaded_size),
+                          size_fmt(current_rate, 2),
+                          size_fmt(overall_rate, 2)))
 
             previous_time = current_time
 
         writer.close()
         current_time = time.time()
-        if total_size > 0:
-            progress('\rWrote %s of %s bytes (%s%%). Transfer rate %s.' %
-                     (locale.format('%d', writer.uploaded_size, grouping=True),
-                      locale.format('%d', total_size, grouping=True),
-                      int(100 * writer.uploaded_size/total_size),
-                      locale.format('%d', overall_rate, grouping=True)))
-        else:
-            progress('\rWrote %s bytes.\n' %
-                (locale.format('%d', writer.uploaded_size, grouping=True)))
-
-
+        overall_rate = int(writer.uploaded_size/(current_time - start_time))
+        progress('\rWrote %s. Average rate %s/s. Finished at %s.\n' %
+                 (size_fmt(writer.uploaded_size),
+                  size_fmt(overall_rate, 2),
+                  time.strftime("%H:%M:%S", time.localtime(current_time))))
+        
         archive_id = writer.get_archive_id()
         location = writer.get_location()
         sha256hash = writer.get_hash()
@@ -617,15 +618,17 @@ def main():
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 add_help=False)
 
-    conf_parser.add_argument("-c", "--conf", default=".glacier",
+    conf_parser.add_argument("-c", "--conf", default=".glacier-cmd",
                         help="Specify config file", metavar="FILE")
     args, remaining_argv = conf_parser.parse_known_args()
 
     # Here we parse config from files in home folder or in current folder
-    # We use separate sections for aws and glacier speciffic configs
+    # We use separate sections for aws and glacier specific configs
     aws = glacier = {}
     config = ConfigParser.SafeConfigParser()
-    if config.read([args.conf, os.path.expanduser('~/.glacier')]):
+    if config.read(['/etc/glacier-cmd.conf',
+                    os.path.expanduser('~/.glacier-cmd'),
+                    args.conf]):
         try:
             aws = dict(config.items("aws"))
         except ConfigParser.NoSectionError:
@@ -656,7 +659,7 @@ def main():
                                        help=u"For subcommand help, use: glacier <subcommand> -h")
 
     group = parser.add_argument_group('aws')
-    help_msg_config = u"(Required if you haven't created .glacier config file)"
+    help_msg_config = u"(Required if you haven't created .glacier-cmd or /etc/glacier-cmd.conf config file)"
     group.add_argument('--aws-access-key',
                         required= a_required("aws-access-key"),
                         default= a_default("aws-access-key"),
@@ -674,7 +677,7 @@ def main():
                         required= False,
                         default= default("bookkeeping") and True,
                         action= "store_true",
-                        help="Should we keep book of all creatated archives.\
+                        help="Should we keep book of all created archives.\
                               This requires a SimpleDB account and it's \
                               bookkeeping domain name set")
     group.add_argument('--bookkeeping-domain-name',
