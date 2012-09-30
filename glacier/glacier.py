@@ -28,7 +28,7 @@ from GlacierWrapper import GlacierWrapper
 MAX_VAULT_NAME_LENGTH = 255
 MAX_DESCRIPTION_LENGTH = 1024
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-READ_PART_SIZE = GlacierWrapper.DEFAULT_PART_SIZE
+DEFAULT_PART_SIZE = GlacierWrapper.DEFAULT_PART_SIZE
 
 locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
 
@@ -354,7 +354,8 @@ def getarchive(args):
                 job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
                 if filename:
                     ffile = open(filename, "w")
-                    ffile.write(job2.get_output().read())
+                    for part in iter((lambda:job2.get_output().read(READ_PART_SIZE)), ''):
+                        ffile.write(part)
                     ffile.close()
                 else:
                     print job2.get_output().read()
