@@ -36,10 +36,8 @@ import re
 import json
 import datetime
 import dateutil.parser
-import locale
-import time
 import pytz
-
+import locale
 from prettytable import PrettyTable
 
 import boto
@@ -214,16 +212,6 @@ def describejob(args):
                                                                      jobid, gj.created,
                                                                      gj.status_code)
 
-# Formats file sizes in human readable format. Anything bigger than TB
-# is returned is TB. Number of decimals is optional, defaults to 1.
-def size_fmt(num, decimals = 1):
-    fmt = "%%3.%sf %%s"% decimals
-    for x in ['bytes','KB','MB','GB']:
-        if num < 1024.0:
-            return fmt % (num, x)
-        num /= 1024.0
-    return fmt % (num, 'TB')
-
 def putarchive(args):
     region = args.region
     vault = args.vault
@@ -251,7 +239,6 @@ def putarchive(args):
 
     if check_description(description):
         reader = None
-        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description)
 
         # if filename is given, use filename then look at stdio if theres something there
         total_size = 0
@@ -264,9 +251,26 @@ def putarchive(args):
                 return False
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
+            total_size = 0
         else:
             print "Nothing to upload."
             return False
+
+        if args.partsize < 0:
+            # User did not specify part_size. Compute the optimal value.
+            if total_size > 0:
+                part_size = next_power_of_2(total_size / (1024*1024*10000))
+            else:
+                part_size = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
+        else:
+            part_size = next_power_of_2(args.partsize)
+
+        if total_size > part_size * 1024 * 1024 * 10000:
+            # User specified a value that is too small. Adjust.
+            part_size = next_power_of_2(total_size / (1024*1024*10000))
+
+        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description,
+                                                part_size=(part_size*1024*1024))
 
         #Read file in chunks so we don't fill whole memory
         start_time = current_time = previous_time = time.time()
@@ -287,7 +291,7 @@ def putarchive(args):
                 else:
                     time_left = "Unknown"
                     eta = "Unknown"
-                    
+
                 progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
                          (size_fmt(writer.uploaded_size),
                           size_fmt(total_size),
@@ -307,11 +311,10 @@ def putarchive(args):
         writer.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
-        progress('\rWrote %s. Average rate %s/s. Finished at %s.' %
+        progress('\rWrote %s. Average rate %s/s. Finished at %s.\n' %
                  (size_fmt(writer.uploaded_size),
                   size_fmt(overall_rate, 2),
                   time.strftime("%H:%M:%S", time.localtime(current_time))))
-        print
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
@@ -336,7 +339,7 @@ def putarchive(args):
             domain.put_attributes(file_attrs['filename'], file_attrs)
 
         print "Created archive with ID: ", archive_id
-        print "Archive SHA256 hash: ", sha256hash
+        print "Archive SHA256 tree hash: ", sha256hash
 
 def getarchive(args):
     region = args.region
@@ -359,7 +362,8 @@ def getarchive(args):
                 job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
                 if filename:
                     ffile = open(filename, "w")
-                    ffile.write(job2.get_output().read())
+                    for part in iter((lambda:job2.get_output().read(READ_PART_SIZE)), ''):
+                        ffile.write(part)
                     ffile.close()
                 else:
                     print job2.get_output().read()
@@ -582,7 +586,7 @@ def main():
 
     # Config parser
     conf_parser = argparse.ArgumentParser(
-                                formatter_class=argparse.RawDescriptionHelpFormatter,
+                                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 add_help=False)
 
     conf_parser.add_argument("-c", "--conf", default=".glacier-cmd",
@@ -620,6 +624,7 @@ def main():
 
     # Main parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      description=program_description)
     subparsers = parser.add_subparsers(title='Subcommands',
                                        help=u"For subcommand help, use: glacier <subcommand> -h")
@@ -671,16 +676,45 @@ def main():
     parser_describejob.add_argument('jobid')
     parser_describejob.set_defaults(func=describejob)
 
-    parser_upload = subparsers.add_parser('upload', help='Upload an archive')
+    parser_upload = subparsers.add_parser('upload', help='Upload an archive',
+                               formatter_class=argparse.RawTextHelpFormatter)
     parser_upload.add_argument('vault')
     parser_upload.add_argument('filename')
     parser_upload.add_argument('--stdin',
                                 help="Input data from stdin, instead of file",
                                 action='store_true')
     parser_upload.add_argument('--name', default=None,
-                                help='Use the given name as the filename for bookkeeping purposes. \
-                               This option is useful in conjunction with --stdin \
-                               or when the file being uploaded is a temporary file.')
+                                help='''\
+Use the given name as the filename for bookkeeping
+purposes. This option is useful in conjunction with
+--stdin or when the file being uploaded is a
+temporary file.''')
+    parser_upload.add_argument('--partsize', type=int, default=-1,
+                               help='''\
+Part size to use for upload (in Mb). Must
+be a power of 2 in the range:
+    1 .. 4,294,967,296 (2^0 .. 2^32).
+Values that are not a power of 2 will be
+adjusted upwards to the next power of 2.
+
+Amazon accepts up to 10,000 parts per upload.
+
+Smaller parts result in more frequent progress
+updates, and less bandwidth wasted if a part
+needs to be re-transmitted. On the other hand,
+smaller parts limit the size of the archive that
+can be uploaded. Some examples:
+
+partsize  MaxArchiveSize
+    1        1*1024*1024*10000 ~= 10Gb
+    4        4*1024*1024*10000 ~= 41Gb
+   16       16*1024*1024*10000 ~= 137Gb
+  128      128*1024*1024*10000 ~= 1.3Tb
+
+By default, the smallest possible value is used
+when the archive size is known ahead of time.
+Otherwise (when reading from STDIN) a value of
+128 is used.''')
     parser_upload.add_argument('description', nargs='*')
     parser_upload.set_defaults(func=putarchive)
 

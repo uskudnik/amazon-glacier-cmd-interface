@@ -115,11 +115,15 @@ stdin. To upload from file:
     Created archive with ID: EQocIYw9ZmofbWixjD2oKb8faeIg4D1uSi1PxpdyBVy__lDMCWcmXLIzNKBP4ikPH3Ngn4w8ApqCMN7XJqNL7V4sxRzq42Zu74DctpLG9GSPSNjLc1_vorGVk3YqVEdjd2cqnWTdiA
     Archive SHA256 hash: e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0
 
-You can compare the SHA256 returned by AWS with the locally computed one to
-make sure the upload was successful:
+You can only compare the SHA256 returned by AWS with the locally computed one
+(using the `shasum` utility) if your archive was under 1Mb.
 
     $ shasum -a 256 SomeFile
     e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0  SomeFile
+
+For files larger than 1Mb, a special SHA256 needs to be computed. There are
+plans to update the tool in the future to compute these special SHA256 values
+off-line.
 
 If you are uploading a temp file with a meaningless name, or using --stdin, you
 can use the --name option to tell glacier to ignore the file name and use the
@@ -130,6 +134,12 @@ given name when it creates the bookkeeping entry:
 To upload from stdin:
 
     $ TODO: example for using --stdin
+
+IMPORTANT NOTE: If you're uploading from stdin, and you don't specify a
+--partsize option, your upload will be limited to 1.3Tb, and the progress
+report will come out every 128Mb. For more details, run:
+
+    $ glacier-cmd upload -h
 
 You have two options to retrieve an archive - first one is `download`, 
 second one is `getarchive`
