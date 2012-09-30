@@ -19,11 +19,12 @@ import dateutil.parser
 import locale
 import time
 import boto
-import glaciercorecalls
+##import glaciercorecalls
 import pytz
 
 from prettytable import PrettyTable
 from GlacierWrapper import GlacierWrapper
+from functools import wraps
 
 MAX_VAULT_NAME_LENGTH = 255
 MAX_DESCRIPTION_LENGTH = 1024
@@ -37,16 +38,16 @@ locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
 ##        print msg,
 ##        sys.stdout.flush()
 
-def check_vault_name(name):
-    m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
-    if len(name) > 255:
-        raise Exception(u"Vault name can be at most 255 characters long.")
-    if len(name) == 0:
-        raise Exception(u"Vault name has to be at least 1 character long.")
-    if m.end() != len(name):
-        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), \
-'-' (hyphen), and '.' (period)")
-    return True
+##def check_vault_name(name):
+##    m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
+##    if len(name) > 255:
+##        raise Exception(u"Vault name can be at most 255 characters long.")
+##    if len(name) == 0:
+##        raise Exception(u"Vault name has to be at least 1 character long.")
+##    if m.end() != len(name):
+##        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), \
+##'-' (hyphen), and '.' (period)")
+##    return True
 
 
 
@@ -74,17 +75,17 @@ def print_headers(headers):
 
     print table
 
-def parse_response(response):
-    if response.status == 403:
-        print "403 Forbidden."
-        print "\n"
-        print "Reason:"
-        print response.read()
-        print response.msg
-
-    print response.status, response.reason
-    if response.status == 204:
-        print_headers(response)
+##def parse_response(response):
+##    if response.status == 403:
+##        print "403 Forbidden."
+##        print "\n"
+##        print "Reason:"
+##        print response.read()
+##        print response.msg
+##
+##    print response.status, response.reason
+##    if response.status == 204:
+##        print_headers(response)
 
 def default_glacier_wrapper(args):
     return GlacierWrapper(args.aws_access_key,
@@ -94,7 +95,7 @@ def default_glacier_wrapper(args):
                           args.bookkeeping_domain_name)
 
 def handle_errors(fn):
-##    @wraps(fn)
+    @wraps(fn)
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
@@ -137,12 +138,12 @@ def rmvault(args):
 def describevault(args):
     glacier = default_glacier_wrapper(args)
 
-    jdata = glacier.describevault(args.vault)
+    response = glacier.describevault(args.vault)
 
     table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
-    table.add_row([jdata['LastInventoryDate'], jdata['NumberOfArchives'],
-                   locale.format('%d', jdata['SizeInBytes'], grouping=True),
-                   jdata['VaultARN'], jdata['CreationDate']])
+    table.add_row([response['LastInventoryDate'], response['NumberOfArchives'],
+                   locale.format('%d', response['SizeInBytes'], grouping=True),
+                   response['VaultARN'], response['CreationDate']])
     print table
 
 @handle_errors
@@ -160,6 +161,7 @@ def listmultiparts(args):
                            else entry[k] for k in headers ])
         print table
 
+@handle_errors
 def abortmultipart(args):
     glacier = default_glacier_wrapper(args)
     
@@ -171,6 +173,7 @@ def listjobs(args):
     glacier = default_glacier_wrapper(args)
 
     response, job_list = glacier.listjobs(args.vault)
+    
     table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
                          "VaultARN", "Job ID"])
     for job in job_list:
@@ -182,6 +185,7 @@ def listjobs(args):
                        job['JobId']])
     print table
 
+@handle_errors
 def describejob(args):
     glacier = default_glacier_wrapper(args)
     gj = glacier.describejob(args.vault, args.jobid)
@@ -202,6 +206,7 @@ def describejob(args):
 ##        
 ##    return fmt % (num, 'TB')
 
+@handle_errors
 def upload(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.upload(args.vault, args.filename, args.description, args.region, args.stdin,
@@ -331,191 +336,217 @@ def upload(args):
 ##        print "Created archive with ID: ", archive_id
 ##        print "Archive SHA256 tree hash: ", sha256hash
 
+@handle_errors
 def getarchive(args):
-    region = args.region
-    vault = args.vault
-    archive = args.archive
-    filename = args.filename
+    glacier = default_glacier_wrapper(args)
+    response = glacier.getarchive(args.vault, args.archive)
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
+    print response
 
-    jobs = gv.list_jobs()
-    found = False
-    for job in gv.job_list:
-        if job['ArchiveId'] == archive:
-            found = True
-            
-            # no need to start another archive retrieval
-            if filename or not job['Completed']:
-                print "ArchiveId: ", archive
-                
-            if job['Completed']:
-                job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
-                if filename:
-                    ffile = open(filename, "w")
-                    for part in iter((lambda:job2.get_output().read(READ_PART_SIZE)), ''):
-                        ffile.write(part)
-                    ffile.close()
-                else:
-                    print job2.get_output().read()
-                return
-            
-    if not found:
-        job = gv.retrieve_archive(archive)
-        print "Started"
+    
+##    region = args.region
+##    vault = args.vault
+##    archive = args.archive
+##    filename = args.filename
+##
+##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
+##
+##    jobs = gv.list_jobs()
+##    found = False
+##    for job in gv.job_list:
+##        if job['ArchiveId'] == archive:
+##            found = True
+##            
+##            # no need to start another archive retrieval
+##            if filename or not job['Completed']:
+##                print "ArchiveId: ", archive
+##                
+##            if job['Completed']:
+##                job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
+##                if filename:
+##                    ffile = open(filename, "w")
+##                    for part in iter((lambda:job2.get_output().read(READ_PART_SIZE)), ''):
+##                        ffile.write(part)
+##                    ffile.close()
+##                else:
+##                    print job2.get_output().read()
+##                return
+##            
+##    if not found:
+##        job = gv.retrieve_archive(archive)
+##        print "Started"
 
+@handle_errors
 def download(args):
-    region = args.region
-    vault = args.vault
-    filename = args.filename
-    out_file = args.out_file
+    glacier = default_glacier_wrapper(args)
+    response = glacier.download(args.vault, args.region, args.filename, args.out_file)
 
-    if not filename:
-        raise Exception(u"You must supply either a file name or a search\
-term to search the descriptions.")
+    print response
 
-    args.search_term = filename
-    items = search(args, print_results=False)
+##    region = args.region
+##    vault = args.vault
+##    filename = args.filename
+##    out_file = args.out_file
+##
+##    if not filename:
+##        raise Exception(u"You must supply either a file name or a search\
+##term to search the descriptions.")
+##
+##    args.search_term = filename
+##    items = search(args, print_results=False)
+##
+##    n_items = 0
+##    if not items:
+##        print "No results."
+##        return False
+##
+##    print "Region\tVault\tFilename\tArchive ID"
+##    for item in items:
+##        n_items += 1
+##        archive = item['archive_id']
+##        vault = item['vault']
+##        print "%s\t%s\t%s\t%s" % (item['region'],
+##                                  item['vault'],
+##                                  item['filename'],
+##                                  item['archive_id'])
+##
+##    if n_items > 1:
+##        print "You need to uniquely identify file using region, vault and/or \
+##the file name. Alternatively use getarchive <Archive ID> to retrieve \
+##the archive."
+##        return False
+##
+##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
+##
+##    jobs = gv.list_jobs()
+##    found = False
+##    for job in gv.job_list:
+##        if job['ArchiveId'] == archive:
+##            found = True
+##            
+##            # no need to start another archive retrieval
+##            if not job['Completed']:
+##                print "Waiting for Amazon Glacier to retrieve the archive."
+##                
+##            if job['Completed']:
+##                print "File is available, starting download now."
+##                job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
+##                if out_file:
+##                    ffile = open(out_file, "w")
+##                    ffile.write(job2.get_output().read())
+##                    ffile.close()
+##                else:
+##                    print job2.get_output().read()
+##
+##            return True
+##
+##    if not found:
+##        job = gv.retrieve_archive(archive)
+##        print "Archive retrieve request sent to Amazon Glacier, your archive \
+##be available for download in about four hours."
 
-    n_items = 0
-    if not items:
-        print "No results."
-        return False
-
-    print "Region\tVault\tFilename\tArchive ID"
-    for item in items:
-        n_items += 1
-        archive = item['archive_id']
-        vault = item['vault']
-        print "%s\t%s\t%s\t%s" % (item['region'],
-                                  item['vault'],
-                                  item['filename'],
-                                  item['archive_id'])
-
-    if n_items > 1:
-        print "You need to uniquely identify file using region, vault and/or \
-the file name. Alternatively use getarchive <Archive ID> to retrieve \
-the archive."
-        return False
-
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
-
-    jobs = gv.list_jobs()
-    found = False
-    for job in gv.job_list:
-        if job['ArchiveId'] == archive:
-            found = True
-            
-            # no need to start another archive retrieval
-            if not job['Completed']:
-                print "Waiting for Amazon Glacier to retrieve the archive."
-                
-            if job['Completed']:
-                print "File is available, starting download now."
-                job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
-                if out_file:
-                    ffile = open(out_file, "w")
-                    ffile.write(job2.get_output().read())
-                    ffile.close()
-                else:
-                    print job2.get_output().read()
-
-            return True
-
-    if not found:
-        job = gv.retrieve_archive(archive)
-        print "Archive retrieve request sent to Amazon Glacier, your archive \
-be available for download in about four hours."
-
+@handle_errors
 def rmarchive(args):
-    region = args.region
-    vault = args.vault
-    archive = args.archive
-    BOOKKEEPING = args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
+    glacier = default_glacier_wrapper(args)
+    glacier.rmarchive(args.vault, args.archive)
+    print "archive removed."
+    
+##    region = args.region
+##    vault = args.vault
+##    archive = args.archive
+##    BOOKKEEPING = args.bookkeeping
+##    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
+##
+##    if BOOKKEEPING:
+##        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+##                                    aws_secret_access_key=args.aws_secret_key)
+##        domain_name = BOOKKEEPING_DOMAIN_NAME
+##        try:
+##            domain = sdb_conn.get_domain(domain_name, validate=True)
+##        except boto.exception.SDBResponseError:
+##            domain = sdb_conn.create_domain(domain_name)
+##
+##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
+##
+##    parse_response( gv.delete_archive(archive) )
+##
+##    # TODO: can't find a method for counting right now
+##    query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
+##    items = domain.select(query)
+##    for item in items:
+##        domain.delete_item(item)
 
-    if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
-                                    aws_secret_access_key=args.aws_secret_key)
-        domain_name = BOOKKEEPING_DOMAIN_NAME
-        try:
-            domain = sdb_conn.get_domain(domain_name, validate=True)
-        except boto.exception.SDBResponseError:
-            domain = sdb_conn.create_domain(domain_name)
-
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
-
-    parse_response( gv.delete_archive(archive) )
-
-    # TODO: can't find a method for counting right now
-    query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
-    items = domain.select(query)
-    for item in items:
-        domain.delete_item(item)
-
+@handle_errors
 def search(args, print_results=True):
-    region = args.region
-    vault = args.vault
-    search_term = args.search_term
-    BOOKKEEPING = args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
-
-    if BOOKKEEPING:
-        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
-                                    aws_secret_access_key=args.aws_secret_key)
-        domain_name = BOOKKEEPING_DOMAIN_NAME
-        try:
-            domain = sdb_conn.get_domain(domain_name, validate=True)
-        except boto.exception.SDBResponseError:
-            domain = sdb_conn.create_domain(domain_name)
-            
-    else:
-        raise Exception(u"You must enable bookkeeping to be able to do searches.")
-
-    search_params = []
-    table_title = ""
-    if region:
-        search_params += ["region='%s'" % (region,)]
-    else:
-        table_title += "Region\t"
-
-    if vault:
-        search_params += ["vault='%s'" % (vault,)]
-    else:
-        table_title += "Vault\t"
-
-    table_title += "Filename\tArchive ID"
-
-    if search_term:
-        search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
-
-    search_params = " and ".join(search_params)
-    query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
-    items = domain.select(query)
-
-    if print_results:
-        print table_title
-
-    for item in items:
-        
-        # print item, item.keys()
-        item_attrs = []
-        if not region:
-            item_attrs += [item[u'region']]
-            
-        if not vault:
-            item_attrs += [item[u'vault']]
-            
-        item_attrs += [item[u'filename']]
-        item_attrs += [item[u'archive_id']]
-        if print_results:
-            print "\t".join(item_attrs)
-
-    if not print_results:
-        return items
+    glacier = default_glacier_wrapper(args)
+    response = glacier.search(vault=args.vault,
+                              region=args.region,
+                              search_term=args.search_term,
+                              print_results=True)
+    print response
+    
+##    region = args.region
+##    vault = args.vault
+##    search_term = args.search_term
+##    BOOKKEEPING = args.bookkeeping
+##    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
+##
+##    if BOOKKEEPING:
+##        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+##                                    aws_secret_access_key=args.aws_secret_key)
+##        domain_name = BOOKKEEPING_DOMAIN_NAME
+##        try:
+##            domain = sdb_conn.get_domain(domain_name, validate=True)
+##        except boto.exception.SDBResponseError:
+##            domain = sdb_conn.create_domain(domain_name)
+##            
+##    else:
+##        raise Exception(u"You must enable bookkeeping to be able to do searches.")
+##
+##    search_params = []
+##    table_title = ""
+##    if region:
+##        search_params += ["region='%s'" % (region,)]
+##    else:
+##        table_title += "Region\t"
+##
+##    if vault:
+##        search_params += ["vault='%s'" % (vault,)]
+##    else:
+##        table_title += "Vault\t"
+##
+##    table_title += "Filename\tArchive ID"
+##
+##    if search_term:
+##        search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
+##
+##    search_params = " and ".join(search_params)
+##    query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
+##    items = domain.select(query)
+##
+##    if print_results:
+##        print table_title
+##
+##    for item in items:
+##        
+##        # print item, item.keys()
+##        item_attrs = []
+##        if not region:
+##            item_attrs += [item[u'region']]
+##            
+##        if not vault:
+##            item_attrs += [item[u'vault']]
+##            
+##        item_attrs += [item[u'filename']]
+##        item_attrs += [item[u'archive_id']]
+##        if print_results:
+##            print "\t".join(item_attrs)
+##
+##    if not print_results:
+##        return items
 
 def render_inventory(inventory):
     print "Inventory of vault: %s" % (inventory["VaultARN"],)
@@ -531,61 +562,68 @@ def render_inventory(inventory):
     print table
 
 def inventory(args):
-    region = args.region
-    vault = args.vault
-    force = args.force
-    BOOKKEEPING = args.bookkeeping
-    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
 
-    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
-    if force:
-        job = gv.retrieve_inventory(format="JSON")
-        print "Forced start of a new inventory retrieval job."
-        return True
-    
-    try:
-        gv.list_jobs()
-        inventory_retrievals_done = []
-        for job in gv.job_list:
-            if job['Action'] == "InventoryRetrieval" and job['StatusCode'] == "Succeeded":
-                d = dateutil.parser.parse(job['CompletionDate']).replace(tzinfo=pytz.utc)
-                job['inventory_date'] = d
-                inventory_retrievals_done += [job]
+    glacier = default_glacier_wrapper(args)
+    response = glacier.inventory(args.vault, args.force)
 
-        if len(inventory_retrievals_done):
-            list.sort(inventory_retrievals_done,
-                      key=lambda i: i['inventory_date'],
-                      reverse=True)
-            job = inventory_retrievals_done[0]
-            print "Inventory taken by JobId:", job['JobId']
-            job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
-            inventory = json.loads(job.get_output().read())
+    print response
 
-            if BOOKKEEPING:
-                sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
-                                            aws_secret_access_key=args.aws_secret_key)
-                domain_name = BOOKKEEPING_DOMAIN_NAME
-                try:
-                    domain = sdb_conn.get_domain(domain_name, validate=True)
-                except boto.exception.SDBResponseError:
-                    domain = sdb_conn.create_domain(domain_name)
-
-                d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
-                item = domain.put_attributes("%s" % (d,), inventory)
-
-            if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
-                gv.retrieve_inventory(format="JSON")
-                print "Started a new inventory retrieval job."
-        
-            render_inventory(inventory)
-        else:
-            job = gv.retrieve_inventory(format="JSON")
-            print "Started a new inventory retrieval job."
-            
-    except Exception, e:
-        print "exception: ", e
-        print json.loads(e[1])['message']
+##    
+##    region = args.region
+##    vault = args.vault
+##    force = args.force
+##    BOOKKEEPING = args.bookkeeping
+##    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
+##
+##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
+##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
+##    if force:
+##        job = gv.retrieve_inventory(format="JSON")
+##        print "Forced start of a new inventory retrieval job."
+##        return True
+##    
+##    try:
+##        gv.list_jobs()
+##        inventory_retrievals_done = []
+##        for job in gv.job_list:
+##            if job['Action'] == "InventoryRetrieval" and job['StatusCode'] == "Succeeded":
+##                d = dateutil.parser.parse(job['CompletionDate']).replace(tzinfo=pytz.utc)
+##                job['inventory_date'] = d
+##                inventory_retrievals_done += [job]
+##
+##        if len(inventory_retrievals_done):
+##            list.sort(inventory_retrievals_done,
+##                      key=lambda i: i['inventory_date'],
+##                      reverse=True)
+##            job = inventory_retrievals_done[0]
+##            print "Inventory taken by JobId:", job['JobId']
+##            job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
+##            inventory = json.loads(job.get_output().read())
+##
+##            if BOOKKEEPING:
+##                sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
+##                                            aws_secret_access_key=args.aws_secret_key)
+##                domain_name = BOOKKEEPING_DOMAIN_NAME
+##                try:
+##                    domain = sdb_conn.get_domain(domain_name, validate=True)
+##                except boto.exception.SDBResponseError:
+##                    domain = sdb_conn.create_domain(domain_name)
+##
+##                d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
+##                item = domain.put_attributes("%s" % (d,), inventory)
+##
+##            if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
+##                gv.retrieve_inventory(format="JSON")
+##                print "Started a new inventory retrieval job."
+##        
+##            render_inventory(inventory)
+##        else:
+##            job = gv.retrieve_inventory(format="JSON")
+##            print "Started a new inventory retrieval job."
+##            
+##    except Exception, e:
+##        print "exception: ", e
+##        print json.loads(e[1])['message']
 
 def setuplogging(args):
     #print "starting up with loglevel",loglevel,logging.getLevelName(loglevel)
@@ -613,9 +651,7 @@ def setuplogging(args):
         soh.setLevel(loglevel)
         logger = logging.getLogger()
         logger.addHandler(soh)
-
-    print 'set up logging, loglevel %s.'% (args.loglevel,)
-
+ 
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier

@@ -13,6 +13,7 @@ import boto
 import os.path
 import time
 import sys
+import re
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -45,13 +46,13 @@ class log_class_call(object):
     def __call__(self, fn):
         def wrapper(*args, **kwargs):
             that = args[0]
-            that.logger.info(self.start)
+            that.logger.debug(self.start)
             ret = fn(*args, **kwargs)
-            that.logger.info(self.finish)
+            that.logger.debug(self.finish)
             if self.getter:
-                that.logger.info(pformat(self.getter(ret)))
+                that.logger.debug(pformat(self.getter(ret)))
             else:
-                that.logger.info(pformat(ret))
+                that.logger.debug(pformat(ret))
 
             return ret
 
@@ -293,6 +294,17 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
         
         return True
 
+    def _check_region(self, region):
+        """
+        Checks whether the region given is valid.
+        """
+
+        regions = ('us-east-1', 'us-west-2', 'us-west-1', 'eu-west-1', 'ap-northeast-1')
+        if not region in regions:
+            raise GlacierWrapper.InputException("Region given is not a valid region.")
+        
+        return True
+
     def _next_power_of_2(self, v):
         """
         Returns the next power of 2, or the argument if it's already a power of 2.
@@ -442,7 +454,7 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
     @glacier_connect
     @log_class_call("Requesting job description.", "Job description received.")
     def describejob(self, vault_name, job_id):
-        if self._check_vault_name(vault_name) and self._check_id:
+        if self._check_vault_name(vault_name) and self._check_id (job_id):
             try:
                 gv = GlacierVault(self.glacierconn, name=vault_name)
                 gj = GlacierJob(gv, job_id=job_id)
@@ -605,14 +617,15 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
 
 
     @glacier_connect
-    @log_class_call("Retrieving archive.", "Archive retrieval job response received.")
-    def getarchive(self, vault, archive):
+    @log_class_call("Processing archive retrieval job.", "Archive retrieval job response received.")
+    def getarchive(self, vault, archive=None, file_name=None, search_term=None):
         """
-        Gets archive
+        Requests Amazon Glacier to make archive available for download.
+        Returns a tuple (action, job status, job id, search results)
 
-        If retrieval job is not yet initiated: initiate a job, return tuple (job status, None)
-        If retrieval job is already initiated: return tuple (job status, None).
-        If the file is ready for download: return tuple (status, GlacierJob).
+        If retrieval job is not yet initiated: initiate a job, return tuple ("initiated", job status, None, results)
+        If retrieval job is already initiated: return tuple ("running", job status, None, results).
+        If the file is ready for download: return tuple ("ready", job status, GlacierJob, results).
 
         :param vault: Vault name from where we want to retrieve the archive.
         :type vault: str
@@ -624,6 +637,32 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
         :rtype: (json, json)
         """
 
+        results = None
+
+        # If we have an archive id, check wether it's valid and if so,
+        # continue with this id.
+        # Otherwise try to search for file name or search term, and
+        # raise an error if there is more than one result.
+        if archive and self._check_id(archive):
+            pass
+        else:
+            if file_name:
+                results = search(file_name=file_name)
+            elif search_term:
+                results = search(search_term=search_term)
+            else:
+                raise GlacierWrapper.InputException("Must provide at least one of archive ID, a file name or a search term.")
+
+            if len(results) == 0:
+                raise GlacierWrapper.InputException("No results.")
+
+            if len(results) > 1:
+                raise GlacierWrapper.InputException("Too many results; please narrow down your search terms.")
+
+            archive = results[0]['archive_id']
+
+        # We have a unique result; check whether we have a retrieval job
+        # running for it.
         try:
             gv = GlacierVault(self.glacierconn, vault)
             gv.list_jobs()
@@ -638,28 +677,138 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
                     
                     # no need to start another archive retrieval
                     if not job['Completed']:
-                        return (job, None)
+                        return ('running', job, None, results)
                     
                     if job['Completed']:
                         job2 = GlacierJob(gv, job_id=job['JobId'])
-                        return (job, job2)
+                        return ('ready', job, job2, results)
                     
             except Exception, e:
                 GlacierWrapper.ResponseException("Cannot process job list response.",
                                                  cause=e)
 
+        # No job found related to this archive, start a new job.        
         try:
             job = gv.retrieve_archive(archive)
         except Exception, e:
             raise GlacierWrapper.CommunicationException("Cannot retrieve archive",
                                                         cause=e,
                                                         code="ArchiveRetrieveError")
-        return (job, None)
+        return ("initiated", job, None, results)
+
+    @glacier_connect
+    @sdb_connect
+    @log_class_call("Download an archive.", "Download archive done.")
+    def download(self, vault, archive, out_file=None):
+        """
+        Download a file from Glacier, and store it in out_file.
+        If no out_file is given, the file will be dumped on stdout.
+        """
+
+        # Sanity checking on the input.
+        self._check_vault_name(vault)
+        self._check_id(archive)
+        self._check_region(region)
+        if out_file:
+            try:
+                out = open(out_file)
+            except Exception, e:
+                raise GlacierWrapper.InputException("Cannot access the ouput file.",
+                                                    cause=e,
+                                                    code="FileError")
+
+        # Check whether the requested file is available from Amazon Glacier.
+        gv = GlacierVault(glacierconn, vault)
+        jobs = gv.list_jobs()
+        found = False
+        for job in gv.job_list:
+            if job['ArchiveId'] == archive:
+                found = True
+                if not job['Completed']:
+                    raise GlacierWrapper.CommunicationException("Archive retrieval request \
+not completed yet. Please try again later.")
+                break
+
+        if found:
+            print "File is available, starting download now."
+            job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
+            if out_file:
+                ffile = open(out_file, "w")
+                ffile.write(job2.get_output().read())
+                ffile.close()
+            else:
+                print job2.get_output().read()
+
+        raise GlacierWrapper.InputException("Requested archive not available. Please make sure \
+your archive ID is correct, and start a retrieval job using 'getarchive' if necessary.")
+
+    
+    @glacier_connect
+    @sdb_connect
+    @log_class_call("Searching for archive.", "Search done.")
+    def search(self, vault=None, region=None, archive=None, file_name=None, search_term=None, print_results=False):
+
+        # Sanity chekcing.
+        if not self.bookkeeping:
+            raise Exception(u"You must enable bookkeeping to be able to do searches.")
+
+        self._check_region(region)
+        self._check_id(archive)
+        if file_name:
+            file_name = re.escape(file_name)
+            
+        if search_term:
+            search_term = re.escape(search_term)
+
+        search_params = []
+        table_title = ''
+        if region:
+            search_params += ["region='%s'" % (region,)]
+        else:
+            table_title += "Region\t"
+
+        if vault:
+            search_params += ["vault='%s'" % (vault,)]
+        else:
+            table_title += "Vault\t"
+
+        table_title += "Filename\tArchive ID"
+
+        if file_name:
+            search_params += ["filename like '"+ file_name+"%'" ]
+            
+        if search_term:
+            search_params += ["description like '"+search_term+"%'" ]
+
+        search_params = " and ".join(search_params)
+        query = 'select * from `%s` where %s' % (self.bookkeeping_domain_name, search_params)
+        items = self.sdb_domain.select(query)
+
+        if print_results:
+            print table_title
+
+        for item in items:
+            
+            # print item, item.keys()
+            item_attrs = []
+            if not region:
+                item_attrs += [item[u'region']]
+                
+            if not vault:
+                item_attrs += [item[u'vault']]
+                
+            item_attrs += [item[u'filename']]
+            item_attrs += [item[u'archive_id']]
+            if print_results:
+                print "\t".join(item_attrs)
+
+        if not print_results:
+            return items
 
     @glacier_connect
     @sdb_connect
     @log_class_call("Deleting archive.", "Archive deleted.")
-    def deletearchive(self, vault, archive):
+    def rmarchive(self, vault, archive):
         try:
             gv = GlacierVault(self.glacierconn, vault)
             self._check_response(gv.delete_archive(archive))
@@ -696,16 +845,17 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
     def inventory(self, vault, force):
         """
         Retrieves inventory and returns retrieval job, or if it's already retrieved
-        returns overview of the inventoy.
+        returns overview of the inventoy. If force=True it will force start a new
+        inventory taking job.
 
         :param vault: Vault name
         :type vault: str
         :param force: Force new inventory retrieval.
         :type force: boolean
 
-        :returns: Tuple of retrieval job and inventory data if available.
+        :returns: Tuple of retrieval job and inventory data (as list) if available.
                   TODO: Return example
-        :rtype: (json, json)
+        :rtype: (str, list)
         """
 
         r_ex= "Cannot retrieve inventory."
@@ -715,7 +865,7 @@ specifically ASCII values 32¿126 decimal or 0x20¿0x7E hexadecimal.""",
         # Force inventory retrieval, even if it's already complete.
         if force:
             try:
-                job = gv.retrieve_inventory(format="JSON")
+                job = json.loads(gv.retrieve_inventory(format="JSON"))
             except Exception, e:
                 raise GlacierWrapper.CommunicationException(r_ex,
                                                             cause=e,
