@@ -25,6 +25,7 @@ import urllib
 import hashlib
 import math
 import json
+import sys
 
 from boto.connection import AWSAuthConnection
 
@@ -53,15 +54,20 @@ class GlacierConnection(AWSAuthConnection):
         return GlacierVault(self, name)
 
     def make_request(self, method, path, headers=None, data='', host=None,
-                     auth_path=None, sender=None, override_num_retries=None):
+                     auth_path=None, sender=None, override_num_retries=None,
+                     params=None):
         headers = headers or {}
         headers.setdefault("x-amz-glacier-version","2012-06-01")
         return super(GlacierConnection, self).make_request(method, path, headers,
                                                            data, host, auth_path,
-                                                           sender, override_num_retries)
+                                                           sender, override_num_retries,
+                                                           params=params)
 
-    def list_vaults(self):
-        return self.make_request(method="GET", path='/-/vaults/')
+    def list_vaults(self, marker=None):
+        if marker:
+            return self.make_request(method="GET", path='/-/vaults', params={'marker': marker})
+        else:
+            return self.make_request(method="GET", path='/-/vaults')
 
 MAX_VAULT_NAME_LENGTH = 255
 VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
@@ -112,12 +118,12 @@ class GlacierVault(object):
         job.initiate()
         return job
 
-    def make_request(self, method, extra_path, headers=None, data=""):
+    def make_request(self, method, extra_path, headers=None, data="", params=None):
         if extra_path:
             uri = "/-/vaults/%s%s" % (urllib.quote(self.name), extra_path,)
         else:
             uri = "/-/vaults/%s" % (urllib.quote(self.name),)
-        return self.connection.make_request(method, uri, headers, data)
+        return self.connection.make_request(method, uri, headers, data, params=params)
 
     def get_job(self, job_id):
         return GlacierJob(self, job_id=job_id)
@@ -141,11 +147,17 @@ class GlacierVault(object):
     def describe_vault(self):
         return self.make_request("GET", extra_path=None)
 
-    def list_multipart_uploads(self):
-        return self.make_request("GET", extra_path="/multipart-uploads")
+    def list_multipart_uploads(self, marker=None):
+        if marker:
+            return self.make_request("GET", extra_path="/multipart-uploads", params={'marker': marker})
+        else:
+            return self.make_request("GET", extra_path="/multipart-uploads")
 
-    def list_parts(self, multipart_id):
-        return self.make_request("GET", extra_path="/multipart-uploads/%s" % (multipart_id, ))
+    def list_parts(self, multipart_id, marker=None):
+        if marker:
+            return self.make_request("GET", extra_path="/multipart-uploads/%s" % (multipart_id, ), params={'marker': marker})
+        else:
+            return self.make_request("GET", extra_path="/multipart-uploads/%s" % (multipart_id, ))
 
     def delete_archive(self, archive_id):
         return self.make_request("DELETE", extra_path="/archives/%s" % (archive_id, ))
@@ -275,8 +287,11 @@ class GlacierWriter(object):
         self.upload_url = response.getheader("location")
 
     def send_part(self):
-        # Usage of memoryview should speed up execution and be more mem friendly
-        buf = memoryview("".join(self.buffer))
+        if sys.version_info < (2, 7, 0):
+            buf = "".join(self.buffer)
+        else:
+            # Usage of memoryview should speed up execution and be more mem friendly
+            buf = memoryview("".join(self.buffer))
 
         # Put back any data remaining over the part size into the
         # buffer
