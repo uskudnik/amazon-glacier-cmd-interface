@@ -8,28 +8,28 @@
 
 import sys
 import os
-import select
+##import select
 import ConfigParser
 import argparse
 import re
-import json
-import logging
-import datetime
-import dateutil.parser
+##import json
+##import logging
+##import datetime
+##import dateutil.parser
 import locale
-import time
-import boto
+##import time
+##import boto
 ##import glaciercorecalls
-import pytz
+##import pytz
 
 from prettytable import PrettyTable
 from GlacierWrapper import GlacierWrapper
 from functools import wraps
 
-MAX_VAULT_NAME_LENGTH = 255
-MAX_DESCRIPTION_LENGTH = 1024
-VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-DEFAULT_PART_SIZE = GlacierWrapper.DEFAULT_PART_SIZE
+##MAX_VAULT_NAME_LENGTH = 255
+##MAX_DESCRIPTION_LENGTH = 1024
+##VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
+##DEFAULT_PART_SIZE = GlacierWrapper.DEFAULT_PART_SIZE
 
 locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
 
@@ -91,8 +91,11 @@ def default_glacier_wrapper(args):
     return GlacierWrapper(args.aws_access_key,
                           args.aws_secret_key,
                           args.region,
-                          args.bookkeeping,
-                          args.bookkeeping_domain_name)
+                          bookkeeping=args.bookkeeping,
+                          bookkeeping_domain_name=args.bookkeeping_domain_name,
+                          logfile=args.logfile,
+                          loglevel=args.loglevel,
+                          printtostdout=args.printtostdout)
 
 def handle_errors(fn):
     @wraps(fn)
@@ -100,15 +103,17 @@ def handle_errors(fn):
         try:
             return fn(*args, **kwargs)
         except GlacierWrapper.GlacierWrapperException as e:
-            print "her"
-            e.write(indentation='||  ')
+
+            # We are only interested in the error message as it is a
+            # self-caused exception.
+            e.write(indentation='||  ', stack=False, message=True)
+            sys.exit(1)
 
     return wrapper
 
 @handle_errors
 def lsvault(args):
     glacier = default_glacier_wrapper(args)
-    
     vault_list = glacier.lsvault()
     table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
     for vault in vault_list:
@@ -151,15 +156,26 @@ def listmultiparts(args):
     glacier = default_glacier_wrapper(args)
 
     response = glacier.listmultiparts(args.vault)
+    if not response:
+        print 'No active multipart uploads.'
 
-    print "Marker: ", response['Marker']
-    if len(response['UploadsList']) > 0:
-        headers = sorted(response['UploadsList'][0].keys())
+    else:
+        headers = sorted(response[0].keys())
         table = PrettyTable(headers)
-        for entry in response['UploadsList']:
+        for entry in response:
             table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
                            else entry[k] for k in headers ])
         print table
+
+
+##    print "Marker: ", response['Marker']
+##    if len(response['UploadsList']) > 0:
+##        headers = sorted(response['UploadsList'][0].keys())
+##        table = PrettyTable(headers)
+##        for entry in response['UploadsList']:
+##            table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
+##                           else entry[k] for k in headers ])
+##        print table
 
 @handle_errors
 def abortmultipart(args):
@@ -172,7 +188,10 @@ def abortmultipart(args):
 def listjobs(args):
     glacier = default_glacier_wrapper(args)
 
-    response, job_list = glacier.listjobs(args.vault)
+    job_list = glacier.listjobs(args.vault)
+
+    if job_list == []:
+        print 'No jobs.'
     
     table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
                          "VaultARN", "Job ID"])
@@ -626,32 +645,39 @@ def inventory(args):
 ##        print json.loads(e[1])['message']
 
 def setuplogging(args):
-    #print "starting up with loglevel",loglevel,logging.getLevelName(loglevel)
-
     printtostdout = args.printtostdout
     logfile = args.logfile
-    loglevel = {'3': logging.CRITICAL,
-                'CRITICAL': logging.CRITICAL,
-                '2': logging.ERROR,
-                'ERROR': logging.ERROR,
-                '1': logging.WARNING,
-                'WARNING': logging.WARNING,
-                '0': logging.INFO,
-                'INFO': logging.INFO,
-                '-1': logging.DEBUG,
-                'DEBUG': logging.DEBUG
-                }[args.loglevel]
-
-    logging.basicConfig(level=loglevel,
-                        filename=logfile,
-                        format='%(levelname)-8s %(message)s')
+    loglevel = args.loglevel
+    if not loglevel in ('3', 'CRITICAL', '2', 'ERROR',
+                        '1', 'WARNING', '0', 'INFO',
+                        '-1', 'DEBUG'):
+        print 'Invalid loglevel; defaulting to level WARNING.'
+        loglevel = 'WARNING'
     
-    if printtostdout:
-        soh = logging.StreamHandler(sys.stderr)
-        soh.setLevel(loglevel)
-        logger = logging.getLogger()
-        logger.addHandler(soh)
- 
+##    printtostdout = args.printtostdout
+##    logfile = args.logfile
+##    loglevel = {'3': logging.CRITICAL,
+##                'CRITICAL': logging.CRITICAL,
+##                '2': logging.ERROR,
+##                'ERROR': logging.ERROR,
+##                '1': logging.WARNING,
+##                'WARNING': logging.WARNING,
+##                '0': logging.INFO,
+##                'INFO': logging.INFO,
+##                '-1': logging.DEBUG,
+##                'DEBUG': logging.DEBUG
+##                }[args.loglevel]
+##
+##    logging.basicConfig(level=loglevel,
+##                        filename=logfile,
+##                        format='%(levelname)-8s %(message)s')
+##    
+##    if printtostdout:
+##        soh = logging.StreamHandler(sys.stderr)
+##        soh.setLevel(loglevel)
+##        logger = logging.getLogger()
+##        logger.addHandler(soh)
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
@@ -664,10 +690,10 @@ def main():
 
     conf_parser.add_argument("-c", "--conf", default=".glacier-cmd",
                         help="Specify config file", metavar="FILE")
-##    conf_parser.add_argument('-l', '--loglevel', default="INFO",
+##    conf_parser.add_argument('-l', '--loglevel', default="WARNING",
 ##                      choices=["-1", "0", "1", "2", "3", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
 ##                      help="""Available levels are CRITICAL (3), ERROR (2), \
-##WARNING (1), INFO (0), DEBUG (-1). Default: INFO.""")
+##WARNING (1), INFO (0), DEBUG (-1). Default: WARNING.""")
     conf_parser.add_argument('-p','--printtostdout',action='store_true',default=False,
                       help='Print all log messages to stdout')
 
@@ -747,7 +773,7 @@ def main():
     if default('loglevel'):
         d = default('loglevel')
     else:
-        d = 'INFO'        
+        d = 'WARNING'
     
     group.add_argument('-l,', '--loglevel',
                        required=False,
