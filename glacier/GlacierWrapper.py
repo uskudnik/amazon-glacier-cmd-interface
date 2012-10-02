@@ -287,6 +287,9 @@ class GlacierWrapper(object):
                         "Connection to Amazon SimpleDB successful.")
         def sdb_connect_wrap(*args, **kwargs):
             self = args[0]
+
+            # TODO: give SimpleDB its own class? Or move the few calls
+            # we need to glaciercorecalls?
             
             if not hasattr(self, 'sdb_conn'):
                 try:
@@ -619,15 +622,15 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.CommunicationException
         """
 
-        if self._check_vault_name(vault_name):
-            try:
-                response = GlacierVault(self.glacierconn, vault_name).delete_vault()
-            except Exception, e:
-                raise GlacierWrapper.CommunicationException(
-                    "Cannot remove vault.",
-                    cause=e)
+        self._check_vault_name(vault_name)
+        try:
+            response = GlacierVault(self.glacierconn, vault_name).delete_vault()
+        except Exception, e:
+            raise GlacierWrapper.CommunicationException(
+                "Cannot remove vault.",
+                cause=e)
 
-            return response.getheaders()
+        return response.getheaders()
 
     @glacier_connect
     @log_class_call("Requesting vault description.",
@@ -652,25 +655,25 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.CommunicationException
         """
 
-        if self._check_vault_name(vault_name):
-            try:
-                gv = GlacierVault(self.glacierconn, name=vault_name)
-                response = gv.describe_vault()
-            except Exception, e:
-                raise GlacierWrapper.CommunicationException(
-                    "Cannot get vault description.",
-                    cause=e)
-                    
-            self._check_response(response)
-            try:
-                jdata = response.read()
-                res = json.loads(jdata)
-            except Exception, e:
-                raise GlacierWrapper.CommunicationException(
-                    'Failed to decode response: %s'% jdata,
-                    cause=e)
+        self._check_vault_name(vault_name)
+        try:
+            gv = GlacierVault(self.glacierconn, name=vault_name)
+            response = gv.describe_vault()
+        except Exception, e:
+            raise GlacierWrapper.CommunicationException(
+                "Cannot get vault description.",
+                cause=e)
+                
+        self._check_response(response)
+        try:
+            jdata = response.read()
+            res = json.loads(jdata)
+        except Exception, e:
+            raise GlacierWrapper.CommunicationException(
+                'Failed to decode response: %s'% jdata,
+                cause=e)
 
-            return res
+        return res
 
     @glacier_connect
     @log_class_call("Requesting jobs list.",
@@ -705,17 +708,17 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
           
         :raises: GlacierWrapper.CommunicationException
         """
-        if self._check_vault_name(vault_name):
-            try:
-                gv = GlacierVault(self.glacierconn, name=vault_name)
-                response = gv.list_jobs()
-            except Exception, e:
-                raise GlacierWrapper.CommunicationException(
-                    "Cannot get jobs list.",
-                    cause=e)
-            
-            self._check_response(response)
-            return gv.job_list
+        self._check_vault_name(vault_name)
+        try:
+            gv = GlacierVault(self.glacierconn, name=vault_name)
+            response = gv.list_jobs()
+        except Exception, e:
+            raise GlacierWrapper.CommunicationException(
+                "Cannot get jobs list.",
+                cause=e)
+        
+        self._check_response(response)
+        return gv.job_list
 
     @glacier_connect
     @log_class_call("Requesting job description.",
@@ -752,7 +755,6 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_name(vault_name)
         self._check_id (job_id, 'JobId')
-    
         try:
             gv = GlacierVault(self.glacierconn, name=vault_name)
             gj = GlacierJob(gv, job_id=job_id)
@@ -830,29 +832,29 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         :raises: GlacierWrapper.CommunicationException
         """
-        if self._check_vault_name(vault_name):
-            try:
-                gv = GlacierVault(self.glacierconn, name=vault_name)
-                response = gv.list_multipart_uploads()
-            except Exception, e:
-                raise GlacierWrapper.CommunicationException("Cannot abort multipart upload.",
-                                                            cause=e)
-            self._check_response(response)
-            try:
-                jdata = response.read()
-                res = json.loads(jdata)
-            except Exception, e:
-                raise GlacierWrapper.CommunicationException(
-                    'Failed to decode response: %s'% jdata,
-                    cause=e)
+        self._check_vault_name(vault_name)
+        try:
+            gv = GlacierVault(self.glacierconn, name=vault_name)
+            response = gv.list_multipart_uploads()
+        except Exception, e:
+            raise GlacierWrapper.CommunicationException("Cannot abort multipart upload.",
+                                                        cause=e)
+        self._check_response(response)
+        try:
+            jdata = response.read()
+            res = json.loads(jdata)
+        except Exception, e:
+            raise GlacierWrapper.CommunicationException(
+                'Failed to decode response: %s'% jdata,
+                cause=e)
 
-            if res.has_key('UploadsList'):
-                res = res['UploadsList']
+        if res.has_key('UploadsList'):
+            res = res['UploadsList']
 
-            else:
-                res = None
+        else:
+            res = None
 
-            return res
+        return res
 
     @glacier_connect
     @sdb_connect
@@ -865,128 +867,136 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         else:
             description = file_name
 
-        if self._check_vault_description(description):
-            reader = None
+        self._check_vault_description(description) # ???file description same restrictions???
+        self._check_vault_name(vault_name)
+        
+        reader = None
 
-            # If filename is given, try to use this file.
-            # Otherwise try to read data from stdin.
+        # If filename is given, try to use this file.
+        # Otherwise try to read data from stdin.
+        total_size = 0
+        if not stdin:
+            try:
+                reader = open(file_name, 'rb')
+                total_size = os.path.getsize(file_name)
+            except IOError, e:
+                raise GlacierWrapper.InputException("Couldn't access the file given.",
+                                                    cause=e)
+            
+        elif select.select([sys.stdin,],[],[],0.0)[0]:
+            reader = sys.stdin
             total_size = 0
-            if not stdin:
-                try:
-                    reader = open(file_name, 'rb')
-                    total_size = os.path.getsize(file_name)
-                except IOError, e:
-                    raise GlacierWrapper.InputException("Couldn't access the file given.",
-                                                        cause=e)
-                
-            elif select.select([sys.stdin,],[],[],0.0)[0]:
-                reader = sys.stdin
-                total_size = 0
-            else:
-                print "Nothing to upload."
-                return False
+        else:
+            print "Nothing to upload."
+            return False
 
-            if part_size < 0:
-                
-                # User did not specify part_size. Compute the optimal value.
-                if total_size > 0:
-                    part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
-                else:
-                    part_size = GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
-                    
-            else:
-                part_size = self._next_power_of_2(part_size)
-
-            if total_size > part_size*1024*1024*self.MAX_PARTS:
-                
-                # User specified a value that is too small. Adjust.
+        if part_size < 0:
+            
+            # User did not specify part_size. Compute the optimal value.
+            if total_size > 0:
                 part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
-                print "WARNING: Part size given is too small; using %s MB parts to upload."% part_size
+            else:
+                part_size = GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
+                
+        else:
+            part_size = self._next_power_of_2(part_size)
 
-            read_part_size = part_size * 1024 * 1024
-            writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                                   part_size=read_part_size)
+        if total_size > part_size*1024*1024*self.MAX_PARTS:
+            
+            # User specified a value that is too small. Adjust.
+            part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+            print "WARNING: Part size given is too small; using %s MB parts to upload."% part_size
 
-            # Read file in parts so we don't fill the whole memory.
-            start_time = current_time = previous_time = time.time()
-            for part in iter((lambda:reader.read(read_part_size)), ''):
+        read_part_size = part_size * 1024 * 1024
+        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
+                               part_size=read_part_size)
 
-                writer.write(part)
-                current_time = time.time()
-                overall_rate = int(writer.uploaded_size/(current_time - start_time))
-                if total_size > 0:
-                    
-                    # Calculate transfer rates in bytes per second.
-                    current_rate = int(read_part_size/(current_time - previous_time))
+        # Read file in parts so we don't fill the whole memory.
+        start_time = current_time = previous_time = time.time()
+        for part in iter((lambda:reader.read(read_part_size)), ''):
 
-                    # Estimate finish time, based on overall transfer rate.
-                    if overall_rate > 0:
-                        time_left = (total_size - writer.uploaded_size)/overall_rate
-                        eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
-                    else:
-                        time_left = "Unknown"
-                        eta = "Unknown"
-
-                    self._progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
-                                   (self._size_fmt(writer.uploaded_size),
-                                    self._size_fmt(total_size),
-                                    int(100 * writer.uploaded_size/total_size),
-                                    self._size_fmt(current_rate, 2),
-                                    self._size_fmt(overall_rate, 2),
-                                    eta))
-
-                else:
-                    self._progress('\rWrote %s. Rate %s/s.' %
-                                   (self._size_fmt(writer.uploaded_size),
-                                    self._size_fmt(overall_rate, 2)))
-
-                previous_time = current_time
-
-            writer.close()
+            writer.write(part)
             current_time = time.time()
             overall_rate = int(writer.uploaded_size/(current_time - start_time))
-            self._progress('\rWrote %s. Rate %s/s.\n' %
-                           (self._size_fmt(writer.uploaded_size),
-                            self._size_fmt(overall_rate, 2)))
+            if total_size > 0:
+                
+                # Calculate transfer rates in bytes per second.
+                current_rate = int(read_part_size/(current_time - previous_time))
 
-            archive_id = writer.get_archive_id()
-            location = writer.get_location()
-            sha256hash = writer.get_hash()
+                # Estimate finish time, based on overall transfer rate.
+                if overall_rate > 0:
+                    time_left = (total_size - writer.uploaded_size)/overall_rate
+                    eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+                else:
+                    time_left = "Unknown"
+                    eta = "Unknown"
 
-            if self.bookkeeping:
-                file_attrs = {
-                    'region': region,
-                    'vault': vault_name,
-                    'filename': file_name,
-                    'archive_id': archive_id,
-                    'location': location,
-                    'description': description,
-                    'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
-                    'hash': sha256hash
-                }
+                self._progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
+                               (self._size_fmt(writer.uploaded_size),
+                                self._size_fmt(total_size),
+                                int(100 * writer.uploaded_size/total_size),
+                                self._size_fmt(current_rate, 2),
+                                self._size_fmt(overall_rate, 2),
+                                eta))
 
-                if file_name:
-                    file_attrs['filename'] = file_name
-                elif stdin:
-                    file_attrs['filename'] = description
+            else:
+                self._progress('\rWrote %s. Rate %s/s.' %
+                               (self._size_fmt(writer.uploaded_size),
+                                self._size_fmt(overall_rate, 2)))
 
-                self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
+            previous_time = current_time
 
-            print "Created archive with ID: ", archive_id
-            print "Archive SHA256 tree hash: ", sha256hash
+        writer.close()
+        current_time = time.time()
+        overall_rate = int(writer.uploaded_size/(current_time - start_time))
+        self._progress('\rWrote %s. Rate %s/s.\n' %
+                       (self._size_fmt(writer.uploaded_size),
+                        self._size_fmt(overall_rate, 2)))
+
+        archive_id = writer.get_archive_id()
+        location = writer.get_location()
+        sha256hash = writer.get_hash()
+
+        if self.bookkeeping:
+            file_attrs = {
+                'region': region,
+                'vault': vault_name,
+                'filename': file_name,
+                'archive_id': archive_id,
+                'location': location,
+                'description': description,
+                'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
+                'hash': sha256hash
+            }
+
+            if file_name:
+                file_attrs['filename'] = file_name
+            elif stdin:
+                file_attrs['filename'] = description
+
+            self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
+
+        print "Created archive with ID: ", archive_id
+        print "Archive SHA256 tree hash: ", sha256hash
 
 
     @glacier_connect
     @log_class_call("Processing archive retrieval job.",
                     "Archive retrieval job response received.")
-    def getarchive(self, vault, archive=None, file_name=None, search_term=None):
+    def getarchive(self, vault, archive):
         """
         Requests Amazon Glacier to make archive available for download.
         Returns a tuple (action, job status, job id, search results)
 
-        If retrieval job is not yet initiated: initiate a job, return tuple ("initiated", job status, None, results)
-        If retrieval job is already initiated: return tuple ("running", job status, None, results).
-        If the file is ready for download: return tuple ("ready", job status, GlacierJob, results).
+        If retrieval job is not yet initiated:
+                initiate a job,
+                return tuple ("initiated", job status, None, results)
+                
+        If retrieval job is already initiated:
+                return tuple ("running", job status, None, results).
+                
+        If the file is ready for download:
+                return tuple ("ready", job status, GlacierJob, results).
 
         :param vault: Vault name from where we want to retrieve the archive.
         :type vault: str
@@ -999,28 +1009,27 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         results = None
-
-        # If we have an archive id, check wether it's valid and if so,
-        # continue with this id.
-        # Otherwise try to search for file name or search term, and
-        # raise an error if there is more than one result.
-        if archive and self._check_id(archive, 'ArchiveId'):
-            pass
-        else:
-            if file_name:
-                results = search(file_name=file_name)
-            elif search_term:
-                results = search(search_term=search_term)
-            else:
-                raise GlacierWrapper.InputException("Must provide at least one of archive ID, a file name or a search term.")
-
-            if len(results) == 0:
-                raise GlacierWrapper.InputException("No results.")
-
-            if len(results) > 1:
-                raise GlacierWrapper.InputException("Too many results; please narrow down your search terms.")
-
-            archive = results[0]['archive_id']
+        self._check_vault_name(vault)
+        self._check_id(archive, 'ArchiveId')
+            
+##        else:
+##            if file_name:
+##                results = search(file_name=file_name)
+##            elif search_term:
+##                results = search(search_term=search_term)
+##            else:
+##                raise GlacierWrapper.InputException(
+##                    "Must provide at least one of archive ID, a file name or a search term.")
+##
+##            if len(results) == 0:
+##                raise GlacierWrapper.InputException(
+##                    "No results.")
+##
+##            if len(results) > 1:
+##                raise GlacierWrapper.InputException(
+##                    "Too many results; please narrow down your search terms.")
+##
+##            archive = results[0]['archive_id']
 
         # We have a unique result; check whether we have a retrieval job
         # running for it.
@@ -1028,9 +1037,10 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             gv = GlacierVault(self.glacierconn, vault)
             gv.list_jobs()
         except Exception, e:
-             raise GlacierWrapper.CommunicationException("Cannot get jobs list.",
-                                                         cause=e,
-                                                         code="JobListError")
+             raise GlacierWrapper.CommunicationException(
+                 "Cannot get jobs list.",
+                 cause=e,
+                 code="JobListError")
 
         for job in gv.job_list:
             try:
@@ -1045,16 +1055,18 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
                         return ('ready', job, job2, results)
                     
             except Exception, e:
-                GlacierWrapper.ResponseException("Cannot process job list response.",
-                                                 cause=e)
+                GlacierWrapper.ResponseException(
+                    "Cannot process job list response.",
+                    cause=e)
 
         # No job found related to this archive, start a new job.        
         try:
             job = gv.retrieve_archive(archive)
         except Exception, e:
-            raise GlacierWrapper.CommunicationException("Cannot retrieve archive",
-                                                        cause=e,
-                                                        code="ArchiveRetrieveError")
+            raise GlacierWrapper.CommunicationException(
+                "Cannot retrieve archive.",
+                cause=e,
+                code="ArchiveRetrieveError")
         return ("initiated", job, None, results)
 
     @glacier_connect
@@ -1070,14 +1082,15 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         # Sanity checking on the input.
         self._check_vault_name(vault)
         self._check_id(archive, 'ArchiveId')
-        self._check_region(region)
+##        self._check_region(region)
         if out_file:
             try:
                 out = open(out_file)
             except Exception, e:
-                raise GlacierWrapper.InputException("Cannot access the ouput file.",
-                                                    cause=e,
-                                                    code="FileError")
+                raise GlacierWrapper.InputException(
+                    "Cannot access the ouput file.",
+                    cause=e,
+                    code="FileError")
 
         # Check whether the requested file is available from Amazon Glacier.
         gv = GlacierVault(glacierconn, vault)
@@ -1087,8 +1100,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             if job['ArchiveId'] == archive:
                 found = True
                 if not job['Completed']:
-                    raise GlacierWrapper.CommunicationException("Archive retrieval request \
-not completed yet. Please try again later.")
+                    raise GlacierWrapper.CommunicationException(
+                        "Archive retrieval request not completed yet. Please try again later.")
                 break
 
         if found:
@@ -1101,26 +1114,26 @@ not completed yet. Please try again later.")
             else:
                 print job2.get_output().read()
 
-        raise GlacierWrapper.InputException("Requested archive not available. Please make sure \
-your archive ID is correct, and start a retrieval job using 'getarchive' if necessary.")
+        raise GlacierWrapper.InputException(
+            "Requested archive not available. Please make sure \
+your archive ID is correct, and start a retrieval job using \
+'getarchive' if necessary.")
 
     
     @glacier_connect
     @sdb_connect
     @log_class_call("Searching for archive.",
                     "Search done.")
-    def search(self, vault=None, region=None, archive=None, file_name=None, search_term=None, print_results=False):
+    def search(self, vault=None, region=None, file_name=None, search_term=None, print_results=False):
 
-        # Sanity chekcing.
+        # Sanity checking.
         if not self.bookkeeping:
-            raise Exception(u"You must enable bookkeeping to be able to do searches.")
+            raise Exception(
+                u"You must enable bookkeeping to be able to do searches.")
 
         if region:
             self._check_region(region)
 
-        if archive:
-            self._check_id(archive, 'ArchiveId')
-            
         if file_name:
             file_name = re.escape(file_name)
             
@@ -1176,6 +1189,19 @@ your archive ID is correct, and start a retrieval job using 'getarchive' if nece
     @sdb_connect
     @log_class_call("Deleting archive.", "Archive deleted.")
     def rmarchive(self, vault, archive):
+        """
+        Remove an archive from an Amazon Glacier vault.
+
+        :param vault: the vault name.
+        :type vault: str
+        :param archive: the archive ID
+        :type archive: str
+
+        :raises: GlacierWrapper.CommunicationException
+        """
+        self._check_vault_name(vault)
+        self._check_id(archive, 'ArchiveId')
+               
         try:
             gv = GlacierVault(self.glacierconn, vault)
             self._check_response(gv.delete_archive(archive))
@@ -1244,8 +1270,9 @@ your archive ID is correct, and start a retrieval job using 'getarchive' if nece
         :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
         """
 
+        self._check_vault_name(vault_name)
         gv = GlacierVault(self.glacierconn, vault_name)
-
+        
         # List active jobs and check whether inventory any inventory retrieval
         # has been completed, and whether any is in progress.
         inventory = None

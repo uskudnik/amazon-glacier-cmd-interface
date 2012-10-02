@@ -688,17 +688,12 @@ def main():
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 add_help=False)
 
-    conf_parser.add_argument("-c", "--conf", default=".glacier-cmd",
-                        help="Specify config file", metavar="FILE")
-##    conf_parser.add_argument('-l', '--loglevel', default="WARNING",
-##                      choices=["-1", "0", "1", "2", "3", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
-##                      help="""Available levels are CRITICAL (3), ERROR (2), \
-##WARNING (1), INFO (0), DEBUG (-1). Default: WARNING.""")
-    conf_parser.add_argument('-p','--printtostdout',action='store_true',default=False,
-                      help='Print all log messages to stdout')
+    conf_parser.add_argument("-c", "--conf", default="~/.glacier-cmd",
+        help="Specify config file", metavar="FILE")
+    conf_parser.add_argument('-p','--printtostdout', action='store_true',
+        help='Print all log messages to stdout')
 
     args, remaining_argv = conf_parser.parse_known_args()
-
 
     # Here we parse config from files in home folder or in current folder
     # We use separate sections for aws and glacier specific configs
@@ -729,97 +724,101 @@ def main():
     a_default = lambda x: filt(aws, "aws").get(x)
     default = lambda x: filt(glacier).get(x)
 
-    # Main parser
+    # Main configuration parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                      description=program_description)
     subparsers = parser.add_subparsers(title='Subcommands',
-                                       help=u"For subcommand help, use: glacier <subcommand> -h")
+        help=u"For subcommand help, use: glacier-cmd <subcommand> -h")
 
     group = parser.add_argument_group('aws')
-    help_msg_config = u"(Required if you haven't created .glacier-cmd or /etc/glacier-cmd.conf config file)"
+    help_msg_config = u"(Required if you have not created a \
+                        ~/.glacier-cmd or /etc/glacier-cmd.conf config file)"
     group.add_argument('--aws-access-key',
-                        required=a_required("aws-access-key"),
-                        default=a_default("aws-access-key"),
-                        help="Your aws access key " + help_msg_config)
+                       required=a_required("aws-access-key"),
+                       default=a_default("aws-access-key"),
+                       help="Your aws access key " + help_msg_config)
     group.add_argument('--aws-secret-key',
-                        required=a_required("aws-secret-key"),
-                        default=a_default("aws-secret-key"),
-                        help="Your aws secret key " + help_msg_config)
+                       required=a_required("aws-secret-key"),
+                       default=a_default("aws-secret-key"),
+                       help="Your aws secret key " + help_msg_config)
     group = parser.add_argument_group('glacier')
     group.add_argument('--region',
-                        required=required("region"),
-                        default=default("region"),
-                        help="Region where glacier should take action " + help_msg_config)
+                       required=required("region"),
+                       default=default("region"),
+                       help="Region where you want to store \
+                             your archives " + help_msg_config)
     group.add_argument('--bookkeeping',
-                        required=False,
-                        default=default("bookkeeping") and True,
-                        action="store_true",
-                        help="Should we keep book of all created archives.\
-                              This requires a SimpleDB account and it's \
-                              bookkeeping domain name set")
+                       required=False,
+                       default=default("bookkeeping") and True,
+                       action="store_true",
+                       help="Should we keep book of all created archives.\
+                             This requires a Amazon SimpleDB account and its \
+                             bookkeeping domain name set")
     group.add_argument('--bookkeeping-domain-name',
                         required=False,
                         default=default("bookkeeping-domain-name"),
-                        help="SimpleDB domain name for bookkeeping.")
-
+                        help="Amazon SimpleDB domain name for bookkeeping.")
     group.add_argument('--logfile',
                        required=False,
                        default=os.path.expanduser('~/.glacier-cmd.log'),
                        help='File to write log messages to.')
-
-    # FIXME: this is not really pythonic... but can't think of a nicer way
-    # to set the default for loglevel.
-    if default('loglevel'):
-        d = default('loglevel')
-    else:
-        d = 'WARNING'
-    
-    group.add_argument('-l,', '--loglevel',
+    group.add_argument('--loglevel',
                        required=False,
-                       default=d,
-                       choices=["-1", "0", "1", "2", "3", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
-                       help="""Available levels are CRITICAL (3), ERROR (2), \
-WARNING (1), INFO (0), DEBUG (-1). Default: INFO.""")
-    
-    parser_lsvault = subparsers.add_parser("lsvault", help="List vaults")
-    parser_lsvault.set_defaults(func=lsvault)
+                       default=default('loglevel') if default('loglevel') else 'WARNING',
+                       choices=["-1", "DEBUG", "0", "INFO", "1", "WARNING",
+                                "2", "ERROR", "3", "CRITICAL"],
+                       help="Set the lowest level of messages you want to log.")
 
-    parser_mkvault = subparsers.add_parser("mkvault", help="Create a new vault")
-    parser_mkvault.add_argument('vault')
+    # glacier-cmd mkvault <vault>
+    parser_mkvault = subparsers.add_parser("mkvault",
+        help="Create a new vault.")
     parser_mkvault.set_defaults(func=mkvault)
 
-    parser_rmvault = subparsers.add_parser('rmvault', help='Remove vault')
-    parser_rmvault.add_argument('vault')
+    # glacier-cmd lsvault    
+    parser_lsvault = subparsers.add_parser("lsvault",
+        help="List available vaults.")
+    parser_lsvault.set_defaults(func=lsvault)
+
+    # glacier-cmd describevault <vault>
+    parser_describevault = subparsers.add_parser('describevault',
+        help='Describe a vault.')
+    parser_describevault.add_argument('vault',
+        help='The vault to be described.')
+    parser_describevault.set_defaults(func=describevault)
+
+    # glacier-cmd rmvault <vault>
+    parser_rmvault = subparsers.add_parser('rmvault',
+        help='Remove a vault.')
+    parser_rmvault.add_argument('vault',
+        help='The vault to be removed.')
     parser_rmvault.set_defaults(func=rmvault)
 
-    parser_listjobs = subparsers.add_parser('listjobs', help='List jobs')
-    parser_listjobs.add_argument('vault')
-    parser_listjobs.set_defaults(func=listjobs)
-
-    parser_describejob = subparsers.add_parser('describejob', help='Describe job')
-    parser_describejob.add_argument('vault')
-    parser_describejob.add_argument('jobid')
-    parser_describejob.set_defaults(func=describejob)
-
-    parser_upload = subparsers.add_parser('upload', help='Upload an archive',
-                               formatter_class=argparse.RawTextHelpFormatter)
-    parser_upload.add_argument('vault')
-    parser_upload.add_argument('filename')
-    parser_upload.add_argument('--stdin',
-                                help="Input data from stdin, instead of file",
-                                action='store_true')
+    # glacier-cmd upload <vault> <filename> [<description>] [--name <store file name>] [--partsize <part size>]
+    # glacier-cmd upload <vault> [<description>] --stdin [--name <store file name>] [--partsize <part size>]
+    parser_upload = subparsers.add_parser('upload',
+        formatter_class=argparse.RawTextHelpFormatter,
+        help='Upload an archive to Amazon Glacier.')
+    parser_upload.add_argument('vault',
+        help='The vault the archive is to be stored in.')
+    parser_upload.add_argument('filename', nargs='?', default=None,
+        help='''\
+The name of the local file to be uploaded.
+May be omitted if --stdin is used.''')
+    parser_upload.add_argument('--stdin', action='store_true',
+        help='''\
+Read data from stdin, instead of local file. 
+If enabled, <filename> is ignored and may be omitted.''')
     parser_upload.add_argument('--name', default=None,
-                                help='''\
-Use the given name as the filename for bookkeeping
-purposes. This option is useful in conjunction with
---stdin or when the file being uploaded is a
-temporary file.''')
+        help='''\
+Use the given name as the filename for bookkeeping 
+purposes. To be used in conjunction with --stdin or 
+when the file being uploaded is a temporary file.''')
     parser_upload.add_argument('--partsize', type=int, default=-1,
-                               help='''\
-Part size to use for upload (in Mb). Must
+        help='''\
+Part size to use for upload (in MB). Must
 be a power of 2 in the range:
-    1 .. 4,294,967,296 (2^0 .. 2^32).
+    1, 2, 4, 8, ..., 2,048, 4,096.
 Values that are not a power of 2 will be
 adjusted upwards to the next power of 2.
 
@@ -832,71 +831,115 @@ smaller parts limit the size of the archive that
 can be uploaded. Some examples:
 
 partsize  MaxArchiveSize
-    1        1*1024*1024*10000 ~= 10Gb
-    4        4*1024*1024*10000 ~= 41Gb
-   16       16*1024*1024*10000 ~= 137Gb
-  128      128*1024*1024*10000 ~= 1.3Tb
+    1        1*1024*1024*10000 ~= 9.7 GB
+    4        4*1024*1024*10000 ~= 39 GB
+   16       16*1024*1024*10000 ~= 156 GB
+  128      128*1024*1024*10000 ~= 1.2 TB
+ 4096     4096*1024*1024*10000 ~= 39 TB
 
-By default, the smallest possible value is used
-when the archive size is known ahead of time.
-Otherwise (when reading from STDIN) a value of
-128 is used.''')
-    parser_upload.add_argument('description', nargs='*')
+If not given, the smallest possible part size
+will be used when uploading a file, and 128 MB
+when uploading from stdin.''')
+    parser_upload.add_argument('description', nargs='?', default=None,
+        help='Description of the file to be uploaded. Use quotes \
+              if your file contains spaces. (optional).')
     parser_upload.set_defaults(func=upload)
 
-    parser_getarchive = subparsers.add_parser('getarchive',
-                help='Get a file by explicitly setting archive id')
-    parser_getarchive.add_argument('vault')
-    parser_getarchive.add_argument('archive')
-    parser_getarchive.add_argument('filename', nargs='?')
-    parser_getarchive.set_defaults(func=getarchive)
-
-    parser_rmarchive = subparsers.add_parser('rmarchive', help='Remove archive')
-    parser_rmarchive.add_argument('vault')
-    parser_rmarchive.add_argument('archive')
-    parser_rmarchive.set_defaults(func=rmarchive)
-
-    parser_search = subparsers.add_parser('search',
-                help='Search SimpleDB database (if it was created). \
-                      By default returns contents of vault.')
-    parser_search.add_argument('--vault')
-    parser_search.add_argument('--search_term')
-    parser_search.set_defaults(func=search)
-
-    parser_inventory = subparsers.add_parser('inventory',
-                help='List inventory of a vault')
-    parser_inventory.add_argument('--force', action='store_true',
-                                 help="Create a new inventory job")
-    parser_inventory.add_argument('vault')
-    parser_inventory.set_defaults(func=inventory)
-
-    parser_describevault = subparsers.add_parser('describevault', help='Describe vault')
-    parser_describevault.add_argument('vault')
-    parser_describevault.set_defaults(func=describevault)
-
-    parser_listmultiparts = subparsers.add_parser('listmultiparts', help='List multipart uploads')
-    parser_listmultiparts.add_argument('vault')
+    # glacier-cmd listmultiparts <vault>
+    parser_listmultiparts = subparsers.add_parser('listmultiparts',
+        help='List all active multipart uploads.')
+    parser_listmultiparts.add_argument('vault',
+        help='The vault to check the active multipart uploads for.')
     parser_listmultiparts.set_defaults(func=listmultiparts)
 
-    parser_abortmultipart = subparsers.add_parser('abortmultipart', help='Abort multipart upload')
-    parser_abortmultipart.add_argument('vault')
-    parser_abortmultipart.add_argument('uploadId')
+    # glacier-cmd abortmultipart <vault> <uploadId>
+    parser_abortmultipart = subparsers.add_parser('abortmultipart',
+        help='Abort a multipart upload.')
+    parser_abortmultipart.add_argument('vault',
+        help='The vault the upload is for.')
+    parser_abortmultipart.add_argument('uploadId',
+        help='The id of the upload to be aborted, try listmultiparts.')
     parser_abortmultipart.set_defaults(func=abortmultipart)
 
+    # glacier-cmd inventory <vault> [--refresh]
+    parser_inventory = subparsers.add_parser('inventory',
+        help='List inventory of a vault, if available. If not available, \
+              creates inventory retrieval job if none running already.')
+    parser_inventory.add_argument('vault',
+        help='The vault to list the inventory of.')
+    parser_inventory.add_argument('--refresh', action='store_true',
+        help='Create an inventory retrieval job, even if inventory is \
+              available or with another retrieval job running.')
+    parser_inventory.set_defaults(func=inventory)
 
-    # bookkeeping required
+    # glacier-cmd getarchive <vault> <archive>
+    parser_getarchive = subparsers.add_parser('getarchive',
+        help='Requests to make an archive available for download.')
+    parser_getarchive.add_argument('vault',
+        help='The vault the archive is stored in.')
+    parser_getarchive.add_argument('archive',
+        help='The archive id.')
+##    parser_getarchive.add_argument('--outfile', nargs='?',
+##        help='Local file name to store the file. \
+##              If omitted data is sent to stdout.')
+    parser_getarchive.set_defaults(func=getarchive)
+
+    # glacier-cmd download <vault> <archive> [--outfile <file name>]
     parser_download = subparsers.add_parser('download',
-            help='Download a file by searching through SimpleDB cache for it.')
-    parser_download.add_argument('--vault',
-            help="Specify the vault in which archive is located.")
-    parser_download.add_argument('--out-file')
-    parser_download.add_argument('filename', nargs='?')
+        help='Download a file by archive id.')
+    parser_download.add_argument('vault',
+        help="Specify the vault in which archive is located.")
+    parser_download.add_argument('archive',
+        help='The archive to be downloaded.')
+    parser_download.add_argument('--outfile',
+        help='The name of the local file to store the archive. \
+              If omitted, stdout will be used.')
     parser_download.set_defaults(func=download)
 
+    # glacier-cmd rmarchive <vault> <archive>
+    parser_rmarchive = subparsers.add_parser('rmarchive',
+        help='Remove archive from Amazon Glacier.')
+    parser_rmarchive.add_argument('vault',
+        help='The vault the archive is stored in.')
+    parser_rmarchive.add_argument('archive',
+        help='The archive id of the archive to be removed.')
+    parser_rmarchive.set_defaults(func=rmarchive)
+
+    # glacier-cmd search [<vault>] [--filename <file name>] [--searchterm <search term>]
+    parser_search = subparsers.add_parser('search',
+        help='Search Amazon SimpleDB database for available archives \
+              (requires bookkeeping to be enabled).')
+    parser_search.add_argument('vault', nargs='?', default=None,
+        help='The vault to search in. Searching all if omitted.')
+    parser_search.add_argument('--filename',
+        help='Search key for searching by (part of) file names.')
+    parser_search.add_argument('--searchterm',
+        help='Search key for searching (part of) description fields.')
+    parser_search.set_defaults(func=search)
+
+    # glacier-cmd listjobs <vault>
+    parser_listjobs = subparsers.add_parser('listjobs',
+        help='List active jobs in a vault.')
+    parser_listjobs.add_argument('vault',
+        help='The vault to list the jobs for.')
+    parser_listjobs.set_defaults(func=listjobs)
+
+    # glacier-cmd describejob <vault>
+    parser_describejob = subparsers.add_parser('describejob',
+        help='Describe a job.')
+    parser_describejob.add_argument('vault',
+        help='The vault the job is listed for.')
+    parser_describejob.add_argument('jobid',
+        help='The job ID of the job to be described.')
+    parser_describejob.set_defaults(func=describejob)
+
+    # Process the remaining arguments.
     args = parser.parse_args(remaining_argv)
 
-    setuplogging(args)
+##    # Set up the logging function.
+##    setuplogging(args)
 
+    # Run the subcommand.
     args.func(args)
 
 if __name__ == "__main__":
