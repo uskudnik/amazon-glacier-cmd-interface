@@ -258,9 +258,12 @@ class GlacierWriter(object):
 
     def send_part(self):
 
-        # Usage of memoryview should speed up execution and be more mem friendly
-        buf = memoryview("".join(self.buffer))
-
+        if sys.version_info < (2, 7, 0):
+            buf = "".join(self.buffer)
+        else:
+            # Usage of memoryview should speed up execution and be more mem friendly
+            buf = memoryview("".join(self.buffer))
+            
         # Put back any data remaining over the part size into the
         # buffer
         if len(buf) > self.part_size:
