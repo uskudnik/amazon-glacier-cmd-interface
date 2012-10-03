@@ -528,7 +528,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             sys.stdout.flush()
 
         else:
-            logger.info(msg)
+            self.logger.info(msg)
 
     def _size_fmt(self, num, decimals=1):
         """
