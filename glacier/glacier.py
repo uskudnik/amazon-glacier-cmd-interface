@@ -399,9 +399,11 @@ def getarchive(args):
 @handle_errors
 def download(args):
     glacier = default_glacier_wrapper(args)
-    response = glacier.download(args.vault, args.region, args.filename, args.out_file)
+    response = glacier.download(args.vault, args.archive, args.outfile, args.overwrite)
+    if args.outfile:
 
-    print response
+        # Only print result when writing to file.
+        print response
 
 ##    region = args.region
 ##    vault = args.vault
@@ -583,7 +585,7 @@ def render_inventory(inventory):
 def inventory(args):
 
     glacier = default_glacier_wrapper(args)
-    response = glacier.inventory(args.vault, args.force)
+    response = glacier.inventory(args.vault, args.refresh)
 
     print response
 
@@ -894,6 +896,9 @@ when uploading from stdin.''')
     parser_download.add_argument('--outfile',
         help='The name of the local file to store the archive. \
               If omitted, stdout will be used.')
+    parser_download.add_argument('--overwrite', action='store_true',
+        help='Overwrite an existing local file if one exists when \
+              downloading an archive.')
     parser_download.set_defaults(func=download)
 
     # glacier-cmd rmarchive <vault> <archive>

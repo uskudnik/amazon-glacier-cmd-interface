@@ -1033,16 +1033,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         # We have a unique result; check whether we have a retrieval job
         # running for it.
-        try:
-            gv = GlacierVault(self.glacierconn, vault)
-            gv.list_jobs()
-        except Exception, e:
-             raise GlacierWrapper.CommunicationException(
-                 "Cannot get jobs list.",
-                 cause=e,
-                 code="JobListError")
-
-        for job in gv.job_list:
+        job_list = self.listjobs(vault)
+        for job in job_list:
             try:
                 if job['ArchiveId'] == archive:
                     
@@ -1073,7 +1065,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     @sdb_connect
     @log_class_call("Download an archive.",
                     "Download archive done.")
-    def download(self, vault, archive, out_file=None):
+    def download(self, vault, archive, out_file=None, overwrite=False):
         """
         Download a file from Glacier, and store it in out_file.
         If no out_file is given, the file will be dumped on stdout.
@@ -1082,44 +1074,53 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         # Sanity checking on the input.
         self._check_vault_name(vault)
         self._check_id(archive, 'ArchiveId')
-##        self._check_region(region)
+
+        # Check whether the requested file is available from Amazon Glacier.
+        gv = GlacierVault(self.glacierconn, vault)
+        job_list = self.listjobs(vault)
+        for job in job_list:
+            if job['ArchiveId'] == archive:
+                if not job['Completed']:
+                    raise GlacierWrapper.CommunicationException(
+                        "Archive retrieval request not completed yet. Please try again later.")
+                self.logger.debug('Archive retrieval completed; archive is available for download now.')
+                break
+            
+        else:
+            raise GlacierWrapper.InputException(
+                "Requested archive not available. Please make sure \
+your archive ID is correct, and start a retrieval job using \
+'getarchive' if necessary.")
+
+        # Check whether we can access the file the archive has to be written to.
         if out_file:
+            if os.path.isfile(out_file) and not overwrite:
+                raise GlacierWrapper.InputException(
+                    "File exists already, aborting. Use the overwrite flag to overwrite existing file.",
+                    code="FileError")
             try:
-                out = open(out_file)
+                out = open(out_file, 'w')
             except Exception, e:
                 raise GlacierWrapper.InputException(
                     "Cannot access the ouput file.",
                     cause=e,
                     code="FileError")
 
-        # Check whether the requested file is available from Amazon Glacier.
-        gv = GlacierVault(glacierconn, vault)
-        jobs = gv.list_jobs()
-        found = False
-        for job in gv.job_list:
-            if job['ArchiveId'] == archive:
-                found = True
-                if not job['Completed']:
-                    raise GlacierWrapper.CommunicationException(
-                        "Archive retrieval request not completed yet. Please try again later.")
-                break
+        job2 = GlacierJob(gv, job_id=job['JobId'])
+        if out_file:
+            self.logger.debug('Starting download of archive to file %s.'% out_file)
+            ffile = open(out_file, "w")
+            ffile.write(job2.get_output().read())
+            ffile.close()
+            self.logger.debug('Download of archive finished.')
 
-        if found:
-            print "File is available, starting download now."
-            job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
-            if out_file:
-                ffile = open(out_file, "w")
-                ffile.write(job2.get_output().read())
-                ffile.close()
-            else:
-                print job2.get_output().read()
+            #TODO: tree-hash check.
+            return 'File download successful.'
+        
+        else:
+            self.logger.debug('Downloading archive and sending output to stdout.')
+            print job2.get_output().read(),
 
-        raise GlacierWrapper.InputException(
-            "Requested archive not available. Please make sure \
-your archive ID is correct, and start a retrieval job using \
-'getarchive' if necessary.")
-
-    
     @glacier_connect
     @sdb_connect
     @log_class_call("Searching for archive.",
