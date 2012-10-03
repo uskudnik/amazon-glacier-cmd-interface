@@ -8,64 +8,15 @@
 
 import sys
 import os
-##import select
 import ConfigParser
 import argparse
 import re
-##import json
-##import logging
-##import datetime
-##import dateutil.parser
 import locale
-##import time
-##import boto
-##import glaciercorecalls
-##import pytz
 
 from prettytable import PrettyTable
 from GlacierWrapper import GlacierWrapper
 from functools import wraps
 
-##MAX_VAULT_NAME_LENGTH = 255
-##MAX_DESCRIPTION_LENGTH = 1024
-##VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-##DEFAULT_PART_SIZE = GlacierWrapper.DEFAULT_PART_SIZE
-
-locale.setlocale(locale.LC_ALL, '') # Empty string = use default setting
-
-##def progress(msg):
-##    if sys.stdout.isatty():
-##        print msg,
-##        sys.stdout.flush()
-
-##def check_vault_name(name):
-##    m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
-##    if len(name) > 255:
-##        raise Exception(u"Vault name can be at most 255 characters long.")
-##    if len(name) == 0:
-##        raise Exception(u"Vault name has to be at least 1 character long.")
-##    if m.end() != len(name):
-##        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore), \
-##'-' (hyphen), and '.' (period)")
-##    return True
-
-
-
-##
-##def is_power_of_2(v):
-##    return (v & (v - 1)) == 0
-##
-##def next_power_of_2(v):
-##    """
-##    Returns the next power of 2, or the argument if it's already a power of 2.
-##    """
-##    v -= 1
-##    v |= v >> 1
-##    v |= v >> 2
-##    v |= v >> 4
-##    v |= v >> 8
-##    v |= v >> 16
-##    return v + 1
 
 def print_headers(headers):
     table = PrettyTable(["Header", "Value"])
@@ -75,19 +26,34 @@ def print_headers(headers):
 
     print table
 
-##def parse_response(response):
-##    if response.status == 403:
-##        print "403 Forbidden."
-##        print "\n"
-##        print "Reason:"
-##        print response.read()
-##        print response.msg
-##
-##    print response.status, response.reason
-##    if response.status == 204:
-##        print_headers(response)
+def print_output(output, keys=None, sort_key=None):
+    """
+    Prettyprints output. Expects a list of identical dicts.
+    Use the dict keys as headers; one line for each item.
+
+    output: list of dicts, each dict {'header_key1':'data', 'header_key2':'data2' ... }
+    keys: dict of header keys {'header1': 'header_key1', 'header2', 'header_key2'...}
+    """
+
+    if len(output) == 0:
+        print 'No output!'
+        return
+
+    headers = [k for k in keys.keys()] if keys else output[0].keys()
+
+    table = PrettyTable(headers)
+
+    for line in output:
+        table.add_row([line[keys[k]] for k in keys])
+
+    if sort_key:
+        table.sortby = sort_key
+        
+    print table
+    
 
 def default_glacier_wrapper(args):
+    print 'default wrapper; logtostdout is %s.'% args.logtostdout
     return GlacierWrapper(args.aws_access_key,
                           args.aws_secret_key,
                           args.region,
@@ -95,7 +61,7 @@ def default_glacier_wrapper(args):
                           bookkeeping_domain_name=args.bookkeeping_domain_name,
                           logfile=args.logfile,
                           loglevel=args.loglevel,
-                          printtostdout=args.printtostdout)
+                          logtostdout=args.logtostdout)
 
 def handle_errors(fn):
     @wraps(fn)
@@ -115,14 +81,12 @@ def handle_errors(fn):
 def lsvault(args):
     glacier = default_glacier_wrapper(args)
     vault_list = glacier.lsvault()
-    table = PrettyTable(["Vault name", "ARN", "Created", "Size"])
-    for vault in vault_list:
-        table.add_row([vault['VaultName'],
-                       vault['VaultARN'],
-                       vault['CreationDate'],
-                       locale.format('%d', vault['SizeInBytes'], grouping=True) ])
-    table.sortby = "Vault name"
-    print table
+    keys = {"Vault name": 'VaultName',
+            "ARN": 'VaultARN',
+            "Created": 'CreationDate',
+            "Size": 'SizeInBytes'}
+##    print_output(vault_list, keys=keys, sort_key="Vault name")
+    print_output(vault_list, keys=keys)
 
 @handle_errors
 def mkvault(args):
@@ -145,11 +109,12 @@ def describevault(args):
 
     response = glacier.describevault(args.vault)
 
-    table = PrettyTable(["LastInventory", "Archives", "Size", "ARN", "Created"])
-    table.add_row([response['LastInventoryDate'], response['NumberOfArchives'],
-                   locale.format('%d', response['SizeInBytes'], grouping=True),
-                   response['VaultARN'], response['CreationDate']])
-    print table
+    keys = {"LastInventory": 'LastInventoryDate',
+            "Archives": 'NumberOfArchives',
+            "Size": 'SizeInBytes',
+            "ARN": 'VaultARN',
+            "Created": 'CreationDate'}
+    print_output(response, keys=keys)
 
 @handle_errors
 def listmultiparts(args):
@@ -161,12 +126,7 @@ def listmultiparts(args):
 
     else:
         headers = sorted(response[0].keys())
-        table = PrettyTable(headers)
-        for entry in response:
-            table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
-                           else entry[k] for k in headers ])
-        print table
-
+        print_output(response)
 
 ##    print "Marker: ", response['Marker']
 ##    if len(response['UploadsList']) > 0:
@@ -192,17 +152,15 @@ def listjobs(args):
 
     if job_list == []:
         print 'No jobs.'
-    
-    table = PrettyTable(["Action", "Archive ID", "Status", "Initiated",
-                         "VaultARN", "Job ID"])
-    for job in job_list:
-        table.add_row([job['Action'],
-                       job['ArchiveId'],
-                       job['StatusCode'],
-                       job['CreationDate'],
-                       job['VaultARN'],
-                       job['JobId']])
-    print table
+        return
+
+    headers = {"Action": 'Action',
+               "Archive ID": 'ArchiveId',
+               "Status": 'StatusCode',
+               "Initiated": 'CreationDate',
+               "VaultARN": 'VaultARN',
+               "Job ID": 'JobId'}
+    print_output(job_list, keys=headers)
 
 @handle_errors
 def describejob(args):
@@ -212,6 +170,17 @@ def describejob(args):
     print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj['ArchiveId'],
                                                                      args.jobid, gj['CreationDate'],
                                                                      gj['StatusCode'])
+
+
+@handle_errors
+def download(args):
+    glacier = default_glacier_wrapper(args)
+    response = glacier.download(args.vault, args.archive, args.outfile, args.overwrite)
+    if args.outfile:
+
+        # Only print result when writing to file.
+        print response
+
 
 ### Formats file sizes in human readable format. Anything bigger than TB
 ### is returned is TB. Number of decimals is optional, defaults to 1.
@@ -230,275 +199,23 @@ def upload(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.upload(args.vault, args.filename, args.description, args.region, args.stdin,
                               args.partsize)
-    
-##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-##
-##    if BOOKKEEPING:
-##        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
-##                                    aws_secret_access_key=args.aws_secret_key)
-##        domain_name = BOOKKEEPING_DOMAIN_NAME
-##        try:
-##            domain = sdb_conn.get_domain(domain_name, validate=True)
-##        except boto.exception.SDBResponseError:
-##            domain = sdb_conn.create_domain(domain_name)
-##
-##    if description:
-##        description = " ".join(description)
-##    else:
-##        description = filename
-##
-##    if check_description(description):
-##        reader = None
-##
-##        # If filename is given, try to use this file.
-##        # Otherwise try to read data from stdin.
-##        total_size = 0
-##        if not stdin:
-##            try:
-##                reader = open(filename, 'rb')
-##                total_size = os.path.getsize(filename)
-##            except IOError:
-##                print "Couldn't access the file given."
-##                return False
-##            
-##        elif select.select([sys.stdin,],[],[],0.0)[0]:
-##            reader = sys.stdin
-##            total_size = 0
-##        else:
-##            print "Nothing to upload."
-##            return False
-##
-##        if args.partsize < 0:
-##            
-##            # User did not specify part_size. Compute the optimal value.
-##            if total_size > 0:
-##                part_size = next_power_of_2(total_size / (1024*1024*10000))
-##            else:
-##                part_size = glaciercorecalls.GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
-##                
-##        else:
-##            part_size = next_power_of_2(args.partsize)
-##
-##        if total_size > part_size * 1024 * 1024 * 10000:
-##            
-##            # User specified a value that is too small. Adjust.
-##            part_size = next_power_of_2(total_size / (1024*1024*10000))
-##            print "WARNING: Part size given is too small; using %s MB parts to upload."% part_size
-##
-##        writer = glaciercorecalls.GlacierWriter(glacierconn, vault, description=description,
-##                                                part_size=(part_size*1024*1024))
-##
-##        #Read file in chunks so we don't fill whole memory
-##        start_time = current_time = previous_time = time.time()
-##        for part in iter((lambda:reader.read(READ_PART_SIZE)), ''):
-##
-##            writer.write(part)
-##            current_time = time.time()
-##            overall_rate = int(writer.uploaded_size/(current_time - start_time))
-##            if total_size > 0:
-##                
-##                # Calculate transfer rates in bytes per second.
-##                current_rate = int(READ_PART_SIZE/(current_time - previous_time))
-##
-##                # Estimate finish time, based on overall transfer rate.
-##                if overall_rate > 0:
-##                    time_left = (total_size - writer.uploaded_size)/overall_rate
-##                    eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
-##                else:
-##                    time_left = "Unknown"
-##                    eta = "Unknown"
-##                    
-##                progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
-##                         (size_fmt(writer.uploaded_size),
-##                          size_fmt(total_size),
-##                          int(100 * writer.uploaded_size/total_size),
-##                          size_fmt(current_rate, 2),
-##                          size_fmt(overall_rate, 2),
-##                          eta))
-##
-##            else:
-##                progress('\rWrote %s. Rate %s/s.' %
-##                         (size_fmt(writer.uploaded_size),
-##                          size_fmt(overall_rate, 2)))
-##
-##            previous_time = current_time
-##
-##        writer.close()
-##        current_time = time.time()
-##        overall_rate = int(writer.uploaded_size/(current_time - start_time))
-##        progress('\rWrote %s. Rate %s/s.' %
-##                 (size_fmt(writer.uploaded_size),
-##                  size_fmt(overall_rate, 2)))
-##
-##        archive_id = writer.get_archive_id()
-##        location = writer.get_location()
-##        sha256hash = writer.get_hash()
-##        if BOOKKEEPING:
-##            file_attrs = {
-##                'region':region,
-##                'vault':vault,
-##                'filename':filename,
-##                'archive_id': archive_id,
-##                'location':location,
-##                'description':description,
-##                'date':'%s' % datetime.datetime.utcnow().replace(tzinfo=pytz.utc),
-##                'hash':sha256hash
-##            }
-##
-##            if args.name:
-##                file_attrs['filename'] = args.name
-##            elif stdin:
-##                file_attrs['filename'] = description
-##
-##            domain.put_attributes(file_attrs['filename'], file_attrs)
-##
-##        print "Created archive with ID: ", archive_id
-##        print "Archive SHA256 tree hash: ", sha256hash
+    print "Created archive with ID: ", archive_id
+    print "Archive SHA256 tree hash: ", sha256hash
+
 
 @handle_errors
 def getarchive(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.getarchive(args.vault, args.archive)
+    print_output(response)
 
-    print response
-
-    
-##    region = args.region
-##    vault = args.vault
-##    archive = args.archive
-##    filename = args.filename
-##
-##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
-##
-##    jobs = gv.list_jobs()
-##    found = False
-##    for job in gv.job_list:
-##        if job['ArchiveId'] == archive:
-##            found = True
-##            
-##            # no need to start another archive retrieval
-##            if filename or not job['Completed']:
-##                print "ArchiveId: ", archive
-##                
-##            if job['Completed']:
-##                job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
-##                if filename:
-##                    ffile = open(filename, "w")
-##                    for part in iter((lambda:job2.get_output().read(READ_PART_SIZE)), ''):
-##                        ffile.write(part)
-##                    ffile.close()
-##                else:
-##                    print job2.get_output().read()
-##                return
-##            
-##    if not found:
-##        job = gv.retrieve_archive(archive)
-##        print "Started"
-
-@handle_errors
-def download(args):
-    glacier = default_glacier_wrapper(args)
-    response = glacier.download(args.vault, args.archive, args.outfile, args.overwrite)
-    if args.outfile:
-
-        # Only print result when writing to file.
-        print response
-
-##    region = args.region
-##    vault = args.vault
-##    filename = args.filename
-##    out_file = args.out_file
-##
-##    if not filename:
-##        raise Exception(u"You must supply either a file name or a search\
-##term to search the descriptions.")
-##
-##    args.search_term = filename
-##    items = search(args, print_results=False)
-##
-##    n_items = 0
-##    if not items:
-##        print "No results."
-##        return False
-##
-##    print "Region\tVault\tFilename\tArchive ID"
-##    for item in items:
-##        n_items += 1
-##        archive = item['archive_id']
-##        vault = item['vault']
-##        print "%s\t%s\t%s\t%s" % (item['region'],
-##                                  item['vault'],
-##                                  item['filename'],
-##                                  item['archive_id'])
-##
-##    if n_items > 1:
-##        print "You need to uniquely identify file using region, vault and/or \
-##the file name. Alternatively use getarchive <Archive ID> to retrieve \
-##the archive."
-##        return False
-##
-##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
-##
-##    jobs = gv.list_jobs()
-##    found = False
-##    for job in gv.job_list:
-##        if job['ArchiveId'] == archive:
-##            found = True
-##            
-##            # no need to start another archive retrieval
-##            if not job['Completed']:
-##                print "Waiting for Amazon Glacier to retrieve the archive."
-##                
-##            if job['Completed']:
-##                print "File is available, starting download now."
-##                job2 = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
-##                if out_file:
-##                    ffile = open(out_file, "w")
-##                    ffile.write(job2.get_output().read())
-##                    ffile.close()
-##                else:
-##                    print job2.get_output().read()
-##
-##            return True
-##
-##    if not found:
-##        job = gv.retrieve_archive(archive)
-##        print "Archive retrieve request sent to Amazon Glacier, your archive \
-##be available for download in about four hours."
 
 @handle_errors
 def rmarchive(args):
     glacier = default_glacier_wrapper(args)
     glacier.rmarchive(args.vault, args.archive)
     print "archive removed."
-    
-##    region = args.region
-##    vault = args.vault
-##    archive = args.archive
-##    BOOKKEEPING = args.bookkeeping
-##    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
-##
-##    if BOOKKEEPING:
-##        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
-##                                    aws_secret_access_key=args.aws_secret_key)
-##        domain_name = BOOKKEEPING_DOMAIN_NAME
-##        try:
-##            domain = sdb_conn.get_domain(domain_name, validate=True)
-##        except boto.exception.SDBResponseError:
-##            domain = sdb_conn.create_domain(domain_name)
-##
-##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
-##
-##    parse_response( gv.delete_archive(archive) )
-##
-##    # TODO: can't find a method for counting right now
-##    query = 'select * from `%s` where archive_id="%s"' % (BOOKKEEPING_DOMAIN_NAME, archive)
-##    items = domain.select(query)
-##    for item in items:
-##        domain.delete_item(item)
+ 
 
 @handle_errors
 def search(args, print_results=True):
@@ -507,178 +224,37 @@ def search(args, print_results=True):
                               region=args.region,
                               search_term=args.search_term,
                               print_results=True)
-    print response
-    
-##    region = args.region
-##    vault = args.vault
-##    search_term = args.search_term
-##    BOOKKEEPING = args.bookkeeping
-##    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
-##
-##    if BOOKKEEPING:
-##        sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
-##                                    aws_secret_access_key=args.aws_secret_key)
-##        domain_name = BOOKKEEPING_DOMAIN_NAME
-##        try:
-##            domain = sdb_conn.get_domain(domain_name, validate=True)
-##        except boto.exception.SDBResponseError:
-##            domain = sdb_conn.create_domain(domain_name)
-##            
-##    else:
-##        raise Exception(u"You must enable bookkeeping to be able to do searches.")
-##
-##    search_params = []
-##    table_title = ""
-##    if region:
-##        search_params += ["region='%s'" % (region,)]
-##    else:
-##        table_title += "Region\t"
-##
-##    if vault:
-##        search_params += ["vault='%s'" % (vault,)]
-##    else:
-##        table_title += "Vault\t"
-##
-##    table_title += "Filename\tArchive ID"
-##
-##    if search_term:
-##        search_params += ["(filename like '"+ search_term+"%' or description like '"+search_term+"%')" ]
-##
-##    search_params = " and ".join(search_params)
-##    query = 'select * from `%s` where %s' % (BOOKKEEPING_DOMAIN_NAME, search_params)
-##    items = domain.select(query)
-##
-##    if print_results:
-##        print table_title
-##
-##    for item in items:
-##        
-##        # print item, item.keys()
-##        item_attrs = []
-##        if not region:
-##            item_attrs += [item[u'region']]
-##            
-##        if not vault:
-##            item_attrs += [item[u'vault']]
-##            
-##        item_attrs += [item[u'filename']]
-##        item_attrs += [item[u'archive_id']]
-##        if print_results:
-##            print "\t".join(item_attrs)
-##
-##    if not print_results:
-##        return items
+    print_output(response)
 
-def render_inventory(inventory):
-    print "Inventory of vault: %s" % (inventory["VaultARN"],)
-    print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
-    print "Content:"
-    table = PrettyTable(["Archive Description", "Uploaded", "Size", "Archive ID", "SHA256 hash"])
-    for archive in inventory['ArchiveList']:
-        table.add_row([archive['ArchiveDescription'],
-                       archive['CreationDate'],
-                       locale.format('%d', archive['Size'], grouping=True),
-                       archive['ArchiveId'],
-                       archive['SHA256TreeHash']])
-    print table
+
 
 def inventory(args):
 
     glacier = default_glacier_wrapper(args)
-    response = glacier.inventory(args.vault, args.refresh)
+    job, inventory = glacier.inventory(args.vault, args.refresh)
 
-    print response
+    print "Inventory of vault: %s" % (inventory["VaultARN"],)
+    print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
+    print "Content:"
+    headers = {"Archive Description": 'ArchiveDescription',
+               "Uploaded": 'CreationDate',
+               "Size": 'Size',
+               "Archive ID": 'ArchiveId',
+               "SHA256 tree hash": 'SHA256TreeHash'}
+    print_output(inventory['ArchiveList'], keys=headers)
 
-##    
-##    region = args.region
-##    vault = args.vault
-##    force = args.force
-##    BOOKKEEPING = args.bookkeeping
-##    BOOKKEEPING_DOMAIN_NAME = args.bookkeeping_domain_name
-##
-##    glacierconn = glaciercorecalls.GlacierConnection(args.aws_access_key, args.aws_secret_key, region=region)
-##    gv = glaciercorecalls.GlacierVault(glacierconn, vault)
-##    if force:
-##        job = gv.retrieve_inventory(format="JSON")
-##        print "Forced start of a new inventory retrieval job."
-##        return True
-##    
-##    try:
-##        gv.list_jobs()
-##        inventory_retrievals_done = []
-##        for job in gv.job_list:
-##            if job['Action'] == "InventoryRetrieval" and job['StatusCode'] == "Succeeded":
-##                d = dateutil.parser.parse(job['CompletionDate']).replace(tzinfo=pytz.utc)
-##                job['inventory_date'] = d
-##                inventory_retrievals_done += [job]
-##
-##        if len(inventory_retrievals_done):
-##            list.sort(inventory_retrievals_done,
-##                      key=lambda i: i['inventory_date'],
-##                      reverse=True)
-##            job = inventory_retrievals_done[0]
-##            print "Inventory taken by JobId:", job['JobId']
-##            job = glaciercorecalls.GlacierJob(gv, job_id=job['JobId'])
-##            inventory = json.loads(job.get_output().read())
-##
-##            if BOOKKEEPING:
-##                sdb_conn = boto.connect_sdb(aws_access_key_id=args.aws_access_key,
-##                                            aws_secret_access_key=args.aws_secret_key)
-##                domain_name = BOOKKEEPING_DOMAIN_NAME
-##                try:
-##                    domain = sdb_conn.get_domain(domain_name, validate=True)
-##                except boto.exception.SDBResponseError:
-##                    domain = sdb_conn.create_domain(domain_name)
-##
-##                d = dateutil.parser.parse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
-##                item = domain.put_attributes("%s" % (d,), inventory)
-##
-##            if ((datetime.datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
-##                gv.retrieve_inventory(format="JSON")
-##                print "Started a new inventory retrieval job."
-##        
-##            render_inventory(inventory)
-##        else:
-##            job = gv.retrieve_inventory(format="JSON")
-##            print "Started a new inventory retrieval job."
-##            
-##    except Exception, e:
-##        print "exception: ", e
-##        print json.loads(e[1])['message']
 
-def setuplogging(args):
-    printtostdout = args.printtostdout
-    logfile = args.logfile
-    loglevel = args.loglevel
-    if not loglevel in ('3', 'CRITICAL', '2', 'ERROR',
-                        '1', 'WARNING', '0', 'INFO',
-                        '-1', 'DEBUG'):
-        print 'Invalid loglevel; defaulting to level WARNING.'
-        loglevel = 'WARNING'
-    
+
+##def setuplogging(args):
 ##    printtostdout = args.printtostdout
 ##    logfile = args.logfile
-##    loglevel = {'3': logging.CRITICAL,
-##                'CRITICAL': logging.CRITICAL,
-##                '2': logging.ERROR,
-##                'ERROR': logging.ERROR,
-##                '1': logging.WARNING,
-##                'WARNING': logging.WARNING,
-##                '0': logging.INFO,
-##                'INFO': logging.INFO,
-##                '-1': logging.DEBUG,
-##                'DEBUG': logging.DEBUG
-##                }[args.loglevel]
-##
-##    logging.basicConfig(level=loglevel,
-##                        filename=logfile,
-##                        format='%(levelname)-8s %(message)s')
-##    
-##    if printtostdout:
-##        soh = logging.StreamHandler(sys.stderr)
-##        soh.setLevel(loglevel)
-##        logger = logging.getLogger()
-##        logger.addHandler(soh)
+##    loglevel = args.loglevel
+##    if not loglevel in ('3', 'CRITICAL', '2', 'ERROR',
+##                        '1', 'WARNING', '0', 'INFO',
+##                        '-1', 'DEBUG'):
+##        print 'Invalid loglevel; defaulting to level WARNING.'
+##        loglevel = 'WARNING'
+
 
 def main():
     program_description = u"""
@@ -691,9 +267,9 @@ def main():
                                 add_help=False)
 
     conf_parser.add_argument("-c", "--conf", default="~/.glacier-cmd",
-        help="Specify config file", metavar="FILE")
-    conf_parser.add_argument('-p','--printtostdout', action='store_true',
-        help='Print all log messages to stdout')
+        help="Name of the file to log messages to.", metavar="FILE")
+    conf_parser.add_argument('--logtostdout', action='store_true',
+        help='Send log messages to stdout instead of the config file.')
 
     args, remaining_argv = conf_parser.parse_known_args()
 
@@ -775,6 +351,8 @@ def main():
     # glacier-cmd mkvault <vault>
     parser_mkvault = subparsers.add_parser("mkvault",
         help="Create a new vault.")
+    parser_mkvault.add_argument('vault',
+        help='The vault to be created.')
     parser_mkvault.set_defaults(func=mkvault)
 
     # glacier-cmd lsvault    
@@ -881,9 +459,6 @@ when uploading from stdin.''')
         help='The vault the archive is stored in.')
     parser_getarchive.add_argument('archive',
         help='The archive id.')
-##    parser_getarchive.add_argument('--outfile', nargs='?',
-##        help='Local file name to store the file. \
-##              If omitted data is sent to stdout.')
     parser_getarchive.set_defaults(func=getarchive)
 
     # glacier-cmd download <vault> <archive> [--outfile <file name>]
@@ -938,11 +513,15 @@ when uploading from stdin.''')
         help='The job ID of the job to be described.')
     parser_describejob.set_defaults(func=describejob)
 
+
+    # TODO args.logtostdout becomes false when parsing the remaining_argv
+    # so here we bridge this. A bad hack but it works.
+    logtostdout = args.logtostdout
+
     # Process the remaining arguments.
     args = parser.parse_args(remaining_argv)
 
-##    # Set up the logging function.
-##    setuplogging(args)
+    args.logtostdout = logtostdout
 
     # Run the subcommand.
     args.func(args)

@@ -116,7 +116,6 @@ class GlacierWrapper(object):
 
             self.logger.info(self.fetch(message=True))
             self.logger.debug(self.fetch(stack=True))
-##            raise Exception
 
     class InputException(GlacierWrapperException):
         """
@@ -136,8 +135,6 @@ class GlacierWrapper(object):
             :param cause: explanation on what caused the error.
             :type cause: str
             """
-
-            
             GlacierWrapper.GlacierWrapperException.__init__(self, message, code=code, cause=cause)
 
     class ConnectionException(GlacierWrapperException):
@@ -191,19 +188,22 @@ class GlacierWrapper(object):
         def __init__(self, message, code=None, cause=None):
             GlacierWrapper.GlacierWrapperException.__init__(self, message, code=code, cause=cause)
 
-    def setuplogging(self, logfile, loglevel, printtostdout):
+    def setuplogging(self, logfile, loglevel, logtostdout):
         """
         Set up the logging facility. If no logging parameters are
         given, WARNING-level logging will be printed to stdout.
+        If logtostdout is True, messages will be sent to stdout, even
+        if a logfile is given.
+        If a logfile is given but can not be written to, logs are sent to
+        stderr instead.
 
         :param logfile: the fully qualified file name of where to log to.
         :type logfile: str
         :param loglevel: the level of logging.
         :type loglevel: str
-        :param printtostdout: whether to sent log messages to stdout.
-        :type printtostdout: boolean
+        :param logtostdout: whether to sent log messages to stdout.
+        :type logtostdout: boolean
         """
-
         levels = {'3': logging.CRITICAL,
                   'CRITICAL': logging.CRITICAL,
                   '2': logging.ERROR,
@@ -222,18 +222,38 @@ class GlacierWrapper(object):
 
         datefmt = '%b %d %H:%M:%S'
         logformat = '%(asctime)s %(levelname)-8s glacier-cmd %(message)s'
-        
-        if logfile:
+
+        if logtostdout:
+            print 'setting up logging to stdout.'
             logging.basicConfig(level=loglevel,
-                                filename=logfile,
+                                stream=sys.stdout,
                                 format=logformat,
                                 datefmt=datefmt)
+        elif logfile:
+            try:
+                open(logfile, 'w')
+            except IOError:
+
+                # Can't open the specified log file, log to stderr instead.
+                print 'setting up logging to stderr'
+                logging.basicConfig(level=loglevel,
+                                    stream=sys.stderr,
+                                    format=logformat,
+                                    datefmt=datefmt)
+            else:
+                print 'setting up logging to file'
+                logging.basicConfig(level=loglevel,
+                                    filename=logfile,
+                                    format=logformat,
+                                    datefmt=datefmt)
         
-        if printtostdout or not logfile:
-            soh = logging.StreamHandler(sys.stderr)
-            soh.setLevel(loglevel)
-            logger = logging.getLogger()
-            logger.addHandler(soh)
+        else:
+            'setting up WARNING logging to stdout.'
+            logging.basicConfig(level='WARNING',
+                                stream=sys.stdout,
+                                format=logformat,
+                                datefmt=datefmt)
+
 
     def glacier_connect(func):
         """
@@ -264,7 +284,7 @@ class GlacierWrapper(object):
                                                          region=self.region)
                 except boto.exception.AWSConnectionError as e:
                     raise GlacierWrapper.ConnectionException("Cannot connect to Amazon Glacier.",
-                                                             cause=e,
+                                                             cause=e.cause,
                                                              code="GlacierConnectionError")
 
             return func(*args, **kwargs)
@@ -304,13 +324,13 @@ class GlacierWrapper(object):
                 except boto.exception.AWSConnectionError as e:
                     raise GlacierWrapper.ConnectionException(
                         "Cannot connect to Amazon SimpleDB.",
-                        cause=e,
+                        cause=e.cause,
                         code="SdbConnectionError")
 
                 except boto.exception.SDBResponseError as e:
                     raise GlacierWrapper.ConnectionException(
                         "Cannot connect to Amazon SimpleDB.",
-                        cause=e,
+                        cause=e.cause,
                         code="SdbConnectionError")
                 
             return func(*args, **kwargs)
@@ -333,9 +353,9 @@ class GlacierWrapper(object):
                                    response.reason,
                                    json.loads(response.read())['message'])
             code = {403: ('Error_403',
-                          'Forbidden - please check your credentials.'),
+                          'Access forbidden - please check your credentials.'),
                     404: ('Error_404',
-                          'Not found - check name and try again.')
+                          'Object not found - check name and try again.')
                     }[response.status]
             raise GlacierWrapper.ResponseException(message,
                                                    code=code[0],
@@ -498,7 +518,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
         A progress indicator. Prints the progress message if stdout
         is connected to a tty (i.e. run from the command prompt),
-        nothing otherwise.
+        logging at info level otherwise.
 
         :param msg: the progress message to be printed.
         :type msg: str
@@ -506,6 +526,9 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         if sys.stdout.isatty():
             print msg,
             sys.stdout.flush()
+
+        else:
+            logger.info(msg)
 
     def _size_fmt(self, num, decimals=1):
         """
@@ -555,20 +578,21 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         try:
             response = self.glacierconn.list_vaults()
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Problem listing vaults",
-                cause=e)
+                cause=e.cause)
 
         self.logger.debug('list_vaults response received.')
         self._check_response(response)
         try:
             jdata = response.read()
             vault_list = json.loads(jdata)['VaultList']
-        except Exception, e:
+        except GlacierWrapper.ResponseException as e:
             raise GlacierWrapper.ResponseException(
                 "Problem parsing vault list: %s"% jdata,
-                cause=e)
+                cause=e.cause)
+
         return vault_list
 
     @glacier_connect
@@ -596,7 +620,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         self._check_vault_name(vault_name)
         try:
             response = GlacierVault(self.glacierconn, vault_name).create_vault()
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot create vault",
                 cause=e)
@@ -625,7 +649,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         self._check_vault_name(vault_name)
         try:
             response = GlacierVault(self.glacierconn, vault_name).delete_vault()
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot remove vault.",
                 cause=e)
@@ -659,7 +683,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         try:
             gv = GlacierVault(self.glacierconn, name=vault_name)
             response = gv.describe_vault()
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot get vault description.",
                 cause=e)
@@ -668,7 +692,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         try:
             jdata = response.read()
             res = json.loads(jdata)
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 'Failed to decode response: %s'% jdata,
                 cause=e)
@@ -712,13 +736,22 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         try:
             gv = GlacierVault(self.glacierconn, name=vault_name)
             response = gv.list_jobs()
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot get jobs list.",
                 cause=e)
         
         self._check_response(response)
-        return gv.job_list
+
+        try:
+            job_list = json.loads(response.read())
+        except:
+
+            # TODO: handle json errors.
+
+            raise
+        
+        return job_list['JobList']
 
     @glacier_connect
     @log_class_call("Requesting job description.",
@@ -759,7 +792,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             gv = GlacierVault(self.glacierconn, name=vault_name)
             gj = GlacierJob(gv, job_id=job_id)
             response = gj.job_status()
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot get jobs list.",
                 cause=e)
@@ -768,7 +801,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         try:
             jdata = response.read()
             res = json.loads(jdata)
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 'Failed to decode response: %s'% jdata,
                 cause=e)
@@ -802,7 +835,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         try:
             gv = GlacierVault(self.glacierconn, name=vault_name)
             response = gv.abort_multipart(upload_id)
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot abort multipart upload.",
                 cause=e)
@@ -836,14 +869,14 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         try:
             gv = GlacierVault(self.glacierconn, name=vault_name)
             response = gv.list_multipart_uploads()
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException("Cannot abort multipart upload.",
                                                         cause=e)
         self._check_response(response)
         try:
             jdata = response.read()
             res = json.loads(jdata)
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 'Failed to decode response: %s'% jdata,
                 cause=e)
@@ -879,7 +912,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             try:
                 reader = open(file_name, 'rb')
                 total_size = os.path.getsize(file_name)
-            except IOError, e:
+            except IOError as e:
                 raise GlacierWrapper.InputException("Couldn't access the file given.",
                                                     cause=e)
             
@@ -887,8 +920,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             reader = sys.stdin
             total_size = 0
         else:
-            print "Nothing to upload."
-            return False
+            raise GlacierWrapper.InputException("There is nothing to upload.")
 
         if part_size < 0:
             
@@ -905,7 +937,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             
             # User specified a value that is too small. Adjust.
             part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
-            print "WARNING: Part size given is too small; using %s MB parts to upload."% part_size
+            self.logger.warning("WARNING: Part size given is too small; using %s MB parts to upload."% part_size)
 
         read_part_size = part_size * 1024 * 1024
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
@@ -976,8 +1008,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
             self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
 
-        print "Created archive with ID: ", archive_id
-        print "Archive SHA256 tree hash: ", sha256hash
+        return (archive_id, sha256hash)
 
 
     @glacier_connect
@@ -1046,7 +1077,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
                         job2 = GlacierJob(gv, job_id=job['JobId'])
                         return ('ready', job, job2, results)
                     
-            except Exception, e:
+            except GlacierWrapper.CommunicationException as e:
                 GlacierWrapper.ResponseException(
                     "Cannot process job list response.",
                     cause=e)
@@ -1054,10 +1085,10 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         # No job found related to this archive, start a new job.        
         try:
             job = gv.retrieve_archive(archive)
-        except Exception, e:
+        except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot retrieve archive.",
-                cause=e,
+                cause=e.cause,
                 code="ArchiveRetrieveError")
         return ("initiated", job, None, results)
 
@@ -1100,10 +1131,10 @@ your archive ID is correct, and start a retrieval job using \
                     code="FileError")
             try:
                 out = open(out_file, 'w')
-            except Exception, e:
+            except GlacierWrapper.InputException as e:
                 raise GlacierWrapper.InputException(
                     "Cannot access the ouput file.",
-                    cause=e,
+                    cause=e.cause,
                     code="FileError")
 
         job2 = GlacierJob(gv, job_id=job['JobId'])
@@ -1165,9 +1196,6 @@ your archive ID is correct, and start a retrieval job using \
         query = 'select * from `%s` where %s' % (self.bookkeeping_domain_name, search_params)
         items = self.sdb_domain.select(query)
 
-        if print_results:
-            print table_title
-
         for item in items:
             
             # print item, item.keys()
@@ -1180,8 +1208,6 @@ your archive ID is correct, and start a retrieval job using \
                 
             item_attrs += [item[u'filename']]
             item_attrs += [item[u'archive_id']]
-            if print_results:
-                print "\t".join(item_attrs)
 
         if not print_results:
             return items
@@ -1198,18 +1224,25 @@ your archive ID is correct, and start a retrieval job using \
         :param archive: the archive ID
         :type archive: str
 
-        :raises: GlacierWrapper.CommunicationException
+        :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
         """
         self._check_vault_name(vault)
         self._check_id(archive, 'ArchiveId')
-               
+
+        gv = GlacierVault(self.glacierconn, vault)
+        self._check_response(gv.delete_archive(archive))
+
         try:
             gv = GlacierVault(self.glacierconn, vault)
             self._check_response(gv.delete_archive(archive))
-        except Exception, e:
-            raise GlacierWrapper.CommunicationException("Cannot delete archive.",
-                                                        code="ArchiveDeleteError",
-                                                        cause=e)
+        except ResponseException as e:
+            raise GlacierWrapper.ResponseException("Unexpected response. Cannot delete archive.",
+                                                    code="ArchiveDeleteError",
+                                                    cause=e)
+        except CommunicationException as e:
+            raise GlacierWrapper.CommunicationException("Error communicating with Glacier. Cannot delete archive.",
+                                                         code="ArchiveDeleteError",
+                                                         cause=e)
 
         if self.bookkeeping:
             try:
@@ -1237,7 +1270,7 @@ your archive ID is correct, and start a retrieval job using \
     @sdb_connect
     @log_class_call("Requesting inventory overview.",
                     "Inventory response received.")
-    def inventory(self, vault_name, force_start):
+    def inventory(self, vault_name, refresh):
         """
         Retrieves inventory and returns retrieval job, or if it's already retrieved
         returns overview of the inventoy. If force=True it will force start a new
@@ -1245,8 +1278,8 @@ your archive ID is correct, and start a retrieval job using \
 
         :param vault_name: Vault name
         :type vault_name: str
-        :param force_start: Force new inventory retrieval.
-        :type force_start: boolean
+        :param refresh: Force new inventory retrieval.
+        :type refresh: boolean
 
         :returns: Tuple of retrieval job and inventory data (as list) if available.
         :rtype: (list, list) ::
@@ -1272,50 +1305,52 @@ your archive ID is correct, and start a retrieval job using \
         """
 
         self._check_vault_name(vault_name)
-        gv = GlacierVault(self.glacierconn, vault_name)
+        try:
+            gv = GlacierVault(self.glacierconn, vault_name)
+        except GlacierWrapper.CommunicationException as e:
+            raise GlacierWrapper.CommunicationException("Cannot connect to Glacier vault.",
+                                                        cause=e.cause,
+                                                        code="VaultConnectionError")
         
-        # List active jobs and check whether inventory any inventory retrieval
-        # has been completed, and whether any is in progress.
         inventory = None
-        inventory_retrievals_done = []
-        inventory_retrievals_in_progress = []
-        if not force_start:
-            job_list = self.listjobs(vault_name)
-            for job in job_list:
-                try:
+        inventory_job = None
+        if not refresh:
 
-                    # Finished jobs.
-                    if job['Action'] == "InventoryRetrieval" and \
-                       job['StatusCode'] == "Succeeded":
+            # List active jobs and check whether any inventory retrieval
+            # has been completed, and whether any is in progress. We want
+            # to find the latest finished job, or that failing the latest
+            # in progress job.
+            try:
+                job_list = self.listjobs(vault_name)
+            except (GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException) as e:
+                raise
+            
+            inventory_done = False
+            for job in job_list:
+                if job['Action'] == "InventoryRetrieval":
+
+                    # As soon as a finished inventory job is found, we're done.
+                    if job['Completed']:
+                        self.logger.debug('Found finished inventory job %s.'% job)
                         d = dtparse(job['CompletionDate']).replace(tzinfo=pytz.utc)
                         job['inventory_date'] = d
-                        inventory_retrievals_done += [job]
-                        self.logger.debug('Found finished inventory job %s.'% job)
-
-                    # Running jobs.
-                    elif job['Action'] == "InventoryRetrieval" and \
-                       job['StatusCode'] == "InProgress":
-                        inventory_retrievals_in_progress += [job]
-                        self.logger.debug('Found running inventory job %s.'% job)
+                        inventory_done = True
+                        inventory_job = job
+                        break
+                    
+                    self.logger.debug('Found running inventory job %s.'% job)
+                    inventory_job = job
                         
-                except Exception, e:
-                    raise GlacierWrapper.ResponseException("Cannot process returned job list.",
-                                                           cause=e,
-                                                           code="JobListError")
-
             # If inventory retrieval is complete, process it.
             # It is possible there were multiple jobs; use the last one.
-            if len(inventory_retrievals_done):
+            if inventory_done:
                 self.logger.debug('Fetching results of finished inventory retrieval.')
                 try:
-                    list.sort(inventory_retrievals_done,
-                            key=lambda i: i['inventory_date'], reverse=True)
-                    job = inventory_retrievals_done[-1]
-                    job = GlacierJob(gv, job_id=job['JobId'])
+                    job = GlacierJob(gv, job_id=inventory_job['JobId'])
                     inventory = json.loads(job.get_output().read())
-                except Exception, e:
+                except GlacierWrapper.ResponseException as e:
                     raise GlacierWrapper.ResponseException("Cannot process completed job.",
-                                                           cause=e,
+                                                           cause=e.cause,
                                                            code="JobListError")
 
                 # if bookkeeping is enabled update cache
@@ -1326,36 +1361,36 @@ your archive ID is correct, and start a retrieval job using \
                         self.sdb_domain.put_attributes("%s" % (d,), inventory)
                     except boto.exception.SDBResponseError as e:
                         raise GlacierWrapper.CommunicationException("Cannot update inventory cache, Amazon SimpleDB is not happy.",
-                                                                    cause=e,
+                                                                    cause=e.cause,
                                                                     code="SdbWriteError")
 
                     if ((datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
                         try:
                             gv.retrieve_inventory(format="JSON")
-                        except Exception, e:
+                        except GlacierWrapper.CommunicationException as e:
                             raise GlacierWrapper.CommunicationException(r_ex,
-                                                                        cause=e,
+                                                                        cause=e.cause,
                                                                         code="InventoryRetrieveError")
 
-        # If force_start == True or no current inventory jobs either finished or
+        # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
         # through describejob to return.
-        if force_start or (not inventory_retrievals_in_progress and not inventory_retrievals_done):
+        if refresh or not inventory_job:
             self.logger.debug('No inventory jobs finished or running; starting a new job.')
             try:
-                job = gv.retrieve_inventory(format="JSON")
-            except Exception, e:
+                inventory_job = gv.retrieve_inventory(format="JSON")
+            except GlacierWrapper.CommunicationException as e:
                 raise GlacierWrapper.CommunicationException(r_ex,
-                                                            cause=e,
+                                                            cause=e.cause,
                                                             code="InventoryRetrieveError")
-            job = self.describejob(vault_name, job.job_id)
+            inventory_job = self.describejob(vault_name, inventory_job.job_id)
 
-        return (job, inventory)
+        return (inventory_job, inventory)
     
 
     def __init__(self, aws_access_key, aws_secret_key, region,
                  bookkeeping=False, bookkeeping_domain_name=None,
-                 logfile=None, loglevel='WARNING', printtostdout=True):
+                 logfile=None, loglevel='WARNING', logtostdout=True):
         """
         Constructor, sets up important variables and so for GlacierWrapper.
         
@@ -1373,9 +1408,11 @@ your archive ID is correct, and start a retrieval job using \
         :type logfile: str
         :param loglevel: the desired loglevel.
         :type loglevel: str
-        :param printtostdout: whether to print messages to stdout.
-        :type printtostdout: boolean
+        :param logtostdout: whether to log messages to stdout instead of to file.
+        :type logtostdout: boolean
         """
+
+        print 'logtostdout is %s.'% logtostdout
         
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
@@ -1383,7 +1420,7 @@ your archive ID is correct, and start a retrieval job using \
         self.bookkeeping_domain_name = bookkeeping_domain_name
         self.region = region
 
-        self.setuplogging(logfile, loglevel, printtostdout)
+        self.setuplogging(logfile, loglevel, logtostdout)
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.logger.debug("""Creating GlacierWrapper instance with aws_access_key=%s, \

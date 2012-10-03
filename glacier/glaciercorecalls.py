@@ -125,11 +125,11 @@ class GlacierVault(object):
     def list_jobs(self):
         response = self.make_request("GET", "/jobs", None)
 
-        assert response.status == 200,\
-                "List jobs response expected status 200, got status %s: %r"\
-                    % (response.status, json.loads(response.read())['message'])
-        jdata = json.loads(response.read())
-        self.job_list = jdata['JobList']
+##        assert response.status == 200,\
+##                "List jobs response expected status 200, got status %s: %r"\
+##                    % (response.status, json.loads(response.read())['message'])
+##        jdata = json.loads(response.read())
+##        self.job_list = jdata['JobList']
         return response
 
     def create_vault(self):
