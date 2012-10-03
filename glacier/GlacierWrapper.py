@@ -214,17 +214,13 @@ class GlacierWrapper(object):
                   'INFO': logging.INFO,
                   '-1': logging.DEBUG,
                   'DEBUG': logging.DEBUG}
-        if not loglevel in levels.keys():
-            print 'Invalid loglevel; defaulting to level WARNING.'
-            loglevel = 'WARNING'
-        else:
-            loglevel = levels[loglevel]
+        
+        loglevel = 'WARNING' if not loglevel in levels.keys() else levels[loglevel]
 
         datefmt = '%b %d %H:%M:%S'
         logformat = '%(asctime)s %(levelname)-8s glacier-cmd %(message)s'
 
         if logtostdout:
-            print 'setting up logging to stdout.'
             logging.basicConfig(level=loglevel,
                                 stream=sys.stdout,
                                 format=logformat,
@@ -235,20 +231,17 @@ class GlacierWrapper(object):
             except IOError:
 
                 # Can't open the specified log file, log to stderr instead.
-                print 'setting up logging to stderr'
                 logging.basicConfig(level=loglevel,
                                     stream=sys.stderr,
                                     format=logformat,
                                     datefmt=datefmt)
             else:
-                print 'setting up logging to file'
                 logging.basicConfig(level=loglevel,
                                     filename=logfile,
                                     format=logformat,
                                     datefmt=datefmt)
         
         else:
-            'setting up WARNING logging to stdout.'
             logging.basicConfig(level='WARNING',
                                 stream=sys.stdout,
                                 format=logformat,
@@ -1198,7 +1191,6 @@ your archive ID is correct, and start a retrieval job using \
 
         for item in items:
             
-            # print item, item.keys()
             item_attrs = []
             if not region:
                 item_attrs += [item[u'region']]
@@ -1411,8 +1403,6 @@ your archive ID is correct, and start a retrieval job using \
         :param logtostdout: whether to log messages to stdout instead of to file.
         :type logtostdout: boolean
         """
-
-        print 'logtostdout is %s.'% logtostdout
         
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key

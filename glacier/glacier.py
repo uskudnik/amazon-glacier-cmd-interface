@@ -53,7 +53,6 @@ def print_output(output, keys=None, sort_key=None):
     
 
 def default_glacier_wrapper(args):
-    print 'default wrapper; logtostdout is %s.'% args.logtostdout
     return GlacierWrapper(args.aws_access_key,
                           args.aws_secret_key,
                           args.region,
@@ -199,8 +198,8 @@ def upload(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.upload(args.vault, args.filename, args.description, args.region, args.stdin,
                               args.partsize)
-    print "Created archive with ID: ", archive_id
-    print "Archive SHA256 tree hash: ", sha256hash
+    print "Created archive with ID: ", response[0]
+    print "Archive SHA256 tree hash: ", response[1]
 
 
 @handle_errors

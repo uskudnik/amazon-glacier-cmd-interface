@@ -25,6 +25,7 @@ import urllib
 import hashlib
 import math
 import json
+import sys
 
 from boto.connection import AWSAuthConnection
 
