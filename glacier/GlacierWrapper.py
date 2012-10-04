@@ -84,6 +84,12 @@ class GlacierWrapper(object):
     MAX_PARTS = 10000
     AVAILABLE_REGIONS = ('us-east-1', 'us-west-2', 'us-west-1',
                          'eu-west-1', 'ap-northeast-1')
+    AVAILABLE_REGIONS_MESSAGE = """Invalid region. Available regions for Amazon Glacier are:
+us-east-1 (US - Virginia)
+us-west-1 (US - N. California)
+us-west-2 (US - Oregon)
+eu-west-1 (EU - Ireland)
+ap-northeast-1 (Asia-Pacific - Tokyo)"""
 
     class GlacierWrapperException(CausedException):
         """
@@ -306,7 +312,10 @@ class GlacierWrapper(object):
             
             if not hasattr(self, 'sdb_conn'):
                 try:
-                    self.logger.debug("""Connecting to Amazon SimpleDB domain %s with\   naws_access_key %s\   naws_secret_key %s""",
+                    self.logger.debug("""\
+Connecting to Amazon SimpleDB domain %s with
+    naws_access_key %s
+    naws_secret_key %s""",
                                       self.bookkeeping_domain_name,
                                       self.aws_access_key,
                                       self.aws_secret_key)
@@ -479,8 +488,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
         if not region in self.AVAILABLE_REGIONS:
             raise GlacierWrapper.InputException(
-                "Region given is not a valid region.",
-                cause='Invalid region code.',
+                self.AVAILABLE_REGIONS_MESSAGE,
+                cause='Invalid region code: %s.'% region,
                 code='RegionError')
         
         return True
@@ -895,6 +904,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_description(description) # ???file description same restrictions???
         self._check_vault_name(vault_name)
+        self._check_region(region)
         
         reader = None
 
@@ -1403,7 +1413,7 @@ your archive ID is correct, and start a retrieval job using \
         :param logtostdout: whether to log messages to stdout instead of to file.
         :type logtostdout: boolean
         """
-        
+
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.bookkeeping = bookkeeping
@@ -1413,9 +1423,18 @@ your archive ID is correct, and start a retrieval job using \
         self.setuplogging(logfile, loglevel, logtostdout)
         self.logger = logging.getLogger(self.__class__.__name__)
 
-        self.logger.debug("""Creating GlacierWrapper instance with aws_access_key=%s, \
-        aws_secret_key=%s, bookkeeping=%r, bookkeeping_domain_name=%s, region=%s, \
-        logfile %s, loglevel %s.""",
+        self._check_region(region)
+
+        self.logger.debug("""\
+Creating GlacierWrapper instance with
+    aws_access_key=%s,
+    aws_secret_key=%s,
+    bookkeeping=%r,
+    bookkeeping_domain_name=%s,
+    region=%s,
+    logfile %s,
+    loglevel %s,
+    logging to stdout %s.""",
                           aws_access_key, aws_secret_key, bookkeeping,
                           bookkeeping_domain_name, region, logfile,
-                          loglevel)
+                          loglevel, logtostdout)
