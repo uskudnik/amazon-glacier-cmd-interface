@@ -914,16 +914,10 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises:
         """
         
-
-##        if description:
-##            description = " ".join(description)
-##        else:
-##            description = file_name
-
         if not description:
             description = file_name
 
-        self._check_vault_description(description) # ???file description same restrictions???
+        self._check_vault_description(description)
         self._check_vault_name(vault_name)
         self._check_region(region)
         
@@ -1187,53 +1181,52 @@ your archive ID is correct, and start a retrieval job using \
             raise Exception(
                 u"You must enable bookkeeping to be able to do searches.")
 
+        if vault:
+            self._check_vault(vault)
+            
         if region:
             self._check_region(region)
 
-        if file_name:
-            file_name = re.escape(file_name)
-            
-        if search_term:
-            search_term = re.escape(search_term)
+        if file_name and ('"' in file_name or "'" in file_name):
+            raise GlacierWrapper.InputException(
+                'Quotes like \' and \" are not allowed in search terms.',
+                cause='Invalid search term %s: contains quotes.'% file_name)
+                
 
+        if search_term and ('"' in search_term or "'" in search_term):
+            raise GlacierWrapper.InputException(
+                'Quotes like \' and \" are not allowed in search terms.',
+                cause='Invalid search term %s: contains quotes.'% search_term)
+
+        self.logger.debug('Search terms: vault %s, region %s, file name %s, search term %s'%
+                          (vault, region, file_name, search_term))
         search_params = []
-        table_title = ''
         if region:
             search_params += ["region='%s'" % (region,)]
-        else:
-            table_title += "Region\t"
 
         if vault:
             search_params += ["vault='%s'" % (vault,)]
-        else:
-            table_title += "Vault\t"
-
-        table_title += "Filename\tArchive ID"
 
         if file_name:
-            search_params += ["filename like '"+ file_name+"%'" ]
+            search_params += ["filename like '%"+file_name+"%'"]
             
         if search_term:
-            search_params += ["description like '"+search_term+"%'" ]
+            search_params += ["description like '%"+search_term+"%'"]
 
-        search_params = " and ".join(search_params)
-        query = 'select * from `%s` where %s' % (self.bookkeeping_domain_name, search_params)
-        items = self.sdb_domain.select(query)
+        if search_params:
+            search_params = " and ".join(search_params)
+            query = 'select * from `%s` where %s' % (self.bookkeeping_domain_name, search_params)
+        else:
+            query = 'select * from `%s`' % (self.bookkeeping_domain_name, search_params)
 
-        for item in items:
-            
-            item_attrs = []
-            if not region:
-                item_attrs += [item[u'region']]
-                
-            if not vault:
-                item_attrs += [item[u'vault']]
-                
-            item_attrs += [item[u'filename']]
-            item_attrs += [item[u'archive_id']]
+        self.logger.debug('Query: "%s"'% query)
+        result = self.sdb_domain.select(query)
+        items = []
+        for item in result:
+            self.logger.debug('Next search result:\n%s'% item)
+            items.append(item)
 
-        if not print_results:
-            return items
+        return items
 
     @glacier_connect
     @sdb_connect

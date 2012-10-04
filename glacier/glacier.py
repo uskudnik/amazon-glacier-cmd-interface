@@ -44,7 +44,10 @@ def print_output(output, keys=None, sort_key=None):
     table = PrettyTable(headers)
 
     for line in output:
-        table.add_row([line[keys[k]] for k in keys])
+        if keys:
+            table.add_row([line[keys[k]] for k in keys])
+        else:
+            table.add_row([line[k] for k in headers])
 
     if sort_key:
         table.sortby = sort_key
@@ -221,7 +224,8 @@ def search(args, print_results=True):
     glacier = default_glacier_wrapper(args)
     response = glacier.search(vault=args.vault,
                               region=args.region,
-                              search_term=args.search_term,
+                              search_term=args.searchterm,
+                              file_name=args.filename,
                               print_results=True)
     print_output(response)
 
@@ -490,9 +494,9 @@ when uploading from stdin.''')
               (requires bookkeeping to be enabled).')
     parser_search.add_argument('vault', nargs='?', default=None,
         help='The vault to search in. Searching all if omitted.')
-    parser_search.add_argument('--filename',
+    parser_search.add_argument('--filename', default=None,
         help='Search key for searching by (part of) file names.')
-    parser_search.add_argument('--searchterm',
+    parser_search.add_argument('--searchterm', default=None,
         help='Search key for searching (part of) description fields.')
     parser_search.set_defaults(func=search)
 
