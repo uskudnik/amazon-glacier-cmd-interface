@@ -435,7 +435,6 @@ or 0x20-0x7E hexadecimal.""",
 
     @log_class_call('Checking whether id is valid.',
                      'Id is valid.')
-
     def _check_id(self, amazon_id, id_type):
         """
         Checks if an id (jobID, uploadID, archiveID) is valid.
@@ -896,10 +895,32 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     @log_class_call("Uploading archive.",
                     "Upload of archive finished.")
     def upload(self, vault_name, file_name, description, region, stdin, part_size):
+        """
+        Uploads a file to Amazon Glacier.
+        
+        :param vault_name: Name of the vault.
+        :type vault_name: str
+        :param file_name: Name of the file to upload.
+        :type file_name: str
+        :param description: Description of the upload.
+        :type description: str
+        :param region: region where to upload to.
+        :type region: str
+        :param stdin: whether to use stdin to read data from.
+        :type stdin: boolan
+        :param part_size: the size (in MB) of the blocks to upload.
+        :type part_size: int
 
-        if description:
-            description = " ".join(description)
-        else:
+        :raises:
+        """
+        
+
+##        if description:
+##            description = " ".join(description)
+##        else:
+##            description = file_name
+
+        if not description:
             description = file_name
 
         self._check_vault_description(description) # ???file description same restrictions???
