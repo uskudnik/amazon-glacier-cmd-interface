@@ -69,20 +69,20 @@ class GlacierConnection(AWSAuthConnection):
         else:
             return self.make_request(method="GET", path='/-/vaults')
 
-MAX_VAULT_NAME_LENGTH = 255
-VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-
-def check_vault_name(name):
-    import re
-    m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
-    if len(name) > 255:
-        raise Exception(u"Vault name can be at most 255 charecters long.")
-    if len(name) == 0:
-        raise Exception(u"Vault name has to be at least 1 character long.")
-    if m.end() != len(name):
-        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
-                        '-' (hyphen), and '.' (period)")
-    return True
+##MAX_VAULT_NAME_LENGTH = 255
+##VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
+##
+##def check_vault_name(name):
+##    import re
+##    m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
+##    if len(name) > 255:
+##        raise Exception(u"Vault name can be at most 255 charecters long.")
+##    if len(name) == 0:
+##        raise Exception(u"Vault name has to be at least 1 character long.")
+##    if m.end() != len(name):
+##        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
+##                        '-' (hyphen), and '.' (period)")
+##    return True
 
 class GlacierVault(object):
     def __init__(self, connection, name):
@@ -105,7 +105,7 @@ class GlacierVault(object):
 
     def retrieve_inventory(self, format=None, sns_topic=None, description=None):
         """
-        Initiate a inventar retrieval job to list the contents of the archive.
+        Initiate a inventory retrieval job to list the contents of the archive.
         """
         params = {"Type": "inventory-retrieval"}
         if sns_topic is not None:
@@ -120,10 +120,10 @@ class GlacierVault(object):
 
     def make_request(self, method, extra_path, headers=None, data="", params=None):
         if extra_path:
-            uri = "/-/vaults/%s%s" % (urllib.quote(self.name), extra_path,)
+            uri = "/-/vaults/%s%s" % (self.name, extra_path,)
         else:
-            uri = "/-/vaults/%s" % (urllib.quote(self.name),)
-        return self.connection.make_request(method, uri, headers, data, params=params)
+            uri = "/-/vaults/%s" % (self.name,)
+        return self.connection.make_request(method, uri, headers, data)
 
     def get_job(self, job_id):
         return GlacierJob(self, job_id=job_id)
@@ -131,11 +131,11 @@ class GlacierVault(object):
     def list_jobs(self):
         response = self.make_request("GET", "/jobs", None)
 
-        assert response.status == 200,\
-                "List job expected 200 back (got %s): %r"\
-                    % (response.status, response.read())
-        jdata = json.loads(response.read())
-        self.job_list = jdata['JobList']
+##        assert response.status == 200,\
+##                "List jobs response expected status 200, got status %s: %r"\
+##                    % (response.status, json.loads(response.read())['message'])
+##        jdata = json.loads(response.read())
+##        self.job_list = jdata['JobList']
         return response
 
     def create_vault(self):
@@ -189,30 +189,14 @@ class GlacierJob(object):
         headers = {}
         if range_from is not None or range_to is not None:
             assert range_from is not None and range_to is not None, \
-                        """If you specify one of range_from or """\
-                        """range_to you must specify the other"""
+                        """If you specify one of range_from or range_to you must specify the other"""
 
             headers["Range"] = "bytes %d-%d" % (range_from, range_to)
-        response = self.vault.make_request("GET", "/jobs/%s/output" % (urllib.quote(self.job_id),))
-        assert response.status == 200,\
-                "Get output expects 200 responses (got %s): %r"\
-                    % (response.status, response.read())
-        return response
+        return self.vault.make_request("GET", "/jobs/%s/output" % (self.job_id,))
 
     def job_status(self):
         response = self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
-
-        assert response.status == 200,\
-               "Describe job expets 200 (got %s): %s"\
-                    % (response.status, response.read())
-        jdata = json.loads(response.read())
-        self.json_output = jdata
-        self.completed = jdata['Completed']
-        self.archive_id = jdata['ArchiveId']
-        self.created = jdata['CreationDate']
-        self.status_code = jdata['StatusCode']
-        self.status_msg = jdata['StatusMessage']
-        return self
+        return self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
 
 def chunk_hashes(data):
     """
@@ -221,9 +205,6 @@ def chunk_hashes(data):
     """
     chunk = 1024*1024
     chunk_count = int(math.ceil(len(data)/float(chunk)))
-##    chunks = [data[i*chunk:(i+1)*chunk] for i in range(chunk_count)]
-##    return [hashlib.sha256(x).digest() for x in chunks]
-
     return [hashlib.sha256(data[i*chunk:(i+1)*chunk]).digest() for i in range(chunk_count)]
 
 def tree_hash(fo):
@@ -277,7 +258,7 @@ class GlacierWriter(object):
                   }
         response = self.connection.make_request(
             "POST",
-            "/-/vaults/%s/multipart-uploads" % (urllib.quote(self.vault),),
+            "/-/vaults/%s/multipart-uploads" % (self.vault,),
             headers,
             "")
         assert response.status == 201,\
@@ -336,7 +317,7 @@ class GlacierWriter(object):
         assert not self.closed, "Tried to write to a GlacierWriter that is already closed!"
         self.buffer.append(str)
         self.buffer_size += len(str)
-        while self.buffer_size > self.part_size:
+        while self.buffer_size >= self.part_size:
             self.send_part()
 
     def close(self):
