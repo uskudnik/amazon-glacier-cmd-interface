@@ -1,5 +1,0 @@
-
-License.
---------
-
-MIT License

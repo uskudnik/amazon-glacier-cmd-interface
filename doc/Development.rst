@@ -15,8 +15,6 @@ TODO:
 
 - Integrate with boto
 - Support for output status codes
-- Documentation examples of output from specific commands
-- Description for command line arguments
 - Tests
 
 Changelog:

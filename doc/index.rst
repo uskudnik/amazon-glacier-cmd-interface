@@ -15,6 +15,7 @@ Contents:
    Installation
    Usage
    Development
+   Scripting
    License
    *
 

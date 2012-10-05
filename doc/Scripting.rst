@@ -2,7 +2,9 @@
 Scripting.
 **********
 
-Being a command-line utility, glacier-cmd is very suitable to use in combination with other software, allowing one to greatly automate tasks such as the regular uploading of backup archives.
+Being a command-line utility, glacier-cmd is very suitable to use in combination with other software, allowing one to greatly automate tasks such as the regular uploading of backup archives. 
+
+Note: these examples have been tested and work on Ubuntu Linux, and should work in a similar manner on most modern Linux distributions and other Unix-like operating systems including OS-X and various BSD variants. As no developers are using Windows we can not provide Windows equivalents here.
 
 Encryption and compression.
 ---------------------------
@@ -33,9 +35,14 @@ To not block other backup jobs, and run the upload independent from Bacula, use:
 
 Job {
   # other JobDefs.
-  RunAfterJob = "echo '/usr/local/bin/glacier-cmd upload <vault> %v %n' | batch"
+  /usr/local/bin/backup_to_glacier \"%v\" \"%j\" \"%l\" \"%s\"
 }
 
-This way it will run the upload as soon as the system is not too busy. In this case, any output from glacier-cmd will be e-mailed to <root@localhost>.
+The content of ``/usr/local/bin/backup_to_glacier``::
 
+echo "/usr/local/bin/glacier-cmd --logtostdout upload Squirrel_backup /backup/bacula/$1 \"$2 ($3, since $4)\"" | batch
+
+This way it will run the upload as soon as the system is not too busy - in many cases that will be instantly. In this case, any output from glacier-cmd will be e-mailed to <bacula@localhost>. Make sure to add bacula as an alias for a real user, as otherwise you will not see any of this mail.
+
+All log output will be printed to sdtout, and end up in the results e-mail.
 
