@@ -320,13 +320,15 @@ def main():
                        default=default("region"),
                        help="Region where you want to store \
                              your archives " + help_msg_config)
+
     group.add_argument('--bookkeeping',
                        required=False,
-                       default=default("bookkeeping") and True,
+                       default=default("bookkeeping")==True and True,
                        action="store_true",
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
                              bookkeeping domain name set")
+    
     group.add_argument('--bookkeeping-domain-name',
                         required=False,
                         default=default("bookkeeping-domain-name"),
@@ -514,7 +516,7 @@ when uploading from stdin.''')
 
     # Process the remaining arguments.
     args = parser.parse_args(remaining_argv)
-
+    
     args.logtostdout = logtostdout
 
     # Run the subcommand.

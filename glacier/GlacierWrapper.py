@@ -307,6 +307,8 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                         "Connection to Amazon SimpleDB successful.")
         def sdb_connect_wrap(*args, **kwargs):
             self = args[0]
+            if not self.bookkeeping:
+                return func(*args, **kwargs)
 
             # TODO: give SimpleDB its own class? Or move the few calls
             # we need to glaciercorecalls?
