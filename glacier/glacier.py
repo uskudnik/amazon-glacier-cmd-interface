@@ -71,7 +71,7 @@ def handle_errors(fn):
             return fn(*args, **kwargs)
         except GlacierWrapper.GlacierWrapperException as e:
 
-            # We are only interested in the error message as it is a
+            # We are only interested in the error message in case it is a
             # self-caused exception.
             e.write(indentation='||  ', stack=False, message=True)
             sys.exit(1)

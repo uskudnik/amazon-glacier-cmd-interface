@@ -15,6 +15,7 @@ import time
 import sys
 import re
 import traceback
+import glaciercorecalls
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -620,7 +621,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_name(vault_name)
         try:
-            response = GlacierVault(self.glacierconn, vault_name).create_vault()
+            response = GlacierVault(self.glacierconn, vault_name=vault_name).create_vault()
         except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot create vault",
@@ -649,7 +650,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_name(vault_name)
         try:
-            response = GlacierVault(self.glacierconn, vault_name).delete_vault()
+            response = GlacierVault(self.glacierconn, vault_name=vault_name).delete_vault()
         except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
                 "Cannot remove vault.",
@@ -682,7 +683,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_name(vault_name)
         try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
+            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             response = gv.describe_vault()
         except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
@@ -731,16 +732,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
           u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'},
           {...}]
           
-        :raises: GlacierWrapper.CommunicationException
+        :raises: GlacierWrapper.ResponseException
         """
         self._check_vault_name(vault_name)
         try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
+            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             response = gv.list_jobs()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot get jobs list.",
-                cause=e)
+        except glaciercorecalls.ResponseException as e:
+            raise GlacierWrapper.ResponseException(
+                e.message,
+                cause=e.cause)
         
         self._check_response(response)
 
@@ -790,7 +791,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         self._check_vault_name(vault_name)
         self._check_id (job_id, 'JobId')
         try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
+            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             gj = GlacierJob(gv, job_id=job_id)
             response = gj.job_status()
         except GlacierWrapper.CommunicationException as e:
@@ -834,7 +835,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         self._check_vault_name(vault_name)
         self._check_id(upload_id, "UploadId")
         try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
+            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             response = gv.abort_multipart(upload_id)
         except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException(
@@ -868,7 +869,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
         self._check_vault_name(vault_name)
         try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
+            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             response = gv.list_multipart_uploads()
         except GlacierWrapper.CommunicationException as e:
             raise GlacierWrapper.CommunicationException("Cannot abort multipart upload.",
@@ -961,14 +962,29 @@ automatically increased part size from %s to %s.'% (part_size, ps))
             self.logger.warning("Part size given is too small; using %s MB parts to upload."% part_size)
 
         read_part_size = part_size * 1024 * 1024
-        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                               part_size=part_size)
+        try:
+            writer = GlacierWriter(self.glacierconn, vault_name, description=description,
+                                   part_size=part_size)
+        except (glaciercorecalls.CommunicationException,
+                glaciercorecalls.InputException,
+                glaciercorecalls.ResponseException) as e:
+            raise GlacierWrapper.CommunicationException(
+                e.message,
+                cause=e.cause)
 
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         for part in iter((lambda:reader.read(read_part_size)), ''):
 
-            writer.write(part)
+            try:
+                writer.write(part)
+            except (glaciercorecalls.CommunicationException,
+                    glaciercorecalls.InputException,
+                    glaciercorecalls.ResponseException) as e:
+                raise GlacierWrapper.CommunicationException(
+                    e.message,
+                    e.cause)
+
             current_time = time.time()
             overall_rate = int(writer.uploaded_size/(current_time - start_time))
             if total_size > 0:
@@ -999,7 +1015,13 @@ automatically increased part size from %s to %s.'% (part_size, ps))
 
             previous_time = current_time
 
-        writer.close()
+        try:
+            writer.close()
+        except glaciercorecalls.ResponseException as e:
+            GlacierWrapper.ResponseException(
+                e.message,
+                e.cause)
+            
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
         self._progress('\rWrote %s. Rate %s/s.\n' %
@@ -1128,7 +1150,7 @@ automatically increased part size from %s to %s.'% (part_size, ps))
         self._check_id(archive, 'ArchiveId')
 
         # Check whether the requested file is available from Amazon Glacier.
-        gv = GlacierVault(self.glacierconn, vault)
+        gv = GlacierVault(self.glacierconn, vault_name=vault)
         job_list = self.listjobs(vault)
         for job in job_list:
             if job['ArchiveId'] == archive:
@@ -1158,12 +1180,14 @@ your archive ID is correct, and start a retrieval job using \
                     cause=e.cause,
                     code="FileError")
 
+
         job2 = GlacierJob(gv, job_id=job['JobId'])
         if out_file:
             self.logger.debug('Starting download of archive to file %s.'% out_file)
             ffile = open(out_file, "w")
             ffile.write(job2.get_output().read())
             ffile.close()
+                
             self.logger.debug('Download of archive finished.')
 
             #TODO: tree-hash check.
@@ -1248,11 +1272,11 @@ your archive ID is correct, and start a retrieval job using \
         self._check_vault_name(vault)
         self._check_id(archive, 'ArchiveId')
 
-        gv = GlacierVault(self.glacierconn, vault)
+        gv = GlacierVault(self.glacierconn, vault_name=vault)
         self._check_response(gv.delete_archive(archive))
 
         try:
-            gv = GlacierVault(self.glacierconn, vault)
+            gv = GlacierVault(self.glacierconn, vault_name=vault)
             self._check_response(gv.delete_archive(archive))
         except ResponseException as e:
             raise GlacierWrapper.ResponseException("Unexpected response. Cannot delete archive.",
@@ -1325,11 +1349,12 @@ your archive ID is correct, and start a retrieval job using \
 
         self._check_vault_name(vault_name)
         try:
-            gv = GlacierVault(self.glacierconn, vault_name)
+            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
         except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException("Cannot connect to Glacier vault.",
-                                                        cause=e.cause,
-                                                        code="VaultConnectionError")
+            raise GlacierWrapper.CommunicationException(
+                "Cannot connect to Glacier vault.",
+                cause=e.cause,
+                code="VaultConnectionError")
         
         inventory = None
         inventory_job = None
@@ -1368,9 +1393,10 @@ your archive ID is correct, and start a retrieval job using \
                     job = GlacierJob(gv, job_id=inventory_job['JobId'])
                     inventory = json.loads(job.get_output().read())
                 except GlacierWrapper.ResponseException as e:
-                    raise GlacierWrapper.ResponseException("Cannot process completed job.",
-                                                           cause=e.cause,
-                                                           code="JobListError")
+                    raise GlacierWrapper.ResponseException(
+                        "Cannot process completed job.",
+                        cause=e.cause,
+                        code="JobListError")
 
                 # if bookkeeping is enabled update cache
                 if self.bookkeeping:
@@ -1399,9 +1425,10 @@ your archive ID is correct, and start a retrieval job using \
             try:
                 inventory_job = gv.retrieve_inventory(format="JSON")
             except GlacierWrapper.CommunicationException as e:
-                raise GlacierWrapper.CommunicationException(r_ex,
-                                                            cause=e.cause,
-                                                            code="InventoryRetrieveError")
+                raise GlacierWrapper.CommunicationException(
+                    r_ex,
+                    cause=e.cause,
+                    code="InventoryRetrieveError")
             inventory_job = self.describejob(vault_name, inventory_job.job_id)
 
         return (inventory_job, inventory)

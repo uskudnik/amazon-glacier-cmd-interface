@@ -28,6 +28,58 @@ import json
 import sys
 
 from boto.connection import AWSAuthConnection
+from chain_exception import CausedException
+
+class GlacierException(CausedException):
+    
+    def __init__(self, message, code=None, cause=None):
+        """ Handles the exception.
+
+        :param message: the error message.
+        :type message: str
+        :param code: the error code.
+        :type code: 
+        :param cause: explanation on what caused the error.
+        :type cause: str
+        """
+
+        if cause:
+            CausedException.__init__(self, message, cause=cause)
+
+        else:
+            CausedException.__init__(self, message)
+
+class ResponseException(GlacierException):
+    """
+    Exception that is raised when there is an http response error.
+    """
+    
+    def __init__(self, message, code=None, cause=None):
+        GlacierException.__init__(self, message, code=code, cause=cause)
+
+class CommunicationException(GlacierException):
+    """
+    Exception that is raised when there is a communication error.
+    """
+    
+    def __init__(self, message, code=None, cause=None):
+        GlacierException.__init__(self, message, code=code, cause=cause)
+
+class InputException(GlacierException):
+    """
+    Exception that is raised when user input is invalid.
+    """
+    
+    def __init__(self, message, code=None, cause=None):
+        GlacierException.__init__(self, message, code=code, cause=cause)
+
+class ConnectionException(GlacierException):
+    """
+    Exception that is raised when there is a connection failure.
+    """
+        
+    def __init__(self, message, code=None, cause=None):
+        GlacierException.__init__(self, message, code=code, cause=cause)
 
 class GlacierConnection(AWSAuthConnection):
 
@@ -50,8 +102,8 @@ class GlacierConnection(AWSAuthConnection):
     def _required_auth_capability(self):
         return ["hmac-v4"]
 
-    def get_vault(self, name):
-        return GlacierVault(self, name)
+    def get_vault(self, vault_name):
+        return GlacierVault(self, vault_name)
 
     def make_request(self, method, path, headers=None, data='', host=None,
                      auth_path=None, sender=None, override_num_retries=None,
@@ -69,25 +121,10 @@ class GlacierConnection(AWSAuthConnection):
         else:
             return self.make_request(method="GET", path='/-/vaults')
 
-##MAX_VAULT_NAME_LENGTH = 255
-##VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-##
-##def check_vault_name(name):
-##    import re
-##    m = re.match(VAULT_NAME_ALLOWED_CHARACTERS, name)
-##    if len(name) > 255:
-##        raise Exception(u"Vault name can be at most 255 charecters long.")
-##    if len(name) == 0:
-##        raise Exception(u"Vault name has to be at least 1 character long.")
-##    if m.end() != len(name):
-##        raise Exception(u"Allowed characters are a–z, A–Z, 0–9, '_' (underscore),\
-##                        '-' (hyphen), and '.' (period)")
-##    return True
-
 class GlacierVault(object):
-    def __init__(self, connection, name):
+    def __init__(self, connection, vault_name):
         self.connection = connection
-        self.name = name
+        self.vault_name = vault_name
 
     def retrieve_archive(self, archive, sns_topic=None, description=None):
         """
@@ -120,22 +157,21 @@ class GlacierVault(object):
 
     def make_request(self, method, extra_path, headers=None, data="", params=None):
         if extra_path:
-            uri = "/-/vaults/%s%s" % (self.name, extra_path,)
+            uri = "/-/vaults/%s%s" % (self.vault_name, extra_path,)
         else:
-            uri = "/-/vaults/%s" % (self.name,)
+            uri = "/-/vaults/%s" % (self.vault_name,)
         return self.connection.make_request(method, uri, headers, data)
 
     def get_job(self, job_id):
         return GlacierJob(self, job_id=job_id)
 
     def list_jobs(self):
-        response = self.make_request("GET", "/jobs", None)
 
-##        assert response.status == 200,\
-##                "List jobs response expected status 200, got status %s: %r"\
-##                    % (response.status, json.loads(response.read())['message'])
-##        jdata = json.loads(response.read())
-##        self.job_list = jdata['JobList']
+        response = self.make_request("GET", "/jobs", None)
+        if response.status != 200:
+            raise ResponseException(
+                "List jobs response expected status 200, got status %s: %r"\
+                    % (response.status, json.loads(response.read())['message']))
         return response
 
     def create_vault(self):
@@ -178,8 +214,9 @@ class GlacierJob(object):
                   }
         response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
         if response.status != 202:
-            msg = "Start job expected 202 back (got %s)" % (response.status, )
-            raise Exception(msg, response.read())
+            raise ResponseException(
+                "Start job expected 202 back (got %s)" % (response.status, ),
+                cause=response.read())
         response.read()
 
         self.job_id = response.getheader("x-amz-job-id")
@@ -188,8 +225,9 @@ class GlacierJob(object):
     def get_output(self, range_from=None, range_to=None):
         headers = {}
         if range_from is not None or range_to is not None:
-            assert range_from is not None and range_to is not None, \
-                        """If you specify one of range_from or range_to you must specify the other"""
+            if range_from is None or range_to is None:
+                raise InputException (
+                    "If you specify one of range_from or range_to you must specify the other.")
 
             headers["Range"] = "bytes %d-%d" % (range_from, range_to)
         return self.vault.make_request("GET", "/jobs/%s/output" % (self.job_id,))
@@ -260,23 +298,23 @@ class GlacierWriter(object):
             "/-/vaults/%s/multipart-uploads" % (self.vault,),
             headers,
             "")
-        assert response.status == 201,\
+        if response.status != 201:
+            raise ResponseError(
                 "Multipart-start should respond with a 201 (got %s).\n%r"\
-                    % (response.status, response.read())
+                    % (response.status, response.read()))
         response.read()
         self.upload_url = response.getheader("location")
 
     def write(self, data):
         
-        assert not self.closed,\
-               "Tried to write to a GlacierWriter that is already closed."
+        if self.closed:
+            raise CommunicationError(
+                "Tried to write to a GlacierWriter that is already closed.")
 
         if len(data) > self.part_size:
-            raise CommunicationException (
-                'Block of data provided must be equal to or smaller than the set block size.',
-                cause='Data block too large')
+            raise InputException (
+                'Block of data provided must be equal to or smaller than the set block size.')
 
-        
         # Create a request and sign it
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
@@ -296,9 +334,10 @@ class GlacierWriter(object):
             headers,
             data)
 
-        assert response.status == 204,\
+        if response.status != 204:
+            raise ResponseException(
                 "Multipart upload part should respond with a 204! (got %s): %r"\
-                    % (response.status, response.read())
+                    % (response.status, response.read()))
 
         response.read()
         self.uploaded_size += len(data)
@@ -319,9 +358,11 @@ class GlacierWriter(object):
             headers,
             "")
 
-        assert response.status == 201,\
+        if response.status != 201:
+            raise ResponseException (
                 "Multipart-complete should respond with a 201 (got %s).\n%r"\
-                    % (response.status, response.read())
+                    % (response.status, response.read()))
+
         response.read()
         self.archive_id = response.getheader("x-amz-archive-id")
         self.location = response.getheader("Location")
