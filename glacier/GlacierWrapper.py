@@ -234,7 +234,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                                 datefmt=datefmt)
         elif logfile:
             try:
-                open(logfile, 'w')
+                open(logfile, 'a')
             except IOError:
 
                 # Can't open the specified log file, log to stderr instead.
