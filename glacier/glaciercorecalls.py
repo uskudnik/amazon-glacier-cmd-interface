@@ -240,7 +240,7 @@ class GlacierWriter(object):
     """
     DEFAULT_PART_SIZE = 128 # in MB
     
-    def __init__(self, connection, vault, region=None, description=None, part_size=DEFAULT_PART_SIZE):
+    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE):
         self.part_size = part_size * 1024 * 1024
         self.vault = vault
         self.connection = connection
