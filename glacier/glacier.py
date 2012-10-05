@@ -12,10 +12,10 @@ import ConfigParser
 import argparse
 import re
 import locale
+
 from prettytable import PrettyTable
 from GlacierWrapper import GlacierWrapper
 from functools import wraps
-
 
 def print_headers(headers):
     table = PrettyTable(["Header", "Value"])
@@ -163,11 +163,11 @@ def listjobs(args):
                "Job ID": 'JobId'}
     print_output(job_list, keys=headers)
 
+
 @handle_errors
 def describejob(args):
     glacier = default_glacier_wrapper(args)
     gj = glacier.describejob(args.vault, args.jobid)
-
     print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj['ArchiveId'],
                                                                      args.jobid, gj['CreationDate'],
                                                                      gj['StatusCode'])

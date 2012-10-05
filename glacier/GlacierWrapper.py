@@ -931,35 +931,38 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
                 reader = open(file_name, 'rb')
                 total_size = os.path.getsize(file_name)
             except IOError as e:
-                raise GlacierWrapper.InputException("Couldn't access the file given.",
+                raise GlacierWrapper.InputException("Could not access the file given.",
                                                     cause=e)
-            
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
         else:
             raise GlacierWrapper.InputException("There is nothing to upload.")
 
+        # If user did not specify part_size, compute the optimal (i.e. lowest
+        # value to stay within the self.MAX_PARTS (10,000) block limit).
         if part_size < 0:
-            
-            # User did not specify part_size. Compute the optimal value.
             if total_size > 0:
                 part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
             else:
-                part_size = GlacierWriter.DEFAULT_PART_SIZE / 1024 / 1024
-                
+                part_size = GlacierWriter.DEFAULT_PART_SIZE
         else:
-            part_size = self._next_power_of_2(part_size)
+            ps = self._next_power_of_2(part_size)
+            if not ps == part_size:
+                self.logger.warning('Part size in MB must be a power of 2, e.g. 1, 2, 4, 8 MB; \
+automatically increased part size from %s to %s.'% (part_size, ps))
+
+            part_size = ps
 
         if total_size > part_size*1024*1024*self.MAX_PARTS:
             
             # User specified a value that is too small. Adjust.
             part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
-            self.logger.warning("WARNING: Part size given is too small; using %s MB parts to upload."% part_size)
+            self.logger.warning("Part size given is too small; using %s MB parts to upload."% part_size)
 
         read_part_size = part_size * 1024 * 1024
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                               part_size=read_part_size)
+                               part_size=part_size)
 
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
@@ -1182,7 +1185,7 @@ your archive ID is correct, and start a retrieval job using \
                 u"You must enable bookkeeping to be able to do searches.")
 
         if vault:
-            self._check_vault(vault)
+            self._check_vault_name(vault)
             
         if region:
             self._check_region(region)
