@@ -238,18 +238,17 @@ class GlacierWriter(object):
     Presents a file-like object for writing to a Amazon Glacier
     Archive. The data is written using the multi-part upload API.
     """
-    DEFAULT_PART_SIZE = 32*1024*1024 #32MB
-    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE):
-        self.part_size = part_size
-        self.buffer_size = 0
-        self.uploaded_size = 0
-        self.buffer = []
+    DEFAULT_PART_SIZE = 128 # in MB
+    
+    def __init__(self, connection, vault, region=None, description=None, part_size=DEFAULT_PART_SIZE):
+        self.part_size = part_size * 1024 * 1024
         self.vault = vault
-        self.tree_hashes = []
-        self.archive_location = None
-        self.closed = False
-
         self.connection = connection
+        self.location = None
+
+        self.uploaded_size = 0
+        self.tree_hashes = []
+        self.closed = False
 
         headers = {
                     "x-amz-glacier-version": "2012-06-01",
@@ -262,69 +261,51 @@ class GlacierWriter(object):
             headers,
             "")
         assert response.status == 201,\
-                "Multipart-start should respond with a 201! (got %s): %r"\
+                "Multipart-start should respond with a 201 (got %s).\n%r"\
                     % (response.status, response.read())
         response.read()
         self.upload_url = response.getheader("location")
 
-    def send_part(self):
-        if sys.version_info < (2, 7, 0):
-            buf = "".join(self.buffer)
-        else:
-            # Usage of memoryview should speed up execution and be more mem friendly
-            buf = memoryview("".join(self.buffer))
+    def write(self, data):
+        
+        assert not self.closed,\
+               "Tried to write to a GlacierWriter that is already closed."
 
-        # Put back any data remaining over the part size into the
-        # buffer
-        if len(buf) > self.part_size:
-            self.buffer = [buf[self.part_size:]]
-            self.buffer_size = len(self.buffer[0])
-
-        else:
-            self.buffer = []
-            self.buffer_size = 0
-
-        # The part we will send
-        part = buf[:self.part_size]
-
+        if len(data) > self.part_size:
+            raise CommunicationException (
+                'Block of data provided must be equal to or smaller than the set block size.',
+                cause='Data block too large')
+        
         # Create a request and sign it
-        part_tree_hash = tree_hash(chunk_hashes(part))
+        part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
         headers = {
                    "x-amz-glacier-version": "2012-06-01",
                     "Content-Range": "bytes %d-%d/*" % (self.uploaded_size,
-                                                       (self.uploaded_size+len(part))-1),
-                    "Content-Length": str(len(part)),
+                                                       (self.uploaded_size+len(data))-1),
+                    "Content-Length": str(len(data)),
                     "Content-Type": "application/octet-stream",
                     "x-amz-sha256-tree-hash": bytes_to_hex(part_tree_hash),
-                    "x-amz-content-sha256": hashlib.sha256(part).hexdigest()
+                    "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
 
         response = self.connection.make_request(
             "PUT",
             self.upload_url,
             headers,
-            part)
+            data)
 
         assert response.status == 204,\
                 "Multipart upload part should respond with a 204! (got %s): %r"\
                     % (response.status, response.read())
 
         response.read()
-        self.uploaded_size += len(part)
-
-    def write(self, str):
-        assert not self.closed, "Tried to write to a GlacierWriter that is already closed!"
-        self.buffer.append(str)
-        self.buffer_size += len(str)
-        while self.buffer_size >= self.part_size:
-            self.send_part()
+        self.uploaded_size += len(data)
 
     def close(self):
         if self.closed:
             return
-        if self.buffer_size > 0:
-            self.send_part()
+            
         # Complete the multiplart glacier upload
         headers = {
                     "x-amz-glacier-version": "2012-06-01",
@@ -338,7 +319,7 @@ class GlacierWriter(object):
             "")
 
         assert response.status == 201,\
-                "Multipart-complete should respond with a 201! (got %s): %r"\
+                "Multipart-complete should respond with a 201 (got %s).\n%r"\
                     % (response.status, response.read())
         response.read()
         self.archive_id = response.getheader("x-amz-archive-id")
