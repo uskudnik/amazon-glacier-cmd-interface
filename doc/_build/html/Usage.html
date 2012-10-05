@@ -1,0 +1,315 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Usage. &mdash; glacier-cmd 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="glacier-cmd 0.1 documentation" href="index.html" />
+    <link rel="next" title="Development:" href="Development.html" />
+    <link rel="prev" title="Installation:" href="Installation.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="Development.html" title="Development:"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="Installation.html" title="Installation:"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">glacier-cmd 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="usage">
+<h1>Usage.<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h1>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">--help</span></tt></p>
+<p>This command gives you a quick overview of all supported command line options, with a short explanation of what they do.</p>
+<div class="section" id="configuration">
+<h2>Configuration.<a class="headerlink" href="#configuration" title="Permalink to this headline">¶</a></h2>
+<p>Program settings may be passed in via a config file, via the command line or via environment variables. The default config files are <tt class="docutils literal"><span class="pre">/etc/glacier.cfg</span></tt> and <tt class="docutils literal"><span class="pre">~/.glacier</span></tt>, alternative config files can be indicated using the <tt class="docutils literal"><span class="pre">-c</span></tt> command line option.
+The content of the config file should look like this:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="p">[</span><span class="n">aws</span><span class="p">]</span>
+<span class="n">access_key</span><span class="o">=</span><span class="n">your_access_key</span>
+<span class="n">secret_key</span><span class="o">=</span><span class="n">your_secret_key</span>
+
+<span class="p">[</span><span class="n">glacier</span><span class="p">]</span>
+<span class="n">region</span><span class="o">=</span><span class="n">us</span><span class="o">-</span><span class="n">east</span><span class="o">-</span><span class="mi">1</span>
+<span class="n">bookkeeping</span><span class="o">=</span><span class="bp">True</span>
+<span class="n">bookkeeping</span><span class="o">-</span><span class="n">domain</span><span class="o">-</span><span class="n">name</span><span class="o">=</span><span class="n">your_simple_db_domain_name</span>
+</pre></div>
+</div>
+<p>The environment variables for the options are:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">aws_access_key</span><span class="o">=</span><span class="n">your_access_key</span>
+<span class="n">aws_secret_key</span><span class="o">=</span><span class="n">your_secret_key</span>
+<span class="n">region</span><span class="o">=</span><span class="n">us</span><span class="o">-</span><span class="n">east</span><span class="o">-</span><span class="mi">1</span>
+<span class="n">bookkeeping</span><span class="o">=</span><span class="bp">True</span>
+<span class="n">bookkeeping</span><span class="o">-</span><span class="n">domain</span><span class="o">-</span><span class="n">name</span><span class="o">=</span><span class="n">your_simple_db_domain_name</span>
+</pre></div>
+</div>
+<p>These variables can also be used as command line options to pass in the information.</p>
+<p>[TODO: add overview of regions.]</p>
+<p>Switching on bookkeeping allows glacier-cmd to keep track of your inventory. Note that you must create a Amazon SimpleDB domain for this to work, as the bookkeeping data is stored online in such a SimpleDB. This database contains a list of the IDs of all uploaded archives and their names, hashes, sizes and other meta data. You must have bookkeeping enable to allow the search command to work.</p>
+</div>
+<div class="section" id="vault-management">
+<h2>Vault management.<a class="headerlink" href="#vault-management" title="Permalink to this headline">¶</a></h2>
+<p>Vault management including creating, listing and removing of vaults is provided via the following command line directives.</p>
+<div class="section" id="creating-a-vault">
+<h3>Creating a vault.<a class="headerlink" href="#creating-a-vault" title="Permalink to this headline">¶</a></h3>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">mkvault</span> <span class="pre">&lt;vault</span> <span class="pre">name&gt;</span></tt></p>
+<p>This command creates a vault. It must be preceded by the name of the vault you want to create. Note: vault names are case sensitive, and may only contain characters [TODO: which and how many characters?]</p>
+</div>
+<div class="section" id="listing-available-vaults">
+<h3>Listing available vaults.<a class="headerlink" href="#listing-available-vaults" title="Permalink to this headline">¶</a></h3>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">lsvault</span></tt></p>
+<p>This command gives an overview of the available vaults.</p>
+</div>
+<div class="section" id="deleting-a-vault">
+<h3>Deleting a vault.<a class="headerlink" href="#deleting-a-vault" title="Permalink to this headline">¶</a></h3>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">rmvault</span> <span class="pre">&lt;vault</span> <span class="pre">name&gt;</span></tt></p>
+<p>This command deletes a vault. Only empty vaults can be deleted, if you have archives in a vault you must delete these archives first.</p>
+</div>
+<div class="section" id="describing-status-of-a-vault">
+<h3>Describing status of a vault.<a class="headerlink" href="#describing-status-of-a-vault" title="Permalink to this headline">¶</a></h3>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">decribevault</span> <span class="pre">&lt;vault</span> <span class="pre">name&gt;</span></tt></p>
+<p>This command produces a table containing an overview of the status of a vault, including the number of archives, the size, and when the vault was created.</p>
+<div class="highlight-python"><pre>$ glacier-cmd describevault Test
+200 OK
++--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+|      LastInventory       | Archives |   Size   |                        ARN                         |         Created          |
++--------------------------+----------+----------+----------------------------------------------------+--------------------------+
+| 2012-09-14T20:14:31.609Z |    19    | 44056372 | arn:aws:glacier:us-east-1:771747372727:vaults/Test | 2012-08-30T03:26:05.507Z |
++--------------------------+----------+----------+----------------------------------------------------+--------------------------+</pre>
+</div>
+</div>
+<div class="section" id="listing-inventory-of-a-vault">
+<h3>Listing inventory of a vault.<a class="headerlink" href="#listing-inventory-of-a-vault" title="Permalink to this headline">¶</a></h3>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">inventory</span> <span class="pre">&lt;vault</span> <span class="pre">name&gt;</span></tt>.</p>
+<p>This command lists the latest inventory of a vault.</p>
+<p>Note: Glacier updates the vault inventory only once per day, a just uploaded archive will not be listed here.
+[TODO: how about RetrievingInventory jobs that result from this command?]</p>
+<div class="highlight-python"><pre>$ glacier-cmd inventory Test
+Inventory of vault arn:aws:glacier:us-east-1:771747372727:vaults/Test
+Inventory Date: 2012-09-11T22:03:37Z
+Content:
++---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
+|             Archive Description             |       Uploaded       |   Size   |                                                                 Archive ID                                                                 |                           SHA256 hash                            |
++---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+
+|                 DSC01600.xcf                | 2012-08-31T03:49:34Z | 38679745 | riTD8lqS96TvEwrqMy79jziF-l0vc_jbhYeCli1qtCAEH4IfzvvIU96VSiSOIytGRKJfw8Pf0SRk5i1ruxIIZuyfH7W7jTEW_h-Zd5Ho6aveZdfW8JfoYXXMRz6Dn_Yg0FsgYCLGQw | cb7ca5b0fa02af0180e0c172489c2f40f3469db2dfc86ae41e713b7bacea68e7 |
+|                     2016                    | 2012-09-10T05:09:20Z |  250178  | JZ8Xsys9LnN0djnOaC-5YNQYoKnd2jL0eLp8H3SlMexls0tqLdlvZQGnS56Q3Hb3ahsle7XNKQv5ouZjY2fOu9gI6BRErK8gKHAKxlFtdIeGFD6w_KVElczfehJV4XJIz8zCtGcjsg | d8f50c77cdef296ae57b0a3386e3f3d73435c94f5e6d320d5426bd1b239397d4 |
++---------------------------------------------+----------------------+----------+--------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------+</pre>
+</div>
+</div>
+</div>
+<div class="section" id="jobs-management">
+<h2>Jobs management.<a class="headerlink" href="#jobs-management" title="Permalink to this headline">¶</a></h2>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">listjobs</span> <span class="pre">&lt;vault</span> <span class="pre">name&gt;</span></tt></p>
+<p>This command gives an overview of  recent jobs such as inventory retrieval jobs and their status.</p>
+</div>
+<div class="section" id="archive-management">
+<h2>Archive management.<a class="headerlink" href="#archive-management" title="Permalink to this headline">¶</a></h2>
+<p>You may upload, retrieve and delete archives using glacier-cmd.</p>
+<p>Note that when deleting a file, it takes up to a day for Glacier to update your inventory and actually purge the file.</p>
+<p>When downloading a file, you first must request the file to be retrieved by Glacier before you can download it. This retrieval process takes around four hours, and the file will be available for download for 24 hours after which it is removed from the available queue.</p>
+<div class="section" id="uploading-an-archive">
+<h3>Uploading an archive.<a class="headerlink" href="#uploading-an-archive" title="Permalink to this headline">¶</a></h3>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">upload</span> <span class="pre">&lt;vault</span> <span class="pre">name&gt;</span> <span class="pre">/path/to/archive</span> <span class="pre">&quot;description</span> <span class="pre">of</span> <span class="pre">archive&quot;</span></tt></p>
+<p>Note that the description of the archive may be no more than 1,024 characters, and contain only [TODO: which characters?].</p>
+<p>Files are uploaded in blocks, the default size is 128 MB. After the upload of each block a progress update will be printed, showing the amount of data uploaded, the upload speed and an estimated finish time. When finished, the archive ID and an SHA256 hash will be printed.</p>
+<p>Note: this hash is not the same as you get when running the <tt class="docutils literal"><span class="pre">sha256sum</span> <span class="pre">/path/to/archive</span></tt> command as the hash is computed by glacier-cmd block by block. Amazon Glacier calculates the SHA256 sum in this manner too.</p>
+<div class="section" id="uploading-options">
+<h4>Uploading options.<a class="headerlink" href="#uploading-options" title="Permalink to this headline">¶</a></h4>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">--blocksize</span></tt></li>
+</ul>
+<p>[TODO: describe <tt class="docutils literal"><span class="pre">--blocksize</span></tt> option]</p>
+<p>Amazon Glacier limits uploads to 10,000 blocks. With the default block size of 128 MB, this means archives are limited to about 1.3 TB. For larger archives you must set a larger block size; for smaller archives you may set a smaller block size.</p>
+<p>[TODO: describe consequences of block size]</p>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">--stdin</span></tt></li>
+</ul>
+<p>Use this option to tell glacier-cmd to expect data to be piped in over stdin.</p>
+<p>[TODO is this correct?]</p>
+<blockquote>
+<div><tt class="docutils literal"><span class="pre">$</span> <span class="pre">cat</span> <span class="pre">/path/to/archive</span> <span class="pre">|</span> <span class="pre">glacier-cmd</span> <span class="pre">upload</span> <span class="pre">Test</span> <span class="pre">&quot;Data</span> <span class="pre">from</span> <span class="pre">stdin&quot;</span> <span class="pre">--name</span> <span class="pre">/nice/name/for/archive</span> <span class="pre">--stdin</span></tt></div></blockquote>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">--name</span></tt></li>
+</ul>
+<p>Specify a file name for your archive.</p>
+<p>This is required [TODO: is this so? It should be!] when you pipe in data over stdin, and can be useful to override the local file name of the archive, for example when the local file is a temporary file with a randomly generated name. This file name will be used for the bookkeeping entry of this upload.</p>
+<blockquote>
+<div><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">upload</span> <span class="pre">--name</span> <span class="pre">/path/BetterName</span> <span class="pre">Test</span> <span class="pre">/tmp/temp.tQ6948</span> <span class="pre">&quot;Some</span> <span class="pre">description&quot;</span></tt></div></blockquote>
+</div>
+</div>
+<div class="section" id="downloading-an-archive">
+<h3>Downloading an archive.<a class="headerlink" href="#downloading-an-archive" title="Permalink to this headline">¶</a></h3>
+<p>There are two distict commands available for downloading an archive: <tt class="docutils literal"><span class="pre">download</span></tt> and <tt class="docutils literal"><span class="pre">getarchive</span></tt>.</p>
+<p>[TODO: describe the inventory retrieval and download availability time leg, and what these commands do there. First instance start a job; second instance do the download if available?]</p>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">download</span> <span class="pre">&lt;&quot;search</span> <span class="pre">query&quot;&gt;</span> <span class="pre">[vault]</span> <span class="pre">[--region</span> <span class="pre">REGION]</span></tt></li>
+</ul>
+<p>The search query must be either a complete file name or (part of) the description of the file. The search may be narrowed down further using the vault name or the region. Requires bookkeeping to be active.
+[TODO: is this entry correct?]</p>
+<ul class="simple">
+<li><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">getarchive</span> <span class="pre">&lt;archive-ID&gt;</span></tt></li>
+</ul>
+<p>Retrieves an archive by its archive ID.
+Note: if the archive ID starts with a hyphen (-) then it must be preceded by the <tt class="docutils literal"><span class="pre">--</span></tt> command line switch.</p>
+</div>
+<div class="section" id="deleting-an-archive">
+<h3>Deleting an archive.<a class="headerlink" href="#deleting-an-archive" title="Permalink to this headline">¶</a></h3>
+<p><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">rmarchive</span> <span class="pre">&lt;vault&gt;</span> <span class="pre">&lt;archive-ID&gt;</span></tt></p>
+<p>This command will remove the archive with &lt;archive-ID&gt; from the vault &lt;vault&gt;.</p>
+<p>Note: if the archive ID starts wiht a - (hyphen), you must precede it with a <tt class="docutils literal"><span class="pre">--</span></tt> switch, as otherwise it is recognised as command line option.</p>
+<p>Example:</p>
+<div class="highlight-python"><pre>$ glacier-cmd rmarchive Test -- -6AKuLSU3wxtSqq_GeeAss9zLvto8Xr1su4mqmvluTTv4HcXbFJJNy0yiTu9tG5vFjrBXvmQKXGwFJpNMghqYBerUKpsjq56mrzv1wUbe6DWuzl6Ntb8WSQHYo0kzw8rcLaVx5MFug
+ 204 No Content
+ +------------------+-------------------------------------------------+
+ |      Header      |                      Value                      |
+ +------------------+-------------------------------------------------+
+ | x-amzn-requestid | 1-UC36MM2ZxNwdf-Q2yyT0f7j5KVJ1neGwf-FzsU2H6YDyo |
+ |       date       |          Fri, 14 Sep 2012 02:48:46 GMT          |
+ +------------------+-------------------------------------------------+</pre>
+</div>
+<p>Note: it takes up to a day for Glacier to update your vault inventory, so the archive will not be delisted from the inventory immediately.</p>
+</div>
+<div class="section" id="searching-by-file-name">
+<h3>Searching by file name.<a class="headerlink" href="#searching-by-file-name" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">search</span></tt></div></blockquote>
+<p>[TODO: is this description correct?]</p>
+<p>This command will dump a complete of archives uploaded by glacier-cmd. Requires bookkeeping. Archives uploaded by other means, or by glacier-cmd not using bookkeeping, will not be listed.</p>
+</div>
+<div class="section" id="managing-multipart-jobs">
+<h3>Managing multipart jobs.<a class="headerlink" href="#managing-multipart-jobs" title="Permalink to this headline">¶</a></h3>
+<p>[TODO properly describe multipart segment.]</p>
+<p>To see the multipart uploads currently in progress, use <cite>listmultiparts</cite>:</p>
+<div class="highlight-python"><pre>$ glacier-cmd listmultiparts Test
+200 OK
+Marker:  None
++--------------------+--------------------------+----------------------------------------------------------------------------------------------+-----------------+----------------------------------------------------+
+| ArchiveDescription |       CreationDate       |                                      MultipartUploadId                                       | PartSizeInBytes |                      VaultARN                      |
++--------------------+--------------------------+----------------------------------------------------------------------------------------------+-----------------+----------------------------------------------------+
+|  fancyme.glacier   | 2012-09-20T04:29:21.485Z | D18RNXeq5ffV99PITXrHBvJOULDt15EJJl0eBD5GFD-pc76ptWCz0k9mrJy4W4oUu2fQ0ljWxiqDXIKGLZVIfFIexErC |     4194304     | arn:aws:glacier:us-east-1:771747372727:vaults/Test |
++--------------------+--------------------------+----------------------------------------------------------------------------------------------+-----------------+----------------------------------------------------+</pre>
+</div>
+<p>To abort one of the multipart uploads, use <cite>abortmultipart</cite> subcommand:</p>
+<blockquote>
+<div><tt class="docutils literal"><span class="pre">$</span> <span class="pre">glacier-cmd</span> <span class="pre">abortmultipart</span> <span class="pre">Test</span> <span class="pre">D18RNXeq5ffV99PITXrHBvJOULDt15EJJl0eBD5GFD-pc76ptWCz0k9mrJy4W4oUu2fQ0ljWxiqDXIKGLZVIfFIexErC</span></tt></div></blockquote>
+</div>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Usage.</a><ul>
+<li><a class="reference internal" href="#configuration">Configuration.</a></li>
+<li><a class="reference internal" href="#vault-management">Vault management.</a><ul>
+<li><a class="reference internal" href="#creating-a-vault">Creating a vault.</a></li>
+<li><a class="reference internal" href="#listing-available-vaults">Listing available vaults.</a></li>
+<li><a class="reference internal" href="#deleting-a-vault">Deleting a vault.</a></li>
+<li><a class="reference internal" href="#describing-status-of-a-vault">Describing status of a vault.</a></li>
+<li><a class="reference internal" href="#listing-inventory-of-a-vault">Listing inventory of a vault.</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#jobs-management">Jobs management.</a></li>
+<li><a class="reference internal" href="#archive-management">Archive management.</a><ul>
+<li><a class="reference internal" href="#uploading-an-archive">Uploading an archive.</a><ul>
+<li><a class="reference internal" href="#uploading-options">Uploading options.</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#downloading-an-archive">Downloading an archive.</a></li>
+<li><a class="reference internal" href="#deleting-an-archive">Deleting an archive.</a></li>
+<li><a class="reference internal" href="#searching-by-file-name">Searching by file name.</a></li>
+<li><a class="reference internal" href="#managing-multipart-jobs">Managing multipart jobs.</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="Installation.html"
+                        title="previous chapter">Installation:</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="Development.html"
+                        title="next chapter">Development:</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/Usage.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="Development.html" title="Development:"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="Installation.html" title="Installation:"
+             >previous</a> |</li>
+        <li><a href="index.html">glacier-cmd 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2012, uskudnik.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.3.
+    </div>
+  </body>
+</html>
