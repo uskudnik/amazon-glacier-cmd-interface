@@ -275,6 +275,7 @@ class GlacierWriter(object):
             raise CommunicationException (
                 'Block of data provided must be equal to or smaller than the set block size.',
                 cause='Data block too large')
+
         
         # Create a request and sign it
         part_tree_hash = tree_hash(chunk_hashes(data))
