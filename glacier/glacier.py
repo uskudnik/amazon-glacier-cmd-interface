@@ -236,28 +236,21 @@ def inventory(args):
     glacier = default_glacier_wrapper(args)
     job, inventory = glacier.inventory(args.vault, args.refresh)
 
-    print "Inventory of vault: %s" % (inventory["VaultARN"],)
-    print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
-    print "Content:"
-    headers = {"Archive Description": 'ArchiveDescription',
-               "Uploaded": 'CreationDate',
-               "Size": 'Size',
-               "Archive ID": 'ArchiveId',
-               "SHA256 tree hash": 'SHA256TreeHash'}
-    print_output(inventory['ArchiveList'], keys=headers)
+    if inventory:
+        print "Inventory of vault: %s" % (inventory["VaultARN"],)
+        print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
+        print "Content:"
+        headers = {"Archive Description": 'ArchiveDescription',
+                   "Uploaded": 'CreationDate',
+                   "Size": 'Size',
+                   "Archive ID": 'ArchiveId',
+                   "SHA256 tree hash": 'SHA256TreeHash'}
+        print_output(inventory['ArchiveList'], keys=headers)
 
-
-
-##def setuplogging(args):
-##    printtostdout = args.printtostdout
-##    logfile = args.logfile
-##    loglevel = args.loglevel
-##    if not loglevel in ('3', 'CRITICAL', '2', 'ERROR',
-##                        '1', 'WARNING', '0', 'INFO',
-##                        '-1', 'DEBUG'):
-##        print 'Invalid loglevel; defaulting to level WARNING.'
-##        loglevel = 'WARNING'
-
+    else:
+        print "Inventory retrieval in progress."
+        print "Job ID: %s."% job['JobId']
+        print "Job started (time in UTC): %s."% job['CreationDate']
 
 def main():
     program_description = u"""
