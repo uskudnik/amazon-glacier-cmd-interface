@@ -421,8 +421,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     def _progress(self, msg):
         """
         A progress indicator. Prints the progress message if stdout
-        is connected to a tty (i.e. run from the command prompt),
-        logging at info level otherwise.
+        is connected to a tty (i.e. run from the command prompt).
 
         :param msg: the progress message to be printed.
         :type msg: str
@@ -430,9 +429,6 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         if sys.stdout.isatty():
             print msg,
             sys.stdout.flush()
-
-        else:
-            self.logger.info(msg)
 
     def _size_fmt(self, num, decimals=1):
         """
@@ -798,6 +794,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         else:
             raise GlacierWrapper.InputException("There is nothing to upload.")
 
+        self.logger.info('Starting upload of %s to %s.\nDescription: %s'% (file_name, vault_name, description))
+
         # If user did not specify part_size, compute the optimal (i.e. lowest
         # value to stay within the self.MAX_PARTS (10,000) block limit).
         if part_size < 0:
@@ -842,27 +840,31 @@ automatically increased part size from %s to %s.'% (part_size, ps))
                     time_left = "Unknown"
                     eta = "Unknown"
 
-                self._progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
-                               (self._size_fmt(writer.uploaded_size),
-                                self._size_fmt(total_size),
-                                int(100 * writer.uploaded_size/total_size),
-                                self._size_fmt(current_rate, 2),
-                                self._size_fmt(overall_rate, 2),
-                                eta))
+                msg = '\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+                      % (self._size_fmt(writer.uploaded_size),
+                         self._size_fmt(total_size),
+                         int(100 * writer.uploaded_size/total_size),
+                         self._size_fmt(current_rate, 2),
+                         self._size_fmt(overall_rate, 2),
+                         eta)
+                self._progress(msg)
 
             else:
-                self._progress('\rWrote %s. Rate %s/s.' %
-                               (self._size_fmt(writer.uploaded_size),
-                                self._size_fmt(overall_rate, 2)))
+                msg = '\rWrote %s. Rate %s/s.' \
+                      % (self._size_fmt(writer.uploaded_size),
+                         self._size_fmt(overall_rate, 2))
+                self._progress(msg)
 
             previous_time = current_time
+            self.logger.debug(msg)
 
         writer.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
-        self._progress('\rWrote %s. Rate %s/s.\n' %
-                       (self._size_fmt(writer.uploaded_size),
-                        self._size_fmt(overall_rate, 2)))
+        msg = '\rWrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
+                                            self._size_fmt(overall_rate, 2))
+        self._progress(msg)
+        self.logger.info(msg)
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
