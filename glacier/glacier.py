@@ -16,6 +16,7 @@ import locale
 from prettytable import PrettyTable
 from GlacierWrapper import GlacierWrapper
 from functools import wraps
+from glacierexception import *
 
 def print_headers(headers):
     table = PrettyTable(["Header", "Value"])
@@ -69,9 +70,9 @@ def handle_errors(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except GlacierWrapper.GlacierWrapperException as e:
+        except GlacierException as e:
 
-            # We are only interested in the error message as it is a
+            # We are only interested in the error message in case it is a
             # self-caused exception.
             e.write(indentation='||  ', stack=False, message=True)
             sys.exit(1)
@@ -320,13 +321,15 @@ def main():
                        default=default("region"),
                        help="Region where you want to store \
                              your archives " + help_msg_config)
+
     group.add_argument('--bookkeeping',
                        required=False,
-                       default=default("bookkeeping") and True,
+                       default=default("bookkeeping")==True and True,
                        action="store_true",
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
                              bookkeeping domain name set")
+    
     group.add_argument('--bookkeeping-domain-name',
                         required=False,
                         default=default("bookkeeping-domain-name"),
@@ -514,7 +517,7 @@ when uploading from stdin.''')
 
     # Process the remaining arguments.
     args = parser.parse_args(remaining_argv)
-
+    
     args.logtostdout = logtostdout
 
     # Run the subcommand.
