@@ -15,6 +15,7 @@ import time
 import sys
 import re
 import traceback
+import glaciercorecalls
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -23,7 +24,7 @@ from pprint import pformat
 
 from glaciercorecalls import GlacierConnection, GlacierWriter
 from glaciercorecalls import GlacierVault, GlacierJob
-from chain_exception import CausedException
+from glacierexception import *
 
 class log_class_call(object):
     """
@@ -91,109 +92,6 @@ us-west-2 (US - Oregon)
 eu-west-1 (EU - Ireland)
 ap-northeast-1 (Asia-Pacific - Tokyo)"""
 
-    class GlacierWrapperException(CausedException):
-        """
-        This is the common type of exception that all exceptions inherits from.
-        It logs the error message (amount of information depends on the log
-        level) and passes it on to a higher level to handle.
-
-        TODO: Explain usage
-        """
-        
-        def __init__(self, message, code=None, cause=None):
-            """ Handles the exception.
-
-            :param message: the error message.
-            :type message: str
-            :param code: the error code.
-            :type code: 
-            :param cause: explanation on what caused the error.
-            :type cause: str
-            """
-            self.logger = logging.getLogger(self.__class__.__name__)
-
-            if cause:
-                CausedException.__init__(self, message, cause=cause)
-                self.logger.error('ERROR: %s'% cause)
-
-            else:
-                CausedException.__init__(self, message)
-                self.logger.error('An error occurred, exiting.')
-
-            self.logger.info(self.fetch(message=True))
-            self.logger.debug(self.fetch(stack=True))
-
-    class InputException(GlacierWrapperException):
-        """
-        Exception that is raised when there is someting wrong with the
-        user input.
-        """
-        
-        VaultNameError = 1
-        VaultDescriptionError = 2
-        def __init__(self, message, code=None, cause=None):
-            """ Handles the exception.
-
-            :param message: the error message.
-            :type message: str
-            :param code: the error code.
-            :type code: 
-            :param cause: explanation on what caused the error.
-            :type cause: str
-            """
-            GlacierWrapper.GlacierWrapperException.__init__(self, message, code=code, cause=cause)
-
-    class ConnectionException(GlacierWrapperException):
-        """
-        Exception that is raised when there is something wrong with
-        the connection.
-        """
-        
-        GlacierConnectionError = 1
-        SdbConnectionError = 2
-        def __init__(self, message, code=None, cause=None):
-            """ Handles the exception.
-
-            :param message: the error message.
-            :type message: str
-            :param code: the error code.
-            :type code: 
-            :param cause: explanation on what caused the error.
-            :type cause: str
-            """
-            GlacierWrapper.GlacierWrapperException.__init__(self, message, code=code, cause=cause)
-
-    class CommunicationException(GlacierWrapperException):
-        """
-        Exception that is raised when there is something wrong in
-        the communication with an external library like boto.
-        """
-
-        SdbReadError = 8
-        SdbWriteError = 9
-
-        def __init__(self, message, code=None, cause=None):
-            """ Handles the exception.
-
-            :param message: the error message.
-            :type message: str
-            :param code: the error code.
-            :type code: 
-            :param cause: explanation on what caused the error.
-            :type cause: str
-            """
-            GlacierWrapper.GlacierWrapperException.__init__(self, message, code=code, cause=cause)
-
-    class ResponseException(GlacierWrapperException):
-        """
-        Exception that is raised when there is an http response error.
-        """
-        
-        # Will be removed when merge with boto
-        Error_403 = 403
-        def __init__(self, message, code=None, cause=None):
-            GlacierWrapper.GlacierWrapperException.__init__(self, message, code=code, cause=cause)
-
     def setuplogging(self, logfile, loglevel, logtostdout):
         """
         Set up the logging facility. If no logging parameters are
@@ -233,7 +131,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                                 datefmt=datefmt)
         elif logfile:
             try:
-                open(logfile, 'w')
+                open(logfile, 'a')
             except IOError:
 
                 # Can't open the specified log file, log to stderr instead.
@@ -282,9 +180,10 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                                                          self.aws_secret_key,
                                                          region=self.region)
                 except boto.exception.AWSConnectionError as e:
-                    raise GlacierWrapper.ConnectionException("Cannot connect to Amazon Glacier.",
-                                                             cause=e.cause,
-                                                             code="GlacierConnectionError")
+                    raise ConnectionException(
+                        "Cannot connect to Amazon Glacier.",
+                        cause=e.cause,
+                        code="GlacierConnectionError")
 
             return func(*args, **kwargs)
         return glacier_connect_wrap
@@ -306,6 +205,8 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                         "Connection to Amazon SimpleDB successful.")
         def sdb_connect_wrap(*args, **kwargs):
             self = args[0]
+            if not self.bookkeeping:
+                return func(*args, **kwargs)
 
             # TODO: give SimpleDB its own class? Or move the few calls
             # we need to glaciercorecalls?
@@ -323,16 +224,10 @@ Connecting to Amazon SimpleDB domain %s with
                                                      aws_secret_access_key=self.aws_secret_key)
                     domain_name = self.bookkeeping_domain_name
                     self.sdb_domain = self.sdb_conn.get_domain(domain_name, validate=True)
-                except boto.exception.AWSConnectionError as e:
-                    raise GlacierWrapper.ConnectionException(
+                except (boto.exception.AWSConnectionError, boto.exception.SDBResponseError) as e:
+                    raise ConnectionException(
                         "Cannot connect to Amazon SimpleDB.",
-                        cause=e.cause,
-                        code="SdbConnectionError")
-
-                except boto.exception.SDBResponseError as e:
-                    raise GlacierWrapper.ConnectionException(
-                        "Cannot connect to Amazon SimpleDB.",
-                        cause=e.cause,
+                        cause=e,
                         code="SdbConnectionError")
                 
             return func(*args, **kwargs)
@@ -351,17 +246,25 @@ Connecting to Amazon SimpleDB domain %s with
         :raises: GlacierWrapper.ResponseException
         """
         if response.status in [403, 404]:
-            message = '%s %s\n%s'% (response.status,
-                                   response.reason,
-                                   json.loads(response.read())['message'])
+            try:
+                jdata = json.loads(response.read())
+                message = '%s %s\n%s'% (response.status,
+                                       response.reason,
+                                       jdata['message'])
+            except (ValueError, KeyError) as e:
+                raise ResponseException(
+                    "Problem parsing response: %s"% jdata,
+                    cause=e)
+            
             code = {403: ('Error_403',
                           'Access forbidden - please check your credentials.'),
                     404: ('Error_404',
                           'Object not found - check name and try again.')
                     }[response.status]
-            raise GlacierWrapper.ResponseException(message,
-                                                   code=code[0],
-                                                   cause=code[1])
+            raise ResponseException(
+                message,
+                code=code[0],
+                cause=code[1])
 
         self.logger.debug('Amazon response OK.')
         return True
@@ -518,8 +421,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     def _progress(self, msg):
         """
         A progress indicator. Prints the progress message if stdout
-        is connected to a tty (i.e. run from the command prompt),
-        logging at info level otherwise.
+        is connected to a tty (i.e. run from the command prompt).
 
         :param msg: the progress message to be printed.
         :type msg: str
@@ -527,9 +429,6 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         if sys.stdout.isatty():
             print msg,
             sys.stdout.flush()
-
-        else:
-            self.logger.info(msg)
 
     def _size_fmt(self, num, decimals=1):
         """
@@ -577,22 +476,17 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
         """
 
-        try:
-            response = self.glacierconn.list_vaults()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Problem listing vaults",
-                cause=e.cause)
-
+        response = self.glacierconn.list_vaults()
         self.logger.debug('list_vaults response received.')
         self._check_response(response)
         try:
             jdata = response.read()
+            self.logger.debug(jdata)
             vault_list = json.loads(jdata)['VaultList']
-        except GlacierWrapper.ResponseException as e:
-            raise GlacierWrapper.ResponseException(
-                "Problem parsing vault list: %s"% jdata,
-                cause=e.cause)
+        except (ValueError, KeyError) as e:
+            raise ResponseException(
+                "Problem parsing vault list response: %s"% jdata,
+                cause=e)
 
         return vault_list
 
@@ -619,14 +513,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        try:
-            response = GlacierVault(self.glacierconn, vault_name).create_vault()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot create vault",
-                cause=e)
-
-        return response.getheaders()
+        return GlacierVault(self.glacierconn, vault_name=vault_name).create_vault().getheaders()
 
     @glacier_connect
     @log_class_call("Removing vault.",
@@ -648,14 +535,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        try:
-            response = GlacierVault(self.glacierconn, vault_name).delete_vault()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot remove vault.",
-                cause=e)
-
-        return response.getheaders()
+        return GlacierVault(self.glacierconn, vault_name=vault_name).delete_vault().getheaders()
 
     @glacier_connect
     @log_class_call("Requesting vault description.",
@@ -681,20 +561,14 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
-            response = gv.describe_vault()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot get vault description.",
-                cause=e)
-                
+        response = GlacierVault(self.glacierconn, vault_name=vault_name).describe_vault()
         self._check_response(response)
         try:
             jdata = response.read()
+            self.logger.debug(jdata)
             res = json.loads(jdata)
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
+        except ValueError as e:
+            raise ResponseException(
                 'Failed to decode response: %s'% jdata,
                 cause=e)
 
@@ -731,26 +605,22 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
           u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'},
           {...}]
           
-        :raises: GlacierWrapper.CommunicationException
+        :raises: GlacierWrapper.ResponseException
         """
         self._check_vault_name(vault_name)
-        try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
-            response = gv.list_jobs()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot get jobs list.",
-                cause=e)
-        
+        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
+        response = gv.list_jobs()
         self._check_response(response)
 
         try:
-            job_list = json.loads(response.read())
-        except:
+            jdata = response.read()
+            self.logger.debug(jdata)
+            job_list = json.loads(jdata)
+        except ValueError:
+            raise ResponseException(
+                "Problem parsing job list response: %s"% jdata,
+                cause=e)
 
-            # TODO: handle json errors.
-
-            raise
         
         return job_list['JobList']
 
@@ -789,22 +659,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_name(vault_name)
         self._check_id (job_id, 'JobId')
-        try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
-            gj = GlacierJob(gv, job_id=job_id)
-            response = gj.job_status()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot get jobs list.",
-                cause=e)
-
+        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
+        response = GlacierJob(gv, job_id=job_id).job_status()
         self._check_response(response)
         try:
             jdata = response.read()
+            self.logger.debug(jdata)
             res = json.loads(jdata)
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                'Failed to decode response: %s'% jdata,
+        except ValueError as e:
+            raise ResponseException(
+                "Problem parsing job description response: %s"% jdata,
                 cause=e)
 
         return res
@@ -833,14 +697,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         
         self._check_vault_name(vault_name)
         self._check_id(upload_id, "UploadId")
-        try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
-            response = gv.abort_multipart(upload_id)
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot abort multipart upload.",
-                cause=e)
-        
+        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
+        response = gv.abort_multipart(upload_id)
         self._check_response(response)
         return response.getheaders()
     
@@ -867,19 +725,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.CommunicationException
         """
         self._check_vault_name(vault_name)
-        try:
-            gv = GlacierVault(self.glacierconn, name=vault_name)
-            response = gv.list_multipart_uploads()
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException("Cannot abort multipart upload.",
-                                                        cause=e)
+        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
+        response = gv.list_multipart_uploads()
         self._check_response(response)
         try:
             jdata = response.read()
+            self.logger.debug(jdata)
             res = json.loads(jdata)
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                'Failed to decode response: %s'% jdata,
+        except ValueError as e:
+            raise ResponseException(
+                "Problem parsing listmultiparts response: %s"% jdata,
                 cause=e)
 
         if res.has_key('UploadsList'):
@@ -939,6 +794,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         else:
             raise GlacierWrapper.InputException("There is nothing to upload.")
 
+        self.logger.info('Starting upload of %s to %s.\nDescription: %s'% (file_name, vault_name, description))
+
         # If user did not specify part_size, compute the optimal (i.e. lowest
         # value to stay within the self.MAX_PARTS (10,000) block limit).
         if part_size < 0:
@@ -967,7 +824,6 @@ automatically increased part size from %s to %s.'% (part_size, ps))
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         for part in iter((lambda:reader.read(read_part_size)), ''):
-
             writer.write(part)
             current_time = time.time()
             overall_rate = int(writer.uploaded_size/(current_time - start_time))
@@ -984,27 +840,31 @@ automatically increased part size from %s to %s.'% (part_size, ps))
                     time_left = "Unknown"
                     eta = "Unknown"
 
-                self._progress('\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' %
-                               (self._size_fmt(writer.uploaded_size),
-                                self._size_fmt(total_size),
-                                int(100 * writer.uploaded_size/total_size),
-                                self._size_fmt(current_rate, 2),
-                                self._size_fmt(overall_rate, 2),
-                                eta))
+                msg = '\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+                      % (self._size_fmt(writer.uploaded_size),
+                         self._size_fmt(total_size),
+                         int(100 * writer.uploaded_size/total_size),
+                         self._size_fmt(current_rate, 2),
+                         self._size_fmt(overall_rate, 2),
+                         eta)
+                self._progress(msg)
 
             else:
-                self._progress('\rWrote %s. Rate %s/s.' %
-                               (self._size_fmt(writer.uploaded_size),
-                                self._size_fmt(overall_rate, 2)))
+                msg = '\rWrote %s. Rate %s/s.' \
+                      % (self._size_fmt(writer.uploaded_size),
+                         self._size_fmt(overall_rate, 2))
+                self._progress(msg)
 
             previous_time = current_time
+            self.logger.debug(msg)
 
         writer.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
-        self._progress('\rWrote %s. Rate %s/s.\n' %
-                       (self._size_fmt(writer.uploaded_size),
-                        self._size_fmt(overall_rate, 2)))
+        msg = '\rWrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
+                                            self._size_fmt(overall_rate, 2))
+        self._progress(msg)
+        self.logger.info(msg)
 
         archive_id = writer.get_archive_id()
         location = writer.get_location()
@@ -1087,30 +947,18 @@ automatically increased part size from %s to %s.'% (part_size, ps))
         # running for it.
         job_list = self.listjobs(vault)
         for job in job_list:
-            try:
-                if job['ArchiveId'] == archive:
-                    
-                    # no need to start another archive retrieval
-                    if not job['Completed']:
-                        return ('running', job, None, results)
-                    
-                    if job['Completed']:
-                        job2 = GlacierJob(gv, job_id=job['JobId'])
-                        return ('ready', job, job2, results)
-                    
-            except GlacierWrapper.CommunicationException as e:
-                GlacierWrapper.ResponseException(
-                    "Cannot process job list response.",
-                    cause=e)
+            if job['ArchiveId'] == archive:
+                
+                # no need to start another archive retrieval
+                if not job['Completed']:
+                    return ('running', job, None, results)
+                
+                if job['Completed']:
+                    job2 = GlacierJob(gv, job_id=job['JobId'])
+                    return ('ready', job, job2, results)
 
         # No job found related to this archive, start a new job.        
-        try:
-            job = gv.retrieve_archive(archive)
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException(
-                "Cannot retrieve archive.",
-                cause=e.cause,
-                code="ArchiveRetrieveError")
+        job = gv.retrieve_archive(archive)
         return ("initiated", job, None, results)
 
     @glacier_connect
@@ -1128,7 +976,7 @@ automatically increased part size from %s to %s.'% (part_size, ps))
         self._check_id(archive, 'ArchiveId')
 
         # Check whether the requested file is available from Amazon Glacier.
-        gv = GlacierVault(self.glacierconn, vault)
+        gv = GlacierVault(self.glacierconn, vault_name=vault)
         job_list = self.listjobs(vault)
         for job in job_list:
             if job['ArchiveId'] == archive:
@@ -1147,16 +995,17 @@ your archive ID is correct, and start a retrieval job using \
         # Check whether we can access the file the archive has to be written to.
         if out_file:
             if os.path.isfile(out_file) and not overwrite:
-                raise GlacierWrapper.InputException(
+                raise InputException(
                     "File exists already, aborting. Use the overwrite flag to overwrite existing file.",
                     code="FileError")
             try:
                 out = open(out_file, 'w')
-            except GlacierWrapper.InputException as e:
-                raise GlacierWrapper.InputException(
+                out.close()
+            except IOError as e:
+                raise InputException(
                     "Cannot access the ouput file.",
-                    cause=e.cause,
-                    code="FileError")
+                    cause=e)
+
 
         job2 = GlacierJob(gv, job_id=job['JobId'])
         if out_file:
@@ -1164,6 +1013,7 @@ your archive ID is correct, and start a retrieval job using \
             ffile = open(out_file, "w")
             ffile.write(job2.get_output().read())
             ffile.close()
+                
             self.logger.debug('Download of archive finished.')
 
             #TODO: tree-hash check.
@@ -1247,43 +1097,34 @@ your archive ID is correct, and start a retrieval job using \
         """
         self._check_vault_name(vault)
         self._check_id(archive, 'ArchiveId')
-
-        gv = GlacierVault(self.glacierconn, vault)
-        self._check_response(gv.delete_archive(archive))
-
-        try:
-            gv = GlacierVault(self.glacierconn, vault)
-            self._check_response(gv.delete_archive(archive))
-        except ResponseException as e:
-            raise GlacierWrapper.ResponseException("Unexpected response. Cannot delete archive.",
-                                                    code="ArchiveDeleteError",
-                                                    cause=e)
-        except CommunicationException as e:
-            raise GlacierWrapper.CommunicationException("Error communicating with Glacier. Cannot delete archive.",
-                                                         code="ArchiveDeleteError",
-                                                         cause=e)
+        response = GlacierVault(self.glacierconn, vault_name=vault).delete_archive(archive)
+        self._check_response(response)
 
         if self.bookkeeping:
             try:
                 # TODO: can't find a method for counting right now
-                # TODO: proper message for when archive name is simply not in the
-                #       bookkeeping db (e.g. originally uploaded with other tool).
+                # TODO: proper message for when archive name is simply not
+                #       in the bookkeeping db (e.g. originally uploaded
+                #       with other tool).
+                #       (wvmarle: is this necessary? Archive is gone, who cares
+                #       whether it was in the db to begin with.)
                 query = ('select * from `%s` where archive_id="%s"' %
                             (self.bookkeeping_domain_name, archive))
                 items = self.sdb_domain.select(query)
             except boto.exception.SDBResponseError as e:
-                raise GlacierWrapper.CommunicationException("Cannot get archive info from Amazon SimpleDB.",
-                                                            code="SdbReadError",
-                                                            cause=e)
+                raise CommunicationException(
+                    "Cannot get archive info from Amazon SimpleDB.",
+                    code="SdbReadError",
+                    cause=e)
             
             try:
                 for item in items:
                     self.sdb_domain.delete_item(item)
             except boto.exception.SDBResponseError as e:
-                raise GlacierWrapper.CommunicationException("Cannot delete item from Amazon SimpleDB.",
-                                                            code="SdbWriteError",
-                                                            cause=e)
-
+                raise CommunicationException(
+                    "Cannot delete item from Amazon SimpleDB.",
+                    code="SdbWriteError",
+                    cause=e)
 
     @glacier_connect
     @sdb_connect
@@ -1324,12 +1165,7 @@ your archive ID is correct, and start a retrieval job using \
         """
 
         self._check_vault_name(vault_name)
-        try:
-            gv = GlacierVault(self.glacierconn, vault_name)
-        except GlacierWrapper.CommunicationException as e:
-            raise GlacierWrapper.CommunicationException("Cannot connect to Glacier vault.",
-                                                        cause=e.cause,
-                                                        code="VaultConnectionError")
+        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
         
         inventory = None
         inventory_job = None
@@ -1339,11 +1175,7 @@ your archive ID is correct, and start a retrieval job using \
             # has been completed, and whether any is in progress. We want
             # to find the latest finished job, or that failing the latest
             # in progress job.
-            try:
-                job_list = self.listjobs(vault_name)
-            except (GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException) as e:
-                raise
-            
+            job_list = self.listjobs(vault_name)
             inventory_done = False
             for job in job_list:
                 if job['Action'] == "InventoryRetrieval":
@@ -1361,16 +1193,17 @@ your archive ID is correct, and start a retrieval job using \
                     inventory_job = job
                         
             # If inventory retrieval is complete, process it.
-            # It is possible there were multiple jobs; use the last one.
             if inventory_done:
                 self.logger.debug('Fetching results of finished inventory retrieval.')
+                response = GlacierJob(gv, job_id=inventory_job['JobId']).get_output()
                 try:
-                    job = GlacierJob(gv, job_id=inventory_job['JobId'])
-                    inventory = json.loads(job.get_output().read())
-                except GlacierWrapper.ResponseException as e:
-                    raise GlacierWrapper.ResponseException("Cannot process completed job.",
-                                                           cause=e.cause,
-                                                           code="JobListError")
+                    jdata = response.read()
+                    self.logger.debug(jdata)
+                    inventory = json.loads(response)
+                except ValueError as e:
+                    raise ResponseException(
+                        "Cannot process inventory data: %s"% jdata,
+                        cause=e)
 
                 # if bookkeeping is enabled update cache
                 if self.bookkeeping:
@@ -1379,30 +1212,18 @@ your archive ID is correct, and start a retrieval job using \
                     try:
                         self.sdb_domain.put_attributes("%s" % (d,), inventory)
                     except boto.exception.SDBResponseError as e:
-                        raise GlacierWrapper.CommunicationException("Cannot update inventory cache, Amazon SimpleDB is not happy.",
-                                                                    cause=e.cause,
-                                                                    code="SdbWriteError")
-
-                    if ((datetime.utcnow().replace(tzinfo=pytz.utc) - d).days > 1):
-                        try:
-                            gv.retrieve_inventory(format="JSON")
-                        except GlacierWrapper.CommunicationException as e:
-                            raise GlacierWrapper.CommunicationException(r_ex,
-                                                                        cause=e.cause,
-                                                                        code="InventoryRetrieveError")
+                        raise CommunicationException(
+                            "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                            cause=e,
+                            code="SdbWriteError")
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
         # through describejob to return.
         if refresh or not inventory_job:
             self.logger.debug('No inventory jobs finished or running; starting a new job.')
-            try:
-                inventory_job = gv.retrieve_inventory(format="JSON")
-            except GlacierWrapper.CommunicationException as e:
-                raise GlacierWrapper.CommunicationException(r_ex,
-                                                            cause=e.cause,
-                                                            code="InventoryRetrieveError")
-            inventory_job = self.describejob(vault_name, inventory_job.job_id)
+            new_job = gv.retrieve_inventory(format="JSON")
+            inventory_job = self.describejob(vault_name, new_job.job_id)
 
         return (inventory_job, inventory)
     
