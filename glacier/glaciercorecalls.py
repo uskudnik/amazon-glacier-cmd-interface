@@ -22,6 +22,7 @@ import json
 import sys
 
 from boto.connection import AWSAuthConnection
+from glacierexception import *
 
 class GlacierConnection(AWSAuthConnection):
     """
@@ -160,7 +161,6 @@ class GlacierVault(object):
         :param vault_name: the vault name.
         :type vault_name: str
         """
-        
         self.connection = connection
         self.vault_name = vault_name
 
@@ -204,13 +204,12 @@ class GlacierVault(object):
         return GlacierJob(self, job_id=job_id)
 
     def list_jobs(self):
-        response = self.make_request("GET", "/jobs", None)
 
-##        assert response.status == 200,\
-##                "List jobs response expected status 200, got status %s: %r"\
-##                    % (response.status, json.loads(response.read())['message'])
-##        jdata = json.loads(response.read())
-##        self.job_list = jdata['JobList']
+        response = self.make_request("GET", "/jobs", None)
+        if response.status != 200:
+            raise ResponseException(
+                "List jobs response expected status 200 (got %s):\n%s"\
+                    % (response.status, json.loads(response.read())['message']))
         return response
 
     def create_vault(self):
@@ -253,8 +252,9 @@ class GlacierJob(object):
                   }
         response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
         if response.status != 202:
-            msg = "Start job expected 202 back (got %s)" % (response.status, )
-            raise Exception(msg, response.read())
+            raise ResponseException(
+                "Start job expected status 202 (got %s)." % (response.status, ),
+                cause=response.read())
         response.read()
 
         self.job_id = response.getheader("x-amz-job-id")
@@ -263,8 +263,9 @@ class GlacierJob(object):
     def get_output(self, range_from=None, range_to=None):
         headers = {}
         if range_from is not None or range_to is not None:
-            assert range_from is not None and range_to is not None, \
-                        """If you specify one of range_from or range_to you must specify the other"""
+            if range_from is None or range_to is None:
+                raise InputException (
+                    "If you specify one of range_from or range_to you must specify the other.")
 
             headers["Range"] = "bytes %d-%d" % (range_from, range_to)
         return self.vault.make_request("GET", "/jobs/%s/output" % (self.job_id,))
@@ -315,7 +316,7 @@ class GlacierWriter(object):
     """
     DEFAULT_PART_SIZE = 128 # in MB
     
-    def __init__(self, connection, vault, region=None, description=None, part_size=DEFAULT_PART_SIZE):
+    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE):
         self.part_size = part_size * 1024 * 1024
         self.vault = vault
         self.connection = connection
@@ -335,22 +336,23 @@ class GlacierWriter(object):
             "/-/vaults/%s/multipart-uploads" % (self.vault,),
             headers,
             "")
-        assert response.status == 201,\
-                "Multipart-start should respond with a 201 (got %s).\n%r"\
-                    % (response.status, response.read())
+        if response.status != 201:
+            raise ResponseError(
+                "Multipart-start expected status 201 (got %s):\n%s"\
+                    % (response.status, response.read()))
         response.read()
         self.upload_url = response.getheader("location")
 
     def write(self, data):
         
-        assert not self.closed,\
-               "Tried to write to a GlacierWriter that is already closed."
+        if self.closed:
+            raise CommunicationError(
+                "Tried to write to a GlacierWriter that is already closed.")
 
         if len(data) > self.part_size:
-            raise CommunicationException (
-                'Block of data provided must be equal to or smaller than the set block size.',
-                cause='Data block too large')
-        
+            raise InputException (
+                'Block of data provided must be equal to or smaller than the set block size.')
+
         # Create a request and sign it
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
@@ -370,9 +372,10 @@ class GlacierWriter(object):
             headers,
             data)
 
-        assert response.status == 204,\
-                "Multipart upload part should respond with a 204! (got %s): %r"\
-                    % (response.status, response.read())
+        if response.status != 204:
+            raise ResponseException(
+                "Multipart upload part expected status 204 (got %s):\n%s"\
+                    % (response.status, response.read()))
 
         response.read()
         self.uploaded_size += len(data)
@@ -393,9 +396,11 @@ class GlacierWriter(object):
             headers,
             "")
 
-        assert response.status == 201,\
-                "Multipart-complete should respond with a 201 (got %s).\n%r"\
-                    % (response.status, response.read())
+        if response.status != 201:
+            raise ResponseException (
+                "Multipart-complete expected status 201 (got %s):\n%s"\
+                    % (response.status, response.read()))
+
         response.read()
         self.archive_id = response.getheader("x-amz-archive-id")
         self.location = response.getheader("Location")
