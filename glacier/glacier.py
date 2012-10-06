@@ -16,6 +16,7 @@ import locale
 from prettytable import PrettyTable
 from GlacierWrapper import GlacierWrapper
 from functools import wraps
+from glacierexception import *
 
 def print_headers(headers):
     table = PrettyTable(["Header", "Value"])
@@ -69,7 +70,7 @@ def handle_errors(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except GlacierWrapper.GlacierWrapperException as e:
+        except GlacierException as e:
 
             # We are only interested in the error message in case it is a
             # self-caused exception.

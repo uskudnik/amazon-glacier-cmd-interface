@@ -28,58 +28,7 @@ import json
 import sys
 
 from boto.connection import AWSAuthConnection
-from chain_exception import CausedException
-
-class GlacierException(CausedException):
-    
-    def __init__(self, message, code=None, cause=None):
-        """ Handles the exception.
-
-        :param message: the error message.
-        :type message: str
-        :param code: the error code.
-        :type code: 
-        :param cause: explanation on what caused the error.
-        :type cause: str
-        """
-
-        if cause:
-            CausedException.__init__(self, message, cause=cause)
-
-        else:
-            CausedException.__init__(self, message)
-
-class ResponseException(GlacierException):
-    """
-    Exception that is raised when there is an http response error.
-    """
-    
-    def __init__(self, message, code=None, cause=None):
-        GlacierException.__init__(self, message, code=code, cause=cause)
-
-class CommunicationException(GlacierException):
-    """
-    Exception that is raised when there is a communication error.
-    """
-    
-    def __init__(self, message, code=None, cause=None):
-        GlacierException.__init__(self, message, code=code, cause=cause)
-
-class InputException(GlacierException):
-    """
-    Exception that is raised when user input is invalid.
-    """
-    
-    def __init__(self, message, code=None, cause=None):
-        GlacierException.__init__(self, message, code=code, cause=cause)
-
-class ConnectionException(GlacierException):
-    """
-    Exception that is raised when there is a connection failure.
-    """
-        
-    def __init__(self, message, code=None, cause=None):
-        GlacierException.__init__(self, message, code=code, cause=cause)
+from glacierexception import *
 
 class GlacierConnection(AWSAuthConnection):
 
@@ -170,7 +119,7 @@ class GlacierVault(object):
         response = self.make_request("GET", "/jobs", None)
         if response.status != 200:
             raise ResponseException(
-                "List jobs response expected status 200, got status %s: %r"\
+                "List jobs response expected status 200 (got %s):\n%s"\
                     % (response.status, json.loads(response.read())['message']))
         return response
 
@@ -215,7 +164,7 @@ class GlacierJob(object):
         response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
         if response.status != 202:
             raise ResponseException(
-                "Start job expected 202 back (got %s)" % (response.status, ),
+                "Start job expected status 202 (got %s)." % (response.status, ),
                 cause=response.read())
         response.read()
 
@@ -300,7 +249,7 @@ class GlacierWriter(object):
             "")
         if response.status != 201:
             raise ResponseError(
-                "Multipart-start should respond with a 201 (got %s).\n%r"\
+                "Multipart-start expected status 201 (got %s):\n%s"\
                     % (response.status, response.read()))
         response.read()
         self.upload_url = response.getheader("location")
@@ -336,7 +285,7 @@ class GlacierWriter(object):
 
         if response.status != 204:
             raise ResponseException(
-                "Multipart upload part should respond with a 204! (got %s): %r"\
+                "Multipart upload part expected status 204 (got %s):\n%s"\
                     % (response.status, response.read()))
 
         response.read()
@@ -360,7 +309,7 @@ class GlacierWriter(object):
 
         if response.status != 201:
             raise ResponseException (
-                "Multipart-complete should respond with a 201 (got %s).\n%r"\
+                "Multipart-complete expected status 201 (got %s):\n%s"\
                     % (response.status, response.read()))
 
         response.read()
