@@ -15,7 +15,8 @@ import time
 import sys
 import re
 import traceback
-import glaciercorecalls
+##import glaciercorecalls
+import botocorecalls
 import select
 
 from functools import wraps
@@ -23,8 +24,9 @@ from dateutil.parser import parse as dtparse
 from datetime import datetime
 from pprint import pformat
 
-from glaciercorecalls import GlacierConnection, GlacierWriter
-from glaciercorecalls import GlacierVault, GlacierJob
+from botocorecalls import GlacierConnection, GlacierWriter
+from botocorecalls import GlacierJob
+
 from glacierexception import *
 
 class log_class_call(object):
@@ -179,7 +181,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                                       self.region)
                     self.glacierconn = GlacierConnection(self.aws_access_key,
                                                          self.aws_secret_key,
-                                                         region=self.region)
+                                                         region_name=self.region)
                 except boto.exception.AWSConnectionError as e:
                     raise ConnectionException(
                         "Cannot connect to Amazon Glacier.",
@@ -731,9 +733,10 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.CommunicationException
         """
         self._check_vault_name(vault_name)
-        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-        response = gv.list_multipart_uploads()
-        self._check_response(response)
+##        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
+##        response = gv.list_multipart_uploads()
+##        self._check_response(response)
+        response = self.glacierconn.list_multipart_uploads(vault_name)
         try:
             jdata = response.read()
             self.logger.debug(jdata)
@@ -840,10 +843,10 @@ e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_siz
             self.logger.warning("Part size given is too small; \
 using %s MB parts to upload."% part_size)
 
-        # Initialise the writer task.
-        read_part_size = part_size * 1024 * 1024
-        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                               part_size=part_size, logger=self.logger)
+##        # Initialise the writer task.
+##        read_part_size = part_size * 1024 * 1024
+##        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
+##                               part_size=part_size, logger=self.logger)
 
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
@@ -883,13 +886,10 @@ using %s MB parts to upload."% part_size)
             # Fetch a list of already uploaded parts and their SHA hash.
             read_part_size = upload['PartSizeInBytes']
             marker = None
-            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
+            total = 0
+##            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             while True:
-                if not marker:
-                    response = gv.list_parts(uploadid)
-                else:
-                    print 'Have marker %s.'% marker
-                    response = gv.list_parts(uploadid, marker=marker)
+                response = self.glacierconn.list_parts(vault_name, uploadid, marker=marker)
                     
                 try:
                     jdata = response.read()
@@ -911,37 +911,33 @@ using %s MB parts to upload."% part_size)
                 # Parts are expected to be delivered in order, starting at 0 bytes.
                 # reader.seek(pos) go to position pos.
                 # reader.read([bytes]) reads [bytes] bytes, or until eof.
-                # raeder.tell() gives current position.
+                # reader.tell() gives current position.
                 partlist = []
                 current_position = 0
                 marker = list_parts_response['Marker']
-                p = len(list_parts_response['Parts'])
-                print 'number of parts received: %s, marker: %s, range %s.'% (p, marker, list_parts_response['Parts'][0]['RangeInBytes'])
-                if p == 0:
+                if not marker:
                     break
 
-            sys.exit()
-            
-            for part in list_parts_response['Parts']:
-                start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                if not start == current_position:
-                    if stdin:
-                        raise InputException(
-                            'Cannot verify non-sequential upload data from stdin.')
-                    reader.seek(start)
+                for part in list_parts_response['Parts']:
+                    start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
+                    if not start == current_position:
+                        if stdin:
+                            raise InputException(
+                                'Cannot verify non-sequential upload data from stdin.')
+                        reader.seek(start)
 
-                data = reader.read(stop-start)
-                data_hash = self._get_hash(data)
-                if data_hash == part['SHA256TreeHash']:
-                    self.logger.debug('Part %s hash matches.')
-                    print 'Part %s hash matches.'% part['RangeInBytes']
-                else:
-                    self.logger.warning('Hash mismatch on part %s; aborting check.'% part['RangeInBytes'])
-                    print 'Part %s hash mismatch.'% part['RangeInBytes']
-                    upload = None
-                    print 'exiting.'
-                    sys.exit()
-                    break
+                    data = reader.read(stop-start)
+                    data_hash = self._get_hash(data)
+                    if data_hash == part['SHA256TreeHash']:
+                        self.logger.debug('Part %s hash matches.')
+                        print 'Part %s hash matches.'% part['RangeInBytes']
+                    else:
+                        self.logger.warning('Hash mismatch on part %s; aborting check.'% part['RangeInBytes'])
+                        print 'Part %s hash mismatch.'% part['RangeInBytes']
+                        upload = None
+                        print 'exiting.'
+                        sys.exit()
+                        break
 
                 writer.uploaded_size = stop
             print 'already uploaded: %s.'% self._size_fmt(stop)
