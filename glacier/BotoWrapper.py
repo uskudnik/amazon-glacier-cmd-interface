@@ -457,11 +457,6 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             
         return fmt % (num, 'TB')
 
-    def _get_hash(self, data):
-        fo = glaciercorecalls.chunk_hashes(data)
-        th = glaciercorecalls.tree_hash(fo)
-        return glaciercorecalls.bytes_to_hex(th)
-
     @glacier_connect
     @log_class_call("Listing vaults.",
                     "Listing vaults complete.")
@@ -814,6 +809,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             raise InputException(
                 "There is nothing to upload.")
 
+        # Log the kind of upload we're giong to do.
         if uploadid:
             self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name if file_name else 'data from stdin', vault_name))
         elif resume:
@@ -836,18 +832,14 @@ e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_siz
 
             part_size = ps
 
+        # Check whether user specified value is big enough, and adjust if needed.
         if total_size > part_size*1024*1024*self.MAX_PARTS:
-            
-            # User specified a value that is too small. Adjust.
             part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
             self.logger.warning("Part size given is too small; \
 using %s MB parts to upload."% part_size)
 
-##        # Initialise the writer task.
-##        read_part_size = part_size * 1024 * 1024
-##        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-##                               part_size=part_size, logger=self.logger)
-
+        part_size_in_bytes = part_size * 1024 * 1024
+        
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -858,39 +850,21 @@ using %s MB parts to upload."% part_size)
                 if uploadid == upload['MultipartUploadId']:
                     self.logger.debug('Found a matching upload id. Continuing upload resumption attempt.')
                     self.logger.debug(upload)
+                    part_size_in_bytes = upload['PartSizeInBytes']
                     break
             else:
                 self.logger.warning('UploadId not found; starting new upload for this job.')
 
-        # Keys: ArchiveDescription, CreationDate, MultipartUploadId,
-        #       PartSizeInBytes, VaultARN
-        # Check on the data in the existing upload.
-        #
-        # Response on list_parts:
-        # {"ArchiveDescription":"Users.2012-10-07_01.05.00_10 (Full, since )",
-        #  "CreationDate":"2012-10-06T18:11:23.987Z",
-        #  "Marker":"gob11YWcKGyH6pDLWJb46gCV558_quunnFXmLcfSMOC7VErtQw",
-        #  "MultipartUploadId":"fhg8kk7p5zIr1UL0P3hI1GT_ojWrULHXNuRxCpMSn9Lw7NeSkoN8M0nysShNFiHwOoZaxa_BoxStda9373n0OJV9ZMRz",
-        #  "PartSizeInBytes":1048576,
-        #  "Parts":[{"RangeInBytes":"0-1048576",
-        #            "SHA256TreeHash":"09475d0fb20833e9e476ead57a22cb81e8d1fe8c1600fa9aefc667a89a9a51c9"},
-        #           {"RangeInBytes":"1048576-2097152",
-        #            "SHA256TreeHash":"6cf0cc77ef4b03b77044c17c589c7d004b5e2fd5ce82d5a686db555db4364b10"},
-        #           ...
-        #          ],
-        #  "VaultARN":"arn:aws:glacier:us-east-1:335522851586:vaults/Squirrel_backup"
-        # }
+        # Initialise the writer task.
+        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
+                               part_size_in_bytes=part_size_in_bytes, uploadid=uploadid, logger=self.logger)
 
         if upload:
 
             # Fetch a list of already uploaded parts and their SHA hash.
-            read_part_size = upload['PartSizeInBytes']
             marker = None
-            total = 0
-##            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             while True:
                 response = self.glacierconn.list_parts(vault_name, uploadid, marker=marker)
-                    
                 try:
                     jdata = response.read()
                     self.logger.debug(jdata)
@@ -914,10 +888,6 @@ using %s MB parts to upload."% part_size)
                 # reader.tell() gives current position.
                 partlist = []
                 current_position = 0
-                marker = list_parts_response['Marker']
-                if not marker:
-                    break
-
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
                     if not start == current_position:
@@ -927,34 +897,34 @@ using %s MB parts to upload."% part_size)
                         reader.seek(start)
 
                     data = reader.read(stop-start)
-                    data_hash = self._get_hash(data)
-                    if data_hash == part['SHA256TreeHash']:
+                    data_hash = botocorecalls.tree_hash(botocorecalls.chunk_hashes(data))
+                    if botocorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
                         self.logger.debug('Part %s hash matches.')
-                        print 'Part %s hash matches.'% part['RangeInBytes']
+                        writer.tree_hashes.append(data_hash)
                     else:
-                        self.logger.warning('Hash mismatch on part %s; aborting check.'% part['RangeInBytes'])
-                        print 'Part %s hash mismatch.'% part['RangeInBytes']
+                        self.logger.warning('Hash mismatch on part %s; aborting check. Starting normal upload instead.'% part['RangeInBytes'])
                         upload = None
-                        print 'exiting.'
                         sys.exit()
                         break
-
+                
+                marker = list_parts_response['Marker']
                 writer.uploaded_size = stop
-            print 'already uploaded: %s.'% self._size_fmt(stop)
-            print 'exiting.'
-            sys.exit()
-            
+                if not marker:
+                    break
+
+            print 'already uploaded: %s. Continuing from there.'% self._size_fmt(stop)
                 
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
-        for part in iter((lambda:reader.read(read_part_size)), ''):
+        start_bytes = writer.uploaded_size
+        for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
             writer.write(part)
             current_time = time.time()
-            overall_rate = int(writer.uploaded_size/(current_time - start_time))
+            overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
             if total_size > 0:
                 
                 # Calculate transfer rates in bytes per second.
-                current_rate = int(read_part_size/(current_time - previous_time))
+                current_rate = int(part_size_in_bytes/(current_time - previous_time))
 
                 # Estimate finish time, based on overall transfer rate.
                 if overall_rate > 0:

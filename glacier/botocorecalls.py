@@ -27,167 +27,12 @@ import boto.glacier.layer1
 ##from boto.connection import AWSAuthConnection
 from glacierexception import *
 
+# Placeholder, effectively renaming the class.
 class GlacierConnection(boto.glacier.layer1.Layer1):
 
     pass
+
     
-##    """
-##    Open connection to Glacier.
-##
-##    Example:
-##    glacierconn = GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
-##    """
-##
-##    def __init__(self,
-##                 aws_access_key_id=None,
-##                 aws_secret_access_key=None,
-##                 account_id='-',
-##                 is_secure=True,
-##                 port=None,
-##                 proxy=None,
-##                 proxy_port=None,
-##                 proxy_user=None,
-##                 proxy_pass=None,
-##                 debug=0,
-##                 https_connection_factory=None,
-##                 path='/',
-##                 provider='aws',
-##                 security_token=None,
-##                 suppress_consec_slashes=True,
-##                 region=None,
-##                 region_name='us-east-1'):
-##        """
-##        Constructor.
-##        Takes a host of options, the only required options are
-##        aws_access_key_id and aws_secret_key_id.
-##
-##        :param aws_access_key_id: your AWS access key.
-##        :type aws_access_key_id: str
-##        :param aws_secret_access_key: your AWS secret key.
-##        :type aws_secret_access_key: str
-##        :param region: the region to connect to.
-##        :type region: str
-##        :param is_secure: True
-##        :type is_secure: boolean
-##        :param port: None
-##        :type port: 
-##        :param proxy: None
-##        :type proxy: 
-##        :param proxy_port: None
-##        :type proxy_port:
-##        :param proxy_user: None
-##        :type proxy_user: 
-##        :param proxy_pass: None
-##        :type proxy_pass:
-##        :param host: None
-##        :type host:
-##        :param debug: 0
-##        :type debug: int
-##        :param https_connection_factory: None
-##        :type https_connection_factory:
-##        :param path: '/'
-##        :type path: str
-##        :param provider: 'aws'
-##        :type provider: str
-##        :param security_token: None
-##        :type security_token: 
-##        :param suppress_consec_slashes: True
-##        :type suppress_consec_slashes: boolean
-##        """
-##            
-##        self=boto.glacier.layer1.Layer1(
-##            aws_access_key_id=aws_access_key_id,
-##            aws_secret_access_key=aws_secret_access_key,
-##            account_id=account_id,
-##            is_secure=is_secure,
-##            port=port,
-##            proxy=proxy,
-##            proxy_port=proxy_port,
-##            proxy_user=proxy_user,
-##            proxy_pass=proxy_pass,
-##            debug=debug,
-##            https_connection_factory=https_connection_factory,
-##            path=path,
-##            provider=provider,
-##            security_token=security_token,
-##            suppress_consec_slashes=suppress_consec_slashes,
-##            region=region,
-##            region_name=region_name)
-
-##    def list_vaults(self, limit=None, marker=None):
-##        """Returns an overview of all available vaults.
-##
-##        :param marker: None
-##        :type marker:
-##
-##        :returns:
-##        """
-##        if marker:
-##            return self.list_vaults(limit=limit,
-##                                            marker=marker)
-##        else:
-##            return self.list_vaults(limit=limit)
-##
-##    def retrieve_archive(self, vault_name, archive, sns_topic=None, description=None):
-##        """
-##        Initiate a archive retrieval job to download the data from an
-##        archive.
-##        """
-##        job_data = {"Type": "archive-retrieval",
-##                    "ArchiveId": archive}
-##        if sns_topic is not None:
-##            job_data["SNSTopic"] = sns_topic
-##        if description is not None:
-##            job_data["Description"] = description
-##            
-##        return self.initiate_job(vault_name, job_data)
-##
-##    def retrieve_inventory(self, vault_name, sns_topic=None, description=None):
-##        """
-##        Initiate a inventory retrieval job to list the contents of the archive.
-##        """
-##        job_data = {"Type": "inventory-retrieval"}
-##        if sns_topic is not None:
-##            params["SNSTopic"] = sns_topic
-##        if description is not None:
-##            params["Description"] = description
-##        return self.initiate_job(vault_name, job_data)
-##
-####    def make_request(self, method, extra_path, headers=None, data="", params=None):
-####        if extra_path:
-####            uri = "/-/vaults/%s%s" % (self.vault_name, extra_path,)
-####        else:
-####            uri = "/-/vaults/%s" % (self.vault_name,)
-####        return self.connection.make_request(method, uri, headers, data)
-##
-##    def get_job(self, job_id):
-##        return GlacierJob(self, job_id=job_id)
-##
-##    def list_jobs(self, vault_name, completed=None, status_code=None, limit=None, marker=None):
-##        return self.list_jobs(vault_name, completed=None, status_code=None, limit=None, marker=None)
-##
-##    def create_vault(self):
-##        return self.make_request("PUT", extra_path=None)
-##
-##    def delete_vault(self):
-##        return self.make_request("DELETE", extra_path=None)
-##
-##    def describe_vault(self):
-##        return self.make_request("GET", extra_path=None)
-##
-##    def list_multipart_uploads(self, vault_name, limit=None, marker=None):
-##        return self.list_multipart_uploads(vault_name, limit=None, marker=None)
-##
-##    def list_parts(self, vault_name, upload_id, limit=None, marker=None):
-##        return self.list_parts(vault_name, upload_id, limit=None, marker=None)
-##
-##    def delete_archive(self, archive_id):
-##        return self.make_request("DELETE", extra_path="/archives/%s" % (archive_id, ))
-##
-##    def abort_multipart(self, multipart_id):
-##        return self.make_request("DELETE", extra_path="/multipart-uploads/%s" % (multipart_id, ))
-
-
 class GlacierJob(object):
     def __init__(self, vault, params=None, job_id=None):
         self.vault = vault
@@ -267,37 +112,28 @@ class GlacierWriter(object):
     """
     DEFAULT_PART_SIZE = 128 # in MB
     
-    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE, logger=None):
-        self.part_size = part_size * 1024 * 1024
-        self.vault = vault
+    def __init__(self, connection, vault_name,
+                 description=None, part_size_in_bytes=DEFAULT_PART_SIZE*1024*1024,
+                 uploadid=None, logger=None):
+
+        self.part_size = part_size_in_bytes
+        self.vault_name = vault_name
         self.connection = connection
-        self.location = None
+##        self.location = None
         self.logger = logger
+
+        if uploadid:
+            self.uploadid = uploadid
+        else:
+            response = self.connection.initiate_multipart_upload(self.vault_name,
+                                                                 self.part_size,
+                                                                 description)
+            self.uploadid = response['UploadId']
 
         self.uploaded_size = 0
         self.tree_hashes = []
         self.closed = False
-
-        headers = {
-                    "x-amz-glacier-version": "2012-06-01",
-                    "x-amz-part-size": str(self.part_size),
-                    "x-amz-archive-description": description
-                  }
-        response = self.connection.make_request(
-            "POST",
-            "/-/vaults/%s/multipart-uploads" % (self.vault,),
-            headers,
-            "")
-        if response.status != 201:
-            resp = json.loads(response.read())
-            raise ResponseException(
-                "Multipart-start expected response status 201 (got %s):\n%s"\
-                    % (response.status, response.read()),
-                cause=resp['message'],
-                code=resp['code'])
-        
-##        response.read()
-        self.upload_url = response.getheader("location")
+##        self.upload_url = response.getheader("location")
 
     def write(self, data):
         
@@ -309,7 +145,6 @@ class GlacierWriter(object):
             raise InputException (
                 'Block of data provided must be equal to or smaller than the set block size.')
 
-        # Create a request and sign it
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
         headers = {
@@ -321,42 +156,49 @@ class GlacierWriter(object):
                     "x-amz-sha256-tree-hash": bytes_to_hex(part_tree_hash),
                     "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
+        
+        self.connection.upload_part(self.vault_name,
+                                    self.uploadid,
+                                    hashlib.sha256(data).hexdigest(),
+                                    bytes_to_hex(part_tree_hash),
+                                    (self.uploaded_size, self.uploaded_size+len(data)-1),
+                                    data)
 
-        retries = 0
-        while True:
-            response = self.connection.make_request(
-                "PUT",
-                self.upload_url,
-                headers,
-                data)
-
-            # Success.
-            if response.status == 204:
-                break
-
-            # Time-out recieved: sleep for 5 minutes and try again.
-            # Do not try more than five times; after that it's over.
-            elif response.status == 408:
-                if retries >= 5:
-                    resp = json.loads(response.read())
-                    raise ResonseException(
-                        resp['message'],
-                        cause='Timeout',
-                        code=resp['code'])
-                        
-                if self.logger:
-                    logger.warning(resp['message'])
-                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
-                    
-                retries += 1
-                time.sleep(300)
-
-            else:
-                raise ResponseException(
-                    "Multipart upload part expected response status 204 (got %s):\n%s"\
-                        % (response.status, response.read()),
-                    cause=resp['message'],
-                    code=resp['code'])
+##        retries = 0
+##        while True:
+##            response = self.connection.make_request(
+##                "PUT",
+##                self.upload_url,
+##                headers,
+##                data)
+##
+##            # Success.
+##            if response.status == 204:
+##                break
+##
+##            # Time-out recieved: sleep for 5 minutes and try again.
+##            # Do not try more than five times; after that it's over.
+##            elif response.status == 408:
+##                if retries >= 5:
+##                    resp = json.loads(response.read())
+##                    raise ResonseException(
+##                        resp['message'],
+##                        cause='Timeout',
+##                        code=resp['code'])
+##                        
+##                if self.logger:
+##                    logger.warning(resp['message'])
+##                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
+##                    
+##                retries += 1
+##                time.sleep(300)
+##
+##            else:
+##                raise ResponseException(
+##                    "Multipart upload part expected response status 204 (got %s):\n%s"\
+##                        % (response.status, response.read()),
+##                    cause=resp['message'],
+##                    code=resp['code'])
 
 ##        response.read()
         self.uploaded_size += len(data)
