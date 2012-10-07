@@ -20,6 +20,7 @@ import hashlib
 import math
 import json
 import sys
+import time
 
 from boto.connection import AWSAuthConnection
 from glacierexception import *
@@ -207,9 +208,12 @@ class GlacierVault(object):
 
         response = self.make_request("GET", "/jobs", None)
         if response.status != 200:
-            raise ResponseException(
-                "List jobs response expected status 200 (got %s):\n%s"\
-                    % (response.status, json.loads(response.read())['message']))
+            raise ResponseError(
+                "List jobs expected response status 200 (got %s):\n%s"\
+                    % (response.status, response.read()),
+                cause=response.message,
+                code=response.code)
+        
         return response
 
     def create_vault(self):
@@ -252,11 +256,13 @@ class GlacierJob(object):
                   }
         response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
         if response.status != 202:
-            raise ResponseException(
-                "Start job expected status 202 (got %s)." % (response.status, ),
-                cause=response.read())
-        response.read()
+            raise ResponseError(
+                "Initiating job expected response status 202 (got %s):\n%s"\
+                    % (response.status, response.read()),
+                cause=response.message,
+                code=response.code)
 
+##        response.read()
         self.job_id = response.getheader("x-amz-job-id")
         self.location = response.getheader("Location")
 
@@ -316,11 +322,12 @@ class GlacierWriter(object):
     """
     DEFAULT_PART_SIZE = 128 # in MB
     
-    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE):
+    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE, logger=None):
         self.part_size = part_size * 1024 * 1024
         self.vault = vault
         self.connection = connection
         self.location = None
+        self.logger = logger
 
         self.uploaded_size = 0
         self.tree_hashes = []
@@ -338,9 +345,12 @@ class GlacierWriter(object):
             "")
         if response.status != 201:
             raise ResponseError(
-                "Multipart-start expected status 201 (got %s):\n%s"\
-                    % (response.status, response.read()))
-        response.read()
+                "Multipart-start expected response status 201 (got %s):\n%s"\
+                    % (response.status, response.read()),
+                cause=response.message,
+                code=response.code)
+        
+##        response.read()
         self.upload_url = response.getheader("location")
 
     def write(self, data):
@@ -366,18 +376,42 @@ class GlacierWriter(object):
                     "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
 
-        response = self.connection.make_request(
-            "PUT",
-            self.upload_url,
-            headers,
-            data)
+        retries = 0
+        while True:
+            response = self.connection.make_request(
+                "PUT",
+                self.upload_url,
+                headers,
+                data)
 
-        if response.status != 204:
-            raise ResponseException(
-                "Multipart upload part expected status 204 (got %s):\n%s"\
-                    % (response.status, response.read()))
+            # Success.
+            if response.status == 204:
+                break
 
-        response.read()
+            # Time-out recieved: sleep for 5 minutes and try again.
+            # Do not try more than five times; after that it's over.
+            elif response.status == 408:
+                if retries >= 5:
+                    raise ResonseException(
+                        response.message,
+                        cause='Timeout',
+                        code=response.code)
+                        
+                if self.logger:
+                    logger.warning(response.message)
+                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
+                    
+                retries += 1
+                time.sleep(300)
+
+            else:
+                raise ResponseError(
+                    "Multipart upload part expected response status 204 (got %s):\n%s"\
+                        % (response.status, response.read()),
+                    cause=response.message,
+                    code=response.code)
+
+##        response.read()
         self.uploaded_size += len(data)
 
     def close(self):
@@ -398,10 +432,13 @@ class GlacierWriter(object):
 
         if response.status != 201:
             raise ResponseException (
-                "Multipart-complete expected status 201 (got %s):\n%s"\
-                    % (response.status, response.read()))
+            raise ResponseError(
+                "Multipart-complete expected response status 204 (got %s):\n%s"\
+                    % (response.status, response.read()),
+                cause=response.message,
+                code=response.code)
 
-        response.read()
+##        response.read()
         self.archive_id = response.getheader("x-amz-archive-id")
         self.location = response.getheader("Location")
         self.hash_sha256 = response.getheader("x-amz-sha256-tree-hash")
