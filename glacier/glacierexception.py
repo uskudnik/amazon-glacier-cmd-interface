@@ -38,18 +38,17 @@ class GlacierException(Exception):
         :param cause: explanation on what caused the error.
         :type cause: str
         """
-
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.code = code
         if cause:
             self.logger.error('ERROR: %s'% cause)
-            self.wrapped = None
+            self.cause = cause if isinstance(cause, tuple) else (cause,)
             self.stack = traceback.format_stack()[:-2]
-##            self.cause = cause if isinstance(cause, tuple) else (cause,)
-            self.cause = cause
-            self.code = code
+            self.wrapped = None
 
         else:
             self.logger.error('An error occurred, exiting.')
+            self.cause = ()
 
             # Just wrap up a cause-less exception.
             # Get the stack trace for this exception.
@@ -60,13 +59,9 @@ class GlacierException(Exception):
             #     care of this.
             
             self.wrapped = message
-            self.cause = ()
 
         self.logger.info(self.fetch(message=True))
         self.logger.debug(self.fetch(stack=True))
-        
-##        super(GlacierException, self).__init__(*args, **kwargs)
-
 
     # Works as a generator to help get the stack trace and the cause
     # written out.

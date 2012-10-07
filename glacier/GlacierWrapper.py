@@ -819,7 +819,7 @@ automatically increased part size from %s to %s.'% (part_size, ps))
 
         read_part_size = part_size * 1024 * 1024
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                               part_size=part_size)
+                               part_size=part_size, logger=logger)
 
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()

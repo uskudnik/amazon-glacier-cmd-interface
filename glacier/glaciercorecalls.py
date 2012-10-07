@@ -207,12 +207,14 @@ class GlacierVault(object):
     def list_jobs(self):
 
         response = self.make_request("GET", "/jobs", None)
+
         if response.status != 200:
-            raise ResponseError(
+            resp = json.loads(response.read())
+            raise ResponseException(
                 "List jobs expected response status 200 (got %s):\n%s"\
                     % (response.status, response.read()),
-                cause=response.message,
-                code=response.code)
+                cause=resp['message'],
+                code=resp['code'])
         
         return response
 
@@ -256,11 +258,12 @@ class GlacierJob(object):
                   }
         response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
         if response.status != 202:
-            raise ResponseError(
+            resp = json.loads(response.read())
+            raise ResponseException(
                 "Initiating job expected response status 202 (got %s):\n%s"\
                     % (response.status, response.read()),
-                cause=response.message,
-                code=response.code)
+                cause=resp['message'],
+                code=resp['code'])
 
 ##        response.read()
         self.job_id = response.getheader("x-amz-job-id")
@@ -344,11 +347,12 @@ class GlacierWriter(object):
             headers,
             "")
         if response.status != 201:
-            raise ResponseError(
+            resp = json.loads(response.read())
+            raise ResponseException(
                 "Multipart-start expected response status 201 (got %s):\n%s"\
                     % (response.status, response.read()),
-                cause=response.message,
-                code=response.code)
+                cause=resp['message'],
+                code=resp['code'])
         
 ##        response.read()
         self.upload_url = response.getheader("location")
@@ -392,24 +396,25 @@ class GlacierWriter(object):
             # Do not try more than five times; after that it's over.
             elif response.status == 408:
                 if retries >= 5:
+                    resp = json.loads(response.read())
                     raise ResonseException(
-                        response.message,
+                        resp['message'],
                         cause='Timeout',
-                        code=response.code)
+                        code=resp['code'])
                         
                 if self.logger:
-                    logger.warning(response.message)
+                    logger.warning(resp['message'])
                     logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
                     
                 retries += 1
                 time.sleep(300)
 
             else:
-                raise ResponseError(
+                raise ResponseException(
                     "Multipart upload part expected response status 204 (got %s):\n%s"\
                         % (response.status, response.read()),
-                    cause=response.message,
-                    code=response.code)
+                    cause=resp['message'],
+                    code=resp['code'])
 
 ##        response.read()
         self.uploaded_size += len(data)
@@ -431,12 +436,12 @@ class GlacierWriter(object):
             "")
 
         if response.status != 201:
+            resp = json.loads(response.read())
             raise ResponseException (
-            raise ResponseError(
                 "Multipart-complete expected response status 204 (got %s):\n%s"\
                     % (response.status, response.read()),
-                cause=response.message,
-                code=response.code)
+                cause=resp['message'],
+                code=resp['code'])
 
 ##        response.read()
         self.archive_id = response.getheader("x-amz-archive-id")
