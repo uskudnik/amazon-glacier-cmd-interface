@@ -16,6 +16,7 @@ import sys
 import re
 import traceback
 import glaciercorecalls
+import select
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -284,20 +285,20 @@ Connecting to Amazon SimpleDB domain %s with
         """
 
         if len(name) > self.MAX_VAULT_NAME_LENGTH:
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 u"Vault name can be at most %s characters long."% self.MAX_VAULT_NAME_LENGTH,
                 cause='Vault name more than %s characters long.'% self.MAX_VAULT_NAME_LENGTH,
                 code="VaultNameError")
         
         if len(name) == 0:
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 u"Vault name has to be at least 1 character long.",
                 cause='Vault name has to be at least 1 character long.',
                 code="VaultNameError")
 
         m = re.match(self.VAULT_NAME_ALLOWED_CHARACTERS, name)
         if m.end() != len(name):
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 u"""Allowed characters are a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), and '.' (period)""",
                 cause='Illegal characters in the vault name.',
                 code="VaultNameError")
@@ -319,7 +320,7 @@ Connecting to Amazon SimpleDB domain %s with
         :raises: GlacierWrapper.InputException
         """
         if len(description) > self.MAX_VAULT_DESCRIPTION_LENGTH:
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 u"Description must be no more than %s characters."% self.MAX_VAULT_DESCRIPTION_LENGTH,
                 cause='Vault description contains more than %s characters.'% self.MAX_VAULT_DESCRIPTION_LENGTH,
                 code="VaultDescriptionError")
@@ -327,7 +328,7 @@ Connecting to Amazon SimpleDB domain %s with
         for char in description:
             n = ord(char)
             if n < 32 or n > 126:
-                raise GlacierWrapper.InputException(
+                raise InputException(
                     u"""The allowed characters are 7-bit ASCII without \
 control codes, specifically ASCII values 32-126 decimal \
 or 0x20-0x7E hexadecimal.""",
@@ -360,14 +361,14 @@ or 0x20-0x7E hexadecimal.""",
                   'ArchiveId': 138}
         self.logger.debug('Checking a %s.'% id_type)
         if len(amazon_id) <> length[id_type]:
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 'A %s must be %s characters long. This ID is %s characters.'% (id_type, length[id_type], len(amazon_id)),
                 cause='Incorrect length of the %s string.'% id_type,
                 code="IdError")
         
         m = re.match(self.ID_ALLOWED_CHARACTERS, amazon_id)
         if m.end() != len(amazon_id):
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 u"""This %s contains invalid characters. \
 Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_type,
                 cause='Illegal characters in the %s string.'% id_type,
@@ -389,7 +390,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.InputException
         """
         if not region in self.AVAILABLE_REGIONS:
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 self.AVAILABLE_REGIONS_MESSAGE,
                 cause='Invalid region code: %s.'% region,
                 code='RegionError')
@@ -453,6 +454,11 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             num /= 1024.0
             
         return fmt % (num, 'TB')
+
+    def _get_hash(self, data):
+        fo = glaciercorecalls.chunk_hashes(data)
+        th = glaciercorecalls.tree_hash(fo)
+        return glaciercorecalls.bytes_to_hex(th)
 
     @glacier_connect
     @log_class_call("Listing vaults.",
@@ -577,7 +583,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     @glacier_connect
     @log_class_call("Requesting jobs list.",
                     "Active jobs list received.")
-    def listjobs(self, vault_name):
+    def list_jobs(self, vault_name):
         """
         Provides a list of current Glacier jobs with status and other
         job details.
@@ -749,7 +755,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     @sdb_connect
     @log_class_call("Uploading archive.",
                     "Upload of archive finished.")
-    def upload(self, vault_name, file_name, description, region, stdin, part_size):
+    def upload(self, vault_name, file_name, description, region,
+               stdin, part_size, uploadid, resume):
         """
         Uploads a file to Amazon Glacier.
         
@@ -768,33 +775,48 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         :raises:
         """
-        
-        if not description:
-            description = file_name
 
-        self._check_vault_description(description)
+        # Do some sanity checking on the user values.
         self._check_vault_name(vault_name)
         self._check_region(region)
-        
-        reader = None
+        if not description:
+            description = file_name if file_name else ''
 
+        if description:
+            self._check_vault_description(description)
+            
+        if uploadid:
+            self._check_id(uploadid, 'UploadId')
+
+        if resume and stdin:
+            raise InputException(
+                'You must provide the UploadId to resume upload of streams from stdin.\nUse glacier-cmd listmultiparts <vault> to find the UploadId.')
+        
         # If filename is given, try to use this file.
         # Otherwise try to read data from stdin.
         total_size = 0
+        reader = None
         if not stdin:
             try:
                 reader = open(file_name, 'rb')
                 total_size = os.path.getsize(file_name)
             except IOError as e:
-                raise GlacierWrapper.InputException("Could not access the file given.",
-                                                    cause=e)
+                raise InputException(
+                    "Could not access the file given.",
+                    cause=e)
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
         else:
-            raise GlacierWrapper.InputException("There is nothing to upload.")
+            raise InputException(
+                "There is nothing to upload.")
 
-        self.logger.info('Starting upload of %s to %s.\nDescription: %s'% (file_name, vault_name, description))
+        if uploadid:
+            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name if file_name else 'data from stdin', vault_name))
+        elif resume:
+            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name, vault_name))
+        else:
+            self.logger.info('Starting upload of %s to %s.\nDescription: %s'% (file_name if file_name else 'data from stdin', vault_name, description))
 
         # If user did not specify part_size, compute the optimal (i.e. lowest
         # value to stay within the self.MAX_PARTS (10,000) block limit).
@@ -806,8 +828,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         else:
             ps = self._next_power_of_2(part_size)
             if not ps == part_size:
-                self.logger.warning('Part size in MB must be a power of 2, e.g. 1, 2, 4, 8 MB; \
-automatically increased part size from %s to %s.'% (part_size, ps))
+                self.logger.warning('Part size in MB must be a power of 2, \
+e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_size, ps))
 
             part_size = ps
 
@@ -815,12 +837,103 @@ automatically increased part size from %s to %s.'% (part_size, ps))
             
             # User specified a value that is too small. Adjust.
             part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
-            self.logger.warning("Part size given is too small; using %s MB parts to upload."% part_size)
+            self.logger.warning("Part size given is too small; \
+using %s MB parts to upload."% part_size)
 
+        # Initialise the writer task.
         read_part_size = part_size * 1024 * 1024
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                               part_size=part_size, logger=logger)
+                               part_size=part_size, logger=self.logger)
 
+        # If we have an UploadId, check whether it is linked to a current
+        # job. If so, check whether uploaded data matches the input data and
+        # try to resume uploading.
+        upload = None
+        if uploadid:
+            uploads = self.listmultiparts(vault_name)
+            for upload in uploads:
+                if uploadid == upload['MultipartUploadId']:
+                    self.logger.debug('Found a matching upload id. Continuing upload resumption attempt.')
+                    self.logger.debug(upload)
+                    break
+            else:
+                self.logger.warning('UploadId not found; starting new upload for this job.')
+
+        # Keys: ArchiveDescription, CreationDate, MultipartUploadId,
+        #       PartSizeInBytes, VaultARN
+        # Check on the data in the existing upload.
+        #
+        # Response on list_parts:
+        # {"ArchiveDescription":"Users.2012-10-07_01.05.00_10 (Full, since )",
+        #  "CreationDate":"2012-10-06T18:11:23.987Z",
+        #  "Marker":"gob11YWcKGyH6pDLWJb46gCV558_quunnFXmLcfSMOC7VErtQw",
+        #  "MultipartUploadId":"fhg8kk7p5zIr1UL0P3hI1GT_ojWrULHXNuRxCpMSn9Lw7NeSkoN8M0nysShNFiHwOoZaxa_BoxStda9373n0OJV9ZMRz",
+        #  "PartSizeInBytes":1048576,
+        #  "Parts":[{"RangeInBytes":"0-1048576",
+        #            "SHA256TreeHash":"09475d0fb20833e9e476ead57a22cb81e8d1fe8c1600fa9aefc667a89a9a51c9"},
+        #           {"RangeInBytes":"1048576-2097152",
+        #            "SHA256TreeHash":"6cf0cc77ef4b03b77044c17c589c7d004b5e2fd5ce82d5a686db555db4364b10"},
+        #           ...
+        #          ],
+        #  "VaultARN":"arn:aws:glacier:us-east-1:335522851586:vaults/Squirrel_backup"
+        # }
+
+        if upload:
+
+            # Fetch a list of already uploaded parts and their SHA hash.
+            read_part_size = upload['PartSizeInBytes']
+            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
+            response = gv.list_parts(uploadid)
+            try:
+                jdata = response.read()
+                self.logger.debug(jdata)
+                list_parts_response = json.loads(jdata)
+            except ValueError as e:
+                raise ResponseException(
+                    "Cannot get list of parts: %s"% jdata,
+                    cause=e)
+            
+            if response.status != 200:
+                raise ResponseException(
+                    "Reading parts list expected response status 200 (got %s):\n%s"\
+                        % (response.status, jdata),
+                    cause=list_parts_response['message'],
+                    code=list_parts_response['code'])
+
+            # Process parts list.
+            # Parts are expected to be delivered in order, starting at 0 bytes.
+            # reader.seek(pos) go to position pos.
+            # reader.read([bytes]) reads [bytes] bytes, or until eof.
+            # raeder.tell() gives current position.
+            partlist = []
+            current_position = 0
+            for part in list_parts_response['Parts']:
+                start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
+                if not start == current_position:
+                    if stdin:
+                        raise InputException(
+                            'Cannot verify non-sequential upload data from stdin.')
+                    reader.seek(start)
+
+                data = reader.read(stop-start)
+                data_hash = self._get_hash(data)
+                if data_hash == part['SHA256TreeHash']:
+                    self.logger.debug('Part %s hash matches.')
+                    print 'Part %s hash matches.'% part['RangeInBytes']
+                else:
+                    self.logger.warning('Hash mismatch on part %s; aborting check.'% part['RangeInBytes'])
+                    print 'Part %s hash mismatch.'% part['RangeInBytes']
+                    upload = None
+                    print 'exiting.'
+                    sys.exit()
+                    break
+
+                writer.uploaded_size = stop
+            print 'already uploaded: %s.'% self._size_fmt(stop)
+            print 'exiting.'
+            sys.exit()
+            
+                
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         for part in iter((lambda:reader.read(read_part_size)), ''):
@@ -930,15 +1043,15 @@ automatically increased part size from %s to %s.'% (part_size, ps))
 ##            elif search_term:
 ##                results = search(search_term=search_term)
 ##            else:
-##                raise GlacierWrapper.InputException(
+##                raise InputException(
 ##                    "Must provide at least one of archive ID, a file name or a search term.")
 ##
 ##            if len(results) == 0:
-##                raise GlacierWrapper.InputException(
+##                raise InputException(
 ##                    "No results.")
 ##
 ##            if len(results) > 1:
-##                raise GlacierWrapper.InputException(
+##                raise InputException(
 ##                    "Too many results; please narrow down your search terms.")
 ##
 ##            archive = results[0]['archive_id']
@@ -981,13 +1094,13 @@ automatically increased part size from %s to %s.'% (part_size, ps))
         for job in job_list:
             if job['ArchiveId'] == archive:
                 if not job['Completed']:
-                    raise GlacierWrapper.CommunicationException(
+                    raise CommunicationException(
                         "Archive retrieval request not completed yet. Please try again later.")
                 self.logger.debug('Archive retrieval completed; archive is available for download now.')
                 break
             
         else:
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 "Requested archive not available. Please make sure \
 your archive ID is correct, and start a retrieval job using \
 'getarchive' if necessary.")
@@ -1041,13 +1154,13 @@ your archive ID is correct, and start a retrieval job using \
             self._check_region(region)
 
         if file_name and ('"' in file_name or "'" in file_name):
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 'Quotes like \' and \" are not allowed in search terms.',
                 cause='Invalid search term %s: contains quotes.'% file_name)
                 
 
         if search_term and ('"' in search_term or "'" in search_term):
-            raise GlacierWrapper.InputException(
+            raise InputException(
                 'Quotes like \' and \" are not allowed in search terms.',
                 cause='Invalid search term %s: contains quotes.'% search_term)
 
@@ -1199,7 +1312,7 @@ your archive ID is correct, and start a retrieval job using \
                 try:
                     jdata = response.read()
                     self.logger.debug(jdata)
-                    inventory = json.loads(response)
+                    inventory = json.loads(jdata)
                 except ValueError as e:
                     raise ResponseException(
                         "Cannot process inventory data: %s"% jdata,

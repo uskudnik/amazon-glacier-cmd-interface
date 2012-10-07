@@ -199,7 +199,7 @@ def download(args):
 def upload(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.upload(args.vault, args.filename, args.description, args.region, args.stdin,
-                              args.partsize)
+                              args.partsize, args.uploadid, args.resume)
     print "Created archive with ID: ", response[0]
     print "Archive SHA256 tree hash: ", response[1]
 
@@ -420,6 +420,18 @@ when uploading from stdin.''')
     parser_upload.add_argument('description', nargs='?', default=None,
         help='Description of the file to be uploaded. Use quotes \
               if your file contains spaces. (optional).')
+    parser_upload.add_argument('--uploadid', default=None,
+        help='''\
+The uploadId of a multipart upload that is not
+finished yet. If given, glacier-cmd will attempt
+to resume this upload using the given file, or by
+re-reading the data from stdin.''')
+    parser_upload.add_argument('--resume', action='store_true',
+        help='''\
+Attempt to resume an interrupted multi-part upload.
+Does not work in combination with --stdin, and
+requires bookkeeping to be enabled.
+(not implemented yet)''')
     parser_upload.set_defaults(func=upload)
 
     # glacier-cmd listmultiparts <vault>
