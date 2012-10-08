@@ -144,7 +144,7 @@ class GlacierWriter(object):
         if len(data) > self.part_size:
             raise InputException (
                 'Block of data provided must be equal to or smaller than the set block size.')
-
+        
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
         headers = {
@@ -204,33 +204,18 @@ class GlacierWriter(object):
         self.uploaded_size += len(data)
 
     def close(self):
+        
         if self.closed:
             return
             
         # Complete the multiplart glacier upload
-        headers = {
-                    "x-amz-glacier-version": "2012-06-01",
-                    "x-amz-sha256-tree-hash": bytes_to_hex(tree_hash(self.tree_hashes)),
-                    "x-amz-archive-size": str(self.uploaded_size)
-                  }
-        response = self.connection.make_request(
-            "POST",
-            self.upload_url,
-            headers,
-            "")
-
-        if response.status != 201:
-            resp = json.loads(response.read())
-            raise ResponseException (
-                "Multipart-complete expected response status 204 (got %s):\n%s"\
-                    % (response.status, response.read()),
-                cause=resp['message'],
-                code=resp['code'])
-
-##        response.read()
-        self.archive_id = response.getheader("x-amz-archive-id")
-        self.location = response.getheader("Location")
-        self.hash_sha256 = response.getheader("x-amz-sha256-tree-hash")
+        response = self.connection.complete_multipart_upload(self.vault_name,
+                                                             self.uploadid,
+                                                             bytes_to_hex(tree_hash(self.tree_hashes)),
+                                                             self.uploaded_size)
+        self.archive_id = response['ArchiveId']
+        self.location = response['Location']
+        self.hash_sha256 = bytes_to_hex(tree_hash(self.tree_hashes))
         self.closed = True
 
     def get_archive_id(self):

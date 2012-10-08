@@ -911,7 +911,7 @@ using %s MB parts to upload."% part_size)
                 writer.uploaded_size = stop
                 if not marker:
                     break
-
+            
             print 'already uploaded: %s. Continuing from there.'% self._size_fmt(stop)
                 
         # Read file in parts so we don't fill the whole memory.

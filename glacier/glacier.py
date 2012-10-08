@@ -325,9 +325,16 @@ def main():
                        help="Region where you want to store \
                              your archives " + help_msg_config)
 
+    # This appears to work slightly different between
+    # Python versions!
+    if sys.version_info < (2, 7, 0):
+        bookkeeping = default("bookkeeping") and True
+    else:
+        bookeeping = default("bookkeeping")==True and True
+        
     group.add_argument('--bookkeeping',
                        required=False,
-                       default=default("bookkeeping")==True and True,
+                       default=bookkeeping,
                        action="store_true",
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
