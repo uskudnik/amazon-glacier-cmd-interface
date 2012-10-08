@@ -42,15 +42,10 @@ def print_output(output, keys=None, sort_key=None):
         print 'No output!'
         return
 
-    headers = [k for k in keys.keys()] if keys else output[0].keys()
-
+    headers = [keys[k] for k in keys.keys()] if keys else output[0].keys()
     table = PrettyTable(headers)
-
     for line in output:
-        if keys:
-            table.add_row([line[keys[k]] for k in keys])
-        else:
-            table.add_row([line[k] for k in headers])
+        table.add_row([line[k] for k in (keys.keys() if keys else headers)])
 
     if sort_key:
         table.sortby = sort_key
@@ -86,40 +81,34 @@ def handle_errors(fn):
 def lsvault(args):
     glacier = default_glacier_wrapper(args)
     vault_list = glacier.lsvault()
-    keys = {"Vault name": 'VaultName',
-            "ARN": 'VaultARN',
-            "Created": 'CreationDate',
-            "Size": 'SizeInBytes'}
-##    print_output(vault_list, keys=keys, sort_key="Vault name")
+    keys = {'VaultName': "Vault name",
+            'VaultARN': "ARN",
+            'CreationDate': "Created",
+            'SizeInBytes': "Size"}
     print_output(vault_list, keys=keys)
 
 @handle_errors
 def mkvault(args):
     glacier = default_glacier_wrapper(args)
-
     response = glacier.mkvault(args.vault)
-    print dict(response)["location"]
-    print print_headers(response)
+    print_headers([(k, response[k]) for k in response.keys()])
 
 @handle_errors
 def rmvault(args):
     glacier = default_glacier_wrapper(args)
-
     response = glacier.rmvault(args.vault)
-    print print_headers(response)
+    print_headers([(k, response[k]) for k in response.keys()])
 
 @handle_errors
 def describevault(args):
     glacier = default_glacier_wrapper(args)
-
     response = glacier.describevault(args.vault)
-
-    keys = {"LastInventory": 'LastInventoryDate',
-            "Archives": 'NumberOfArchives',
-            "Size": 'SizeInBytes',
-            "ARN": 'VaultARN',
-            "Created": 'CreationDate'}
-    print_output(response, keys=keys)
+    headers = {'LastInventoryDate': "LastInventory",
+               'NumberOfArchives': "Archives",
+               'SizeInBytes': "Size",
+               'VaultARN': "ARN",
+               'CreationDate': "Created"}
+    print_headers([(headers[k], response[k]) for k in response.keys()])
 
 @handle_errors
 def listmultiparts(args):
@@ -133,48 +122,33 @@ def listmultiparts(args):
         headers = sorted(response[0].keys())
         print_output(response)
 
-##    print "Marker: ", response['Marker']
-##    if len(response['UploadsList']) > 0:
-##        headers = sorted(response['UploadsList'][0].keys())
-##        table = PrettyTable(headers)
-##        for entry in response['UploadsList']:
-##            table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
-##                           else entry[k] for k in headers ])
-##        print table
-
 @handle_errors
 def abortmultipart(args):
     glacier = default_glacier_wrapper(args)
-    
     response = glacier.abortmultipart(args.vault, args.uploadId)
-    print_headers(response)
+    print_headers([(k, response[k]) for k in response.keys()])
 
 @handle_errors
 def listjobs(args):
     glacier = default_glacier_wrapper(args)
-
-    job_list = glacier.listjobs(args.vault)
-
+    job_list = glacier.list_jobs(args.vault)['JobList']
     if job_list == []:
         print 'No jobs.'
         return
 
-    headers = {"Action": 'Action',
-               "Archive ID": 'ArchiveId',
-               "Status": 'StatusCode',
-               "Initiated": 'CreationDate',
-               "VaultARN": 'VaultARN',
-               "Job ID": 'JobId'}
-    print_output(job_list, keys=headers)
-
+    headers = {'Action': "Action",
+               'ArchiveId': "Archive ID",
+               'StatusCode': "Status",
+               'CreationDate': "Initiated",
+               'VaultARN': "VaultARN",
+               'JobId': "Job ID"}
+    print_output(job_list, headers)
 
 @handle_errors
 def describejob(args):
     glacier = default_glacier_wrapper(args)
-    gj = glacier.describejob(args.vault, args.jobid)
-    print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj['ArchiveId'],
-                                                                     args.jobid, gj['CreationDate'],
-                                                                     gj['StatusCode'])
+    job = glacier.describejob(args.vault, args.jobid)
+    print_headers([(k, job[k]) for k in job.keys()])
 
 @handle_errors
 def download(args):
@@ -182,9 +156,8 @@ def download(args):
     response = glacier.download(args.vault, args.archive, args.outfile, args.overwrite)
     if args.outfile:
 
-        # Only print result when writing to file.
+        # Only print result when writing to file, to not mess up the download.
         print response
-
 
 ### Formats file sizes in human readable format. Anything bigger than TB
 ### is returned is TB. Number of decimals is optional, defaults to 1.
@@ -327,11 +300,7 @@ def main():
 
     # This appears to work slightly different between
     # Python versions!
-    if sys.version_info < (2, 7, 0):
-        bookkeeping = default("bookkeeping") and True
-    else:
-        bookeeping = default("bookkeeping")==True and True
-        
+    bookkeeping = default("bookkeeping") and True
     group.add_argument('--bookkeeping',
                        required=False,
                        default=bookkeeping,
