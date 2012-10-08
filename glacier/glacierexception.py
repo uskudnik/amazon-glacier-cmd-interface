@@ -34,7 +34,7 @@ class GlacierException(Exception):
         :param message: the error message.
         :type message: str
         :param code: the error code.
-        :type code: 
+        :type code: str
         :param cause: explanation on what caused the error.
         :type cause: str
         """
@@ -44,7 +44,6 @@ class GlacierException(Exception):
             self.logger.error('ERROR: %s'% cause)
             self.cause = cause if isinstance(cause, tuple) else (cause,)
             self.stack = traceback.format_stack()[:-2]
-            self.wrapped = None
 
         else:
             self.logger.error('An error occurred, exiting.')
@@ -58,8 +57,7 @@ class GlacierException(Exception):
             # ^^^ let's hope the information is still there; caller must take
             #     care of this.
             
-            self.wrapped = message
-
+        self.message = message
         self.logger.info(self.fetch(message=True))
         self.logger.debug(self.fetch(stack=True))
 
@@ -88,13 +86,14 @@ class GlacierException(Exception):
                     yield line
 
         if message:
-            exc = self if self.wrapped is None else self.wrapped
+            exc = self if self.message is None else self.message
             for line in traceback.format_exception_only(exc.__class__, exc):
                 yield line
-            
+                
             if self.cause:
-                yield ("caused by: %d exception%s\n" %
+                yield ("Caused by: %d exception%s\n" %
                     (len(self.cause), "" if len(self.cause) == 1 else "s"))
+                
                 for causePart in self.cause:
                     if hasattr(causePart,"causeTree"):
                         for line in causePart.causeTree(indentation, self.stack):

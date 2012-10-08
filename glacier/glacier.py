@@ -108,7 +108,7 @@ def describevault(args):
                'SizeInBytes': "Size",
                'VaultARN': "ARN",
                'CreationDate': "Created"}
-    print_headers([(headers[k], response[k]) for k in response.keys()])
+    print_headers([(headers[k], response[k]) for k in headers.keys()])
 
 @handle_errors
 def listmultiparts(args):
@@ -131,7 +131,7 @@ def abortmultipart(args):
 @handle_errors
 def listjobs(args):
     glacier = default_glacier_wrapper(args)
-    job_list = glacier.list_jobs(args.vault)['JobList']
+    job_list = glacier.list_jobs(args.vault)
     if job_list == []:
         print 'No jobs.'
         return

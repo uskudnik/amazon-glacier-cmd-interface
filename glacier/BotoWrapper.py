@@ -25,7 +25,6 @@ from datetime import datetime
 from pprint import pformat
 
 from botocorecalls import GlacierConnection, GlacierWriter
-##from botocorecalls import GlacierJob
 
 from glacierexception import *
 
@@ -422,10 +421,18 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             
         return fmt % (num, 'TB')
 
+    def _decode_error_message(self, e):
+        try:
+            e = json.loads(e)['message']
+        except:
+            e = None
+
+        return e
+
     @glacier_connect
     @log_class_call("Listing vaults.",
                     "Listing vaults complete.")
-    def lsvault(self):
+    def lsvault(self, limit=None):
         """
         Lists available vaults.
         
@@ -443,14 +450,27 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
         """
+        marker = None
+        vault_list = []
+        while True:
+            try:
+                response = self.glacierconn.list_vaults(marker=marker)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to recieve vault list.',
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
 
-        response = self.glacierconn.list_vaults()
-        vault_list = response.copy()
+            vault_list += response.copy()['VaultList']
+            marker = response.copy()['Marker']
+            if limit and len(vault_list) >= limit:
+                vault_list = vault_list[:limit]
+                break
 
-        # TODO: if marker present there are more vaults than in this list!
-        # Download those as well.
+            if not marker:
+                break
         
-        return vault_list['VaultList']
+        return vault_list
 
     @glacier_connect
     @log_class_call("Creating vault.",
@@ -469,7 +489,14 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        response = self.glacierconn.create_vault(vault_name)
+        try:
+            response = self.glacierconn.create_vault(vault_name)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to create vault with name %s.'% vault_name,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+
         return response.copy()
 
     @glacier_connect
@@ -492,7 +519,14 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        response = self.glacierconn.delete_vault(vault_name)
+        try:
+            response = self.glacierconn.delete_vault(vault_name)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to remove vault with name %s.'% vault_name,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
         return response.copy()
 
 
@@ -520,14 +554,21 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        response = self.glacierconn.describe_vault(vault_name)
+        try:
+            response = self.glacierconn.describe_vault(vault_name)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to get description of vault with name %s.'% vault_name,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
         return response.copy()
 
     @glacier_connect
     @log_class_call("Requesting jobs list.",
                     "Active jobs list received.")
     def list_jobs(self, vault_name, completed=None,
-                  status_code=None, limit=None, marker=None):
+                  status_code=None, limit=None):
         """
         Provides a list of current Glacier jobs with status and other
         job details.
@@ -558,25 +599,27 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.ResponseException
         """
         self._check_vault_name(vault_name)
-        response = self.glacierconn.list_jobs(vault_name, completed=None,
-                                              status_code=None, limit=None, marker=None)
-        return response.copy()
+        marker = None
+        job_list = []
+        while True:
+            try:
+                response = self.glacierconn.list_jobs(vault_name, completed=completed,
+                                                      status_code=status_code, marker=marker)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to recieve the jobs list for vault %s.'% vault_name,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
+            job_list += response.copy()['JobList']
+            marker = response.copy()['Marker']
+            if limit and len(job_list) >= limit:
+                job_list = job_list[:limit]
+                break
 
+            if not marker:
+                break
 
-##        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-##        response = gv.list_jobs()
-##        self._parse_response(response)
-##        try:
-##            jdata = response.read()
-##            self.logger.debug(jdata)
-##            job_list = json.loads(jdata)
-##        except ValueError:
-##            raise ResponseException(
-##                "Problem parsing job list response: %s"% jdata,
-##                cause=e)
-##
-##        
-##        return job_list['JobList']
+        return job_list
 
     @glacier_connect
     @log_class_call("Requesting job description.",
@@ -613,23 +656,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_name(vault_name)
         self._check_id (job_id, 'JobId')
-        response = self.glacierconn.describe_job(vault_name, job_id)
+        try:
+            response = self.glacierconn.describe_job(vault_name, job_id)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to get description of job with job id %s.'% job_id,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
         return response.copy()
     
-##        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-##        response = GlacierJob(gv, job_id=job_id).job_status()
-##        self._parse_response(response)
-##        try:
-##            jdata = response.read()
-##            self.logger.debug(jdata)
-##            res = json.loads(jdata)
-##        except ValueError as e:
-##            raise ResponseException(
-##                "Problem parsing job description response: %s"% jdata,
-##                cause=e)
-##
-##        return res
-
     @glacier_connect
     @log_class_call("Aborting multipart upload.",
                     "Multipart upload successfully aborted.")
@@ -654,18 +690,20 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         
         self._check_vault_name(vault_name)
         self._check_id(upload_id, "UploadId")
-        response = self.glacierconn.abort_multipart_upload(vault_name, upload_id)
-        return response.copy()
+        try:
+            response = self.glacierconn.abort_multipart_upload(vault_name, upload_id)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to abort multipart upload with id %s.'% upload_id,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
         
-##        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-##        response = gv.abort_multipart(upload_id)
-##        self._parse_response(response)
-##        return response.getheaders()
-    
+        return response.copy()
+     
     @glacier_connect
     @log_class_call("Listing multipart uploads.",
                     "Multipart uploads list received successfully.")
-    def listmultiparts(self, vault_name):
+    def listmultiparts(self, vault_name, limit=None):
         """
         Provids a list of all currently active multipart uploads.
 
@@ -685,27 +723,27 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.CommunicationException
         """
         self._check_vault_name(vault_name)
-##        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-##        response = gv.list_multipart_uploads()
-##        self._parse_response(response)
-        response = self.glacierconn.list_multipart_uploads(vault_name)
-        res = response.copy()
-##        try:
-##            jdata = response.read()
-##            self.logger.debug(jdata)
-##            res = json.loads(jdata)
-##        except ValueError as e:
-##            raise ResponseException(
-##                "Problem parsing listmultiparts response: %s"% jdata,
-##                cause=e)
+        marker = None
+        uploads = []
+        while True:
+            try:
+                response = self.glacierconn.list_multipart_uploads(vault_name, marker=marker)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to get a list of multipart uploads for vault %s.'% vault_name,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
 
-        if res.has_key('UploadsList'):
-            res = res['UploadsList']
-
-        else:
-            res = None
-
-        return res
+            uploads += response.copy()['UploadsList']
+            marker = response.copy()['Marker']
+            if limit and len(uploads) >= limit:
+                uploads = uploads[:limit]
+                break
+            
+            if not marker:
+                break
+            
+        return uploads
 
     @glacier_connect
     @sdb_connect
@@ -811,7 +849,8 @@ using %s MB parts to upload."% part_size)
                     part_size_in_bytes = upload['PartSizeInBytes']
                     break
             else:
-                self.logger.warning('UploadId not found; starting new upload for this job.')
+                raise InputException(
+                    'Can not resume upload of this data as no existing job with this uploadid could be found.')
 
         # Initialise the writer task.
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
@@ -822,7 +861,14 @@ using %s MB parts to upload."% part_size)
             while True:
 
                 # Fetch a list of already uploaded parts and their SHA hashes.
-                response = self.glacierconn.list_parts(vault_name, uploadid, marker=marker)
+                try:
+                    response = self.glacierconn.list_parts(vault_name, uploadid, marker=marker)
+                except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                    raise ResponseException(
+                        'Failed to get a list already uploaded parts for interrupted upload %s.'% uploadid,
+                        cause=self._decode_error_message(e.body),
+                        code=e.code)
+                
                 list_parts_response = response.copy()
                 current_position = 0
 
@@ -1007,7 +1053,14 @@ using %s MB parts to upload."% part_size)
         # No job found related to this archive, start a new job.
         job_data = {'ArchiveId': archive_id,
                     'Type': archive-retrieval}
-        response = self.glacierconn.initiate_job(vault_name, job_data)
+        try:
+            response = self.glacierconn.initiate_job(vault_name, job_data)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to initiate an archive retrieval job for archive %s in vault %s.'% (archive_id, vault_name),
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
         job = response.copy()
         return ('initiated', job, None)
 
@@ -1055,14 +1108,18 @@ your archive ID is correct, and start a retrieval job using \
                     "Cannot access the ouput file.",
                     cause=e)
 
-##        job2 = GlacierJob(gv, job_id=job['JobId'])
-        
         if out_file:
             self.logger.debug('Starting download of archive to file %s.'% out_file)
             ffile = open(out_file, "w")
-            ffile.write(self.glacierconn.get_output(vault_name, job['JobId']))
+            try:
+                ffile.write(self.glacierconn.get_output(vault_name, job['JobId']))
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to download archive %s.'% archive_id,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
+            
             ffile.close()
-                
             self.logger.debug('Download of archive finished.')
 
             #TODO: tree-hash check.
@@ -1070,7 +1127,13 @@ your archive ID is correct, and start a retrieval job using \
         
         else:
             self.logger.debug('Downloading archive and sending output to stdout.')
-            print self.glacierconn.get_output(vault_name, job['JobId']),
+            try:
+                print self.glacierconn.get_output(vault_name, job['JobId']),
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to download archive %s.'% archive_id,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
 
     @glacier_connect
     @sdb_connect
@@ -1146,7 +1209,13 @@ your archive ID is correct, and start a retrieval job using \
         """
         self._check_vault_name(vault_name)
         self._check_id(archive_id, 'ArchiveId')
-        self.glacierconn.delete_archive(vault_name, archive_id)
+        try:
+            self.glacierconn.delete_archive(vault_name, archive_id)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to remove archive %s from vault %s.'% (archive_id, vault_name),
+                cause=self._decode_error_message(e.body),
+                code=e.code)
 
         if self.bookkeeping:
             try:
@@ -1221,7 +1290,7 @@ your archive ID is correct, and start a retrieval job using \
             # has been completed, and whether any is in progress. We want
             # to find the latest finished job, or that failing the latest
             # in progress job.
-            job_list = self.list_jobs(vault_name)['JobList']
+            job_list = self.list_jobs(vault_name)
             inventory_done = False
             for job in job_list:
                 if job['Action'] == "InventoryRetrieval":
@@ -1243,15 +1312,7 @@ your archive ID is correct, and start a retrieval job using \
                 self.logger.debug('Fetching results of finished inventory retrieval.')
                 response = self.conn.get_job_output(vault_name, inventory_job['JobId'])
                 inventory = response.copy()
-##                try:
-##                    jdata = response.read()
-##                    self.logger.debug(jdata)
-##                    inventory = json.loads(jdata)
-##                except ValueError as e:
-##                    raise ResponseException(
-##                        "Cannot process inventory data: %s"% jdata,
-##                        cause=e)
-
+                
                 # if bookkeeping is enabled update cache
                 if self.bookkeeping:
                     self.logger.debug('Updating the bookkeeping with the latest inventory.')
@@ -1270,7 +1331,14 @@ your archive ID is correct, and start a retrieval job using \
         if refresh or not inventory_job:
             self.logger.debug('No inventory jobs finished or running; starting a new job.')
             job_data = {'Type': 'inventory-retrieval'}
-            new_job = self.glacierconn.initiate_job(vault_name, job_data)
+            try:
+                new_job = self.glacierconn.initiate_job(vault_name, job_data)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to create a new inventory retrieval job for vault %s.'% vault_name,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
+            
             inventory_job = self.describejob(vault_name, new_job['JobId'])
 
         return (inventory_job, inventory)
