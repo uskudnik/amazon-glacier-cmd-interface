@@ -211,11 +211,11 @@ def inventory(args):
         print "Inventory of vault: %s" % (inventory["VaultARN"],)
         print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
         print "Content:"
-        headers = {"Archive Description": 'ArchiveDescription',
-                   "Uploaded": 'CreationDate',
+        headers = {'ArchiveDescription': 'Archive Description',
+                   'CreationDate': 'Uploaded',
                    "Size": 'Size',
-                   "Archive ID": 'ArchiveId',
-                   "SHA256 tree hash": 'SHA256TreeHash'}
+                   'ArchiveId': 'Archive ID',
+                   'SHA256TreeHash': 'SHA256 tree hash'}
         print_output(inventory['ArchiveList'], keys=headers)
 
     else:

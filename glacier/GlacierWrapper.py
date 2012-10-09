@@ -1316,7 +1316,7 @@ your archive ID is correct, and start a retrieval job using \
             # If inventory retrieval is complete, process it.
             if inventory_done:
                 self.logger.debug('Fetching results of finished inventory retrieval.')
-                response = self.conn.get_job_output(vault_name, inventory_job['JobId'])
+                response = self.glacierconn.get_job_output(vault_name, inventory_job['JobId'])
                 inventory = response.copy()
                 
                 # if bookkeeping is enabled update cache
