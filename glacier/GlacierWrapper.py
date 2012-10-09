@@ -750,7 +750,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     @log_class_call("Uploading archive.",
                     "Upload of archive finished.")
     def upload(self, vault_name, file_name, description, region,
-               stdin, part_size, uploadid, resume):
+               stdin, alternative_name, part_size, uploadid, resume):
         """
         Uploads a file to Amazon Glacier.
         
@@ -774,7 +774,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         self._check_vault_name(vault_name)
         self._check_region(region)
         if not description:
-            description = file_name if file_name else ''
+            description = file_name if file_name else 'No description.'
 
         if description:
             self._check_vault_description(description)
@@ -785,19 +785,23 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         if resume and stdin:
             raise InputException(
                 'You must provide the UploadId to resume upload of streams from stdin.\nUse glacier-cmd listmultiparts <vault> to find the UploadId.')
-        
-        # If filename is given, try to use this file.
+
+        # If file_list is given, try to use this file(s).
         # Otherwise try to read data from stdin.
         total_size = 0
         reader = None
         if not stdin:
+            if not file_name:
+                raise InputException(
+                    "No file name given for upload.")
+            
             try:
                 reader = open(file_name, 'rb')
-                total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
-                    "Could not access the file given.",
+                    "Could not access file: %s."% file_name,
                     cause=e)
+                
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
@@ -805,11 +809,11 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             raise InputException(
                 "There is nothing to upload.")
 
-        # Log the kind of upload we're giong to do.
+        # Log the kind of upload we're going to do.
         if uploadid:
-            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name if file_name else 'data from stdin', vault_name))
+            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_list[0] if file_list else 'data from stdin', vault_name))
         elif resume:
-            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name, vault_name))
+            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_list, vault_name))
         else:
             self.logger.info('Starting upload of %s to %s.\nDescription: %s'% (file_name if file_name else 'data from stdin', vault_name, description))
 
@@ -984,10 +988,17 @@ using %s MB parts to upload."% part_size)
         self.logger.info(msg)
 
         archive_id = writer.get_archive_id()
-        location = writer.get_location()
         sha256hash = writer.get_hash()
+        location = writer.get_location()
 
         if self.bookkeeping:
+            self.logger.info('Writing upload information into the bookkeeping database.')
+
+            # Use the alternative name as given by --name <name> if we have it.
+            file_name = alternative_name if alternative_name else file_name
+
+            # If still no name this is an stdin job, so set name accordingly.
+            file_name = file_name if file_name else 'Data from stdin.'
             file_attrs = {
                 'region': region,
                 'vault': vault_name,
@@ -999,10 +1010,10 @@ using %s MB parts to upload."% part_size)
                 'hash': sha256hash
             }
 
-            if file_name:
-                file_attrs['filename'] = file_name
-            elif stdin:
-                file_attrs['filename'] = description
+##            if file_name:
+##                file_attrs['filename'] = file_name
+##            elif stdin:
+##                file_attrs['filename'] = 'data from stdin'
 
             self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
 

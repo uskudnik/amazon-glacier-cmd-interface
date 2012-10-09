@@ -158,26 +158,40 @@ def download(args):
         # Only print result when writing to file, to not mess up the download.
         print response
 
-### Formats file sizes in human readable format. Anything bigger than TB
-### is returned is TB. Number of decimals is optional, defaults to 1.
-##def size_fmt(num, decimals = 1):
-##    fmt = "%%3.%sf %%s"% decimals
-##    for x in ['bytes','KB','MB','GB']:
-##        if num < 1024.0:
-##            return fmt % (num, x)
-##        
-##        num /= 1024.0
-##        
-##    return fmt % (num, 'TB')
+# Formats file sizes in human readable format. Anything bigger than TB
+# is returned is TB. Number of decimals is optional, defaults to 1.
+def size_fmt(num, decimals = 1):
+    fmt = "%%3.%sf %%s"% decimals
+    for x in ['bytes','KB','MB','GB']:
+        if num < 1024.0:
+            return fmt % (num, x)
+        
+        num /= 1024.0
+        
+    return fmt % (num, 'TB')
 
 @handle_errors
 def upload(args):
-    glacier = default_glacier_wrapper(args)
-    response = glacier.upload(args.vault, args.filename, args.description, args.region, args.stdin,
-                              args.partsize, args.uploadid, args.resume)
-    print "Created archive with ID: ", response[0]
-    print "Archive SHA256 tree hash: ", response[1]
 
+    # See if we got a bacula-style file set.
+    # This is /path/to/vol001|vol002|vol003
+    if args.bacula:
+        if len(args.filename) > 1:
+            raise InputError(
+                'Bacula-style file name can accept only one file name.')
+        fileset = args.filename[0].split('|')
+        if len(fileset) > 1:
+            dirname = os.path.dirname(fileset[0])
+            args.filename = [fileset[0]]
+            args.filename += [os.path.join(dirname, fileset[i]) for i in range(1, len(fileset))]
+
+    glacier = default_glacier_wrapper(args)
+    args.filename = args.filename if args.filename else [None]
+    for f in args.filename:
+        response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
+                                  args.name, args.partsize, args.uploadid, args.resume)
+        print "Created archive with ID: ", response[0]
+        print "Archive SHA256 tree hash: ", response[1]
 
 @handle_errors
 def getarchive(args):
@@ -206,6 +220,7 @@ def search(args, print_results=True):
 @handle_errors
 def inventory(args):
     glacier = default_glacier_wrapper(args)
+    print 'Checking inventory, please wait.'
     job, inventory = glacier.inventory(args.vault, args.refresh)
     if inventory:
         print "Inventory of vault: %s" % (inventory["VaultARN"],)
@@ -217,6 +232,11 @@ def inventory(args):
                    'ArchiveId': 'Archive ID',
                    'SHA256TreeHash': 'SHA256 tree hash'}
         print_output(inventory['ArchiveList'], keys=headers)
+        size = 0
+        for item in inventory['ArchiveList']:
+            size += int(item['Size'])
+
+        print 'This vault contains %s items, total size %s.'% (len(inventory['ArchiveList']), size_fmt(size))
 
     else:
         print "Inventory retrieval in progress."
@@ -350,22 +370,23 @@ def main():
     parser_rmvault.add_argument('vault',
         help='The vault to be removed.')
     parser_rmvault.set_defaults(func=rmvault)
-
-    # glacier-cmd upload <vault> <filename> [<description>] [--name <store file name>] [--partsize <part size>]
-    # glacier-cmd upload <vault> [<description>] --stdin [--name <store file name>] [--partsize <part size>]
+    
+    # glacier-cmd upload <vault> <filename> [--description <description>] [--name <store file name>] [--partsize <part size>]
+    # glacier-cmd upload <vault> --stdin [--description <description>] [--name <store file name>] [--partsize <part size>]
     parser_upload = subparsers.add_parser('upload',
         formatter_class=argparse.RawTextHelpFormatter,
         help='Upload an archive to Amazon Glacier.')
     parser_upload.add_argument('vault',
         help='The vault the archive is to be stored in.')
-    parser_upload.add_argument('filename', nargs='?', default=None,
+    group = parser_upload.add_mutually_exclusive_group(required=True)
+    group.add_argument('filename', nargs='*', default=None,
         help='''\
-The name of the local file to be uploaded.
-May be omitted if --stdin is used.''')
-    parser_upload.add_argument('--stdin', action='store_true',
+The name(s) of the local file(s) to be uploaded. Wildcards
+are accepted. Can not be used if --stdin is used.''')
+    group.add_argument('--stdin', action='store_true',
         help='''\
 Read data from stdin, instead of local file. 
-If enabled, <filename> is ignored and may be omitted.''')
+Can not be used if <filename> is given.''')
     parser_upload.add_argument('--name', default=None,
         help='''\
 Use the given name as the filename for bookkeeping 
@@ -397,7 +418,7 @@ partsize  MaxArchiveSize
 If not given, the smallest possible part size
 will be used when uploading a file, and 128 MB
 when uploading from stdin.''')
-    parser_upload.add_argument('description', nargs='?', default=None,
+    parser_upload.add_argument('--description', default=None,
         help='Description of the file to be uploaded. Use quotes \
               if your file contains spaces. (optional).')
     parser_upload.add_argument('--uploadid', default=None,
@@ -412,6 +433,11 @@ Attempt to resume an interrupted multi-part upload.
 Does not work in combination with --stdin, and
 requires bookkeeping to be enabled.
 (not implemented yet)''')
+    parser_upload.add_argument('--bacula', action='store_true',
+        help='''\
+The (single!) file name will be parsed using Bacula's
+style of providing multiple names on the command line.
+E.g.: /path/to/backup/vol001|vol002|vol003''')
     parser_upload.set_defaults(func=upload)
 
     # glacier-cmd listmultiparts <vault>
