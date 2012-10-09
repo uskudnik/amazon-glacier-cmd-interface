@@ -177,7 +177,7 @@ def upload(args):
     # This is /path/to/vol001|vol002|vol003
     if args.bacula:
         if len(args.filename) > 1:
-            raise InputError(
+            raise InputException(
                 'Bacula-style file name can accept only one file name.')
         fileset = args.filename[0].split('|')
         if len(fileset) > 1:
