@@ -203,13 +203,10 @@ def search(args, print_results=True):
                               print_results=True)
     print_output(response)
 
-
-
+@handle_errors
 def inventory(args):
-
     glacier = default_glacier_wrapper(args)
     job, inventory = glacier.inventory(args.vault, args.refresh)
-
     if inventory:
         print "Inventory of vault: %s" % (inventory["VaultARN"],)
         print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
@@ -225,6 +222,11 @@ def inventory(args):
         print "Inventory retrieval in progress."
         print "Job ID: %s."% job['JobId']
         print "Job started (time in UTC): %s."% job['CreationDate']
+
+@handle_errors
+def treehash(args):
+    glacier = default_glacier_wrapper(args)
+    print glacier.get_tree_hash(args.filename)
 
 def main():
     program_description = u"""
@@ -500,9 +502,15 @@ requires bookkeeping to be enabled.
         help='The job ID of the job to be described.')
     parser_describejob.set_defaults(func=describejob)
 
+    # glacier-cmd hash <filename>
+    parser_describejob = subparsers.add_parser('treehash',
+        help='Calculate the tree-hash (Amazon style sha256-hash) of a file.')
+    parser_describejob.add_argument('filename',
+        help='The filename to calculate the treehash of.')
+    parser_describejob.set_defaults(func=treehash)
 
     # TODO args.logtostdout becomes false when parsing the remaining_argv
-    # so here we bridge this. A bad hack but it works.
+    # so here we bridge this. An ugly hack but it works.
     logtostdout = args.logtostdout
 
     # Process the remaining arguments.

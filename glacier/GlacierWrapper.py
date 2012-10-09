@@ -17,6 +17,7 @@ import re
 import traceback
 import glaciercorecalls
 import select
+import hashlib
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -1347,6 +1348,28 @@ your archive ID is correct, and start a retrieval job using \
             inventory_job = self.describejob(vault_name, new_job['JobId'])
 
         return (inventory_job, inventory)
+
+    def get_tree_hash(self, file_name):
+        """
+        Calculate the tree hash of a file.
+
+        :param file_name: the file name to calculate a hash of.
+        :type file_name: str
+
+        :returns: the tree hash of the file.
+        :rtype: str
+        """
+        try:
+            reader = open(file_name, 'rb')
+        except IOError as e:
+            raise InputException(
+                "Could not access the file given.",
+                cause=e)
+
+        hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
+        return glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hashes))
+
+        
     
 
     def __init__(self, aws_access_key, aws_secret_key, region,
