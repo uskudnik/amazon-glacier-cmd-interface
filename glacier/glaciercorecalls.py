@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-.. module:: glaciercorecalls
+.. module:: botocorecalls
    :platform: Unix, Windows
-   :synopsis: Interface to various API calls to interact with Amazon Glacier.
+   :synopsis: boto calls to access Amazon Glacier.
    
 This depends on the boto library, use version 2.6.0 or newer.
 
@@ -22,266 +22,52 @@ import json
 import sys
 import time
 
-from boto.connection import AWSAuthConnection
+import boto.glacier.layer1
+
 from glacierexception import *
 
-class GlacierConnection(AWSAuthConnection):
-    """
-    This class creates the authenticated connection with AWS, needed
-    to use Glacier (and other services such as SimpleDB).
+# Placeholder, effectively renaming the class.
+class GlacierConnection(boto.glacier.layer1.Layer1):
 
-    Example:
-    glacierconn = GlacierConnection(AWS_ACCESS_KEY, AWS_SECRET_ACCESS_KEY)
-    """
+    pass
 
-    def __init__(self, aws_access_key_id=None, aws_secret_access_key=None,
-                 region="us-east-1",
-                 is_secure=True, port=None, proxy=None, proxy_port=None,
-                 proxy_user=None, proxy_pass=None,
-                 host=None, debug=0, https_connection_factory=None,
-                 path='/', provider='aws',  security_token=None,
-                 suppress_consec_slashes=True):
-        """
-        Constructor.
-        Takes a host of options, the only required options are
-        aws_access_key_id and aws_secret_key_id.
-
-        :param aws_access_key_id: your AWS access key.
-        :type aws_access_key_id: str
-        :param aws_secret_access_key: your AWS secret key.
-        :type aws_secret_access_key: str
-        :param region: the region to connect to.
-        :type region: str
-        :param is_secure: True
-        :type is_secure: boolean
-        :param port: None
-        :type port: 
-        :param proxy: None
-        :type proxy: 
-        :param proxy_port: None
-        :type proxy_port:
-        :param proxy_user: None
-        :type proxy_user: 
-        :param proxy_pass: None
-        :type proxy_pass:
-        :param host: None
-        :type host:
-        :param debug: 0
-        :type debug: int
-        :param https_connection_factory: None
-        :type https_connection_factory:
-        :param path: '/'
-        :type path: str
-        :param provider: 'aws'
-        :type provider: str
-        :param security_token: None
-        :type security_token: 
-        :param suppress_consec_slashes: True
-        :type suppress_consec_slashes: boolean
-        """
-        if host is None:
-            host = 'glacier.%s.amazonaws.com' % (region,)
-        AWSAuthConnection.__init__(self, host,
-                aws_access_key_id, aws_secret_access_key,
-                is_secure, port, proxy, proxy_port, proxy_user, proxy_pass,
-                debug=debug, https_connection_factory=https_connection_factory,
-                path=path, provider=provider, security_token=security_token,
-                suppress_consec_slashes=suppress_consec_slashes)
-
-    def _required_auth_capability(self):
-        return ["hmac-v4"]
-
-    def get_vault(self, vault_name):
-        """ Get a connection to a vault.
-
-        :param vault_name: the name of the vault.
-        :type vault_name: str
-
-        :returns: a GlacierVault object.
-        """
-        return GlacierVault(self, vault_name)
-
-    def make_request(self, method, path, headers=None, data='', host=None,
-                     auth_path=None, sender=None, override_num_retries=None,
-                     params=None):
-
-        """ Make an http request to Amazon Glacier.
-
-        :param method:
-        :type method: str
-        :param path:
-        :type path: str
-        :param headers: the http headers
-        :type headers: dict
-        :param data: ''
-        :type data: str
-        :param host: None
-        :type host:
-        :param auth_path: None
-        :type auth_path: 
-        :param sender: None
-        :type sender: 
-        :param override_num_retries: None
-        :type override_num_retries: 
-        :param params: None
-        :type params:
-
-        :returns: a make_request function.
-        """
-
-        headers = headers or {}
-        headers.setdefault("x-amz-glacier-version","2012-06-01")
-        return super(GlacierConnection, self).make_request(method, path, headers,
-                                                           data, host, auth_path,
-                                                           sender, override_num_retries,
-                                                           params=params)
-
-    def list_vaults(self, marker=None):
-        """Returns an overview of all available vaults.
-
-        :param marker: None
-        :type marker:
-
-        :returns:
-        """
-        if marker:
-            return self.make_request(method="GET", path='/-/vaults', params={'marker': marker})
-        else:
-            return self.make_request(method="GET", path='/-/vaults')
-
-class GlacierVault(object):
-    """
-    Vault management.
-    """
-    def __init__(self, connection, vault_name):
-        """
-        Constructor.
-
-        :param connection: a connection object to Amazon Glacier.
-        :type connection: GlacierConnection
-        :param vault_name: the vault name.
-        :type vault_name: str
-        """
-        self.connection = connection
-        self.vault_name = vault_name
-
-    def retrieve_archive(self, archive, sns_topic=None, description=None):
-        """
-        Initiate a archive retrieval job to download the data from an
-        archive.
-        """
-        params = {"Type": "archive-retrieval", "ArchiveId": archive}
-        if sns_topic is not None:
-            params["SNSTopic"] = sns_topic
-        if description is not None:
-            params["Description"] = description
-        job = GlacierJob(self, params)
-        job.initiate()
-        return job
-
-    def retrieve_inventory(self, format=None, sns_topic=None, description=None):
-        """
-        Initiate a inventory retrieval job to list the contents of the archive.
-        """
-        params = {"Type": "inventory-retrieval"}
-        if sns_topic is not None:
-            params["SNSTopic"] = sns_topic
-        if description is not None:
-            params["Description"] = description
-        if format is not None:
-            params['Format'] = format
-        job = GlacierJob(self, params)
-        job.initiate()
-        return job
-
-    def make_request(self, method, extra_path, headers=None, data="", params=None):
-        if extra_path:
-            uri = "/-/vaults/%s%s" % (self.vault_name, extra_path,)
-        else:
-            uri = "/-/vaults/%s" % (self.vault_name,)
-        return self.connection.make_request(method, uri, headers, data)
-
-    def get_job(self, job_id):
-        return GlacierJob(self, job_id=job_id)
-
-    def list_jobs(self):
-
-        response = self.make_request("GET", "/jobs", None)
-
-        if response.status != 200:
-            resp = json.loads(response.read())
-            raise ResponseException(
-                "List jobs expected response status 200 (got %s):\n%s"\
-                    % (response.status, response.read()),
-                cause=resp['message'],
-                code=resp['code'])
-        
-        return response
-
-    def create_vault(self):
-        return self.make_request("PUT", extra_path=None)
-
-    def delete_vault(self):
-        return self.make_request("DELETE", extra_path=None)
-
-    def describe_vault(self):
-        return self.make_request("GET", extra_path=None)
-
-    def list_multipart_uploads(self, marker=None):
-        if marker:
-            return self.make_request("GET", extra_path="/multipart-uploads", params={'marker': marker})
-        else:
-            return self.make_request("GET", extra_path="/multipart-uploads")
-
-    def list_parts(self, multipart_id, marker=None):
-        if marker:
-            return self.make_request("GET", extra_path="/multipart-uploads/%s" % (multipart_id, ), params={'marker': marker})
-        else:
-            return self.make_request("GET", extra_path="/multipart-uploads/%s" % (multipart_id, ))
-
-    def delete_archive(self, archive_id):
-        return self.make_request("DELETE", extra_path="/archives/%s" % (archive_id, ))
-
-    def abort_multipart(self, multipart_id):
-        return self.make_request("DELETE", extra_path="/multipart-uploads/%s" % (multipart_id, ))
-
-
-class GlacierJob(object):
-    def __init__(self, vault, params=None, job_id=None):
-        self.vault = vault
-        self.params = params
-        self.job_id = job_id
-
-    def initiate(self):
-        headers = {
-                    "x-amz-glacier-version": "2012-06-01",
-                  }
-        response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
-        if response.status != 202:
-            resp = json.loads(response.read())
-            raise ResponseException(
-                "Initiating job expected response status 202 (got %s):\n%s"\
-                    % (response.status, response.read()),
-                cause=resp['message'],
-                code=resp['code'])
-
-##        response.read()
-        self.job_id = response.getheader("x-amz-job-id")
-        self.location = response.getheader("Location")
-
-    def get_output(self, range_from=None, range_to=None):
-        headers = {}
-        if range_from is not None or range_to is not None:
-            if range_from is None or range_to is None:
-                raise InputException (
-                    "If you specify one of range_from or range_to you must specify the other.")
-
-            headers["Range"] = "bytes %d-%d" % (range_from, range_to)
-        return self.vault.make_request("GET", "/jobs/%s/output" % (self.job_id,))
-
-    def job_status(self):
-        response = self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
-        return self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
+    
+##class GlacierJob(object):
+##    def __init__(self, vault, params=None, job_id=None):
+##        self.vault = vault
+##        self.params = params
+##        self.job_id = job_id
+##
+##    def initiate(self):
+##        headers = {
+##                    "x-amz-glacier-version": "2012-06-01",
+##                  }
+##        response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
+##        if response.status != 202:
+##            resp = json.loads(response.read())
+##            raise ResponseException(
+##                "Initiating job expected response status 202 (got %s):\n%s"\
+##                    % (response.status, response.read()),
+##                cause=resp['message'],
+##                code=resp['code'])
+##
+####        response.read()
+##        self.job_id = response.getheader("x-amz-job-id")
+##        self.location = response.getheader("Location")
+##
+##    def get_output(self, range_from=None, range_to=None):
+##        headers = {}
+##        if range_from is not None or range_to is not None:
+##            if range_from is None or range_to is None:
+##                raise InputException (
+##                    "If you specify one of range_from or range_to you must specify the other.")
+##
+##            headers["Range"] = "bytes %d-%d" % (range_from, range_to)
+##        return self.vault.make_request("GET", "/jobs/%s/output" % (self.job_id,))
+##
+##    def job_status(self):
+##        response = self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
+##        return self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
 
 def chunk_hashes(data):
     """
@@ -325,37 +111,28 @@ class GlacierWriter(object):
     """
     DEFAULT_PART_SIZE = 128 # in MB
     
-    def __init__(self, connection, vault, description=None, part_size=DEFAULT_PART_SIZE, logger=None):
-        self.part_size = part_size * 1024 * 1024
-        self.vault = vault
+    def __init__(self, connection, vault_name,
+                 description=None, part_size_in_bytes=DEFAULT_PART_SIZE*1024*1024,
+                 uploadid=None, logger=None):
+
+        self.part_size = part_size_in_bytes
+        self.vault_name = vault_name
         self.connection = connection
-        self.location = None
+##        self.location = None
         self.logger = logger
+
+        if uploadid:
+            self.uploadid = uploadid
+        else:
+            response = self.connection.initiate_multipart_upload(self.vault_name,
+                                                                 self.part_size,
+                                                                 description)
+            self.uploadid = response['UploadId']
 
         self.uploaded_size = 0
         self.tree_hashes = []
         self.closed = False
-
-        headers = {
-                    "x-amz-glacier-version": "2012-06-01",
-                    "x-amz-part-size": str(self.part_size),
-                    "x-amz-archive-description": description
-                  }
-        response = self.connection.make_request(
-            "POST",
-            "/-/vaults/%s/multipart-uploads" % (self.vault,),
-            headers,
-            "")
-        if response.status != 201:
-            resp = json.loads(response.read())
-            raise ResponseException(
-                "Multipart-start expected response status 201 (got %s):\n%s"\
-                    % (response.status, response.read()),
-                cause=resp['message'],
-                code=resp['code'])
-        
-##        response.read()
-        self.upload_url = response.getheader("location")
+##        self.upload_url = response.getheader("location")
 
     def write(self, data):
         
@@ -366,8 +143,7 @@ class GlacierWriter(object):
         if len(data) > self.part_size:
             raise InputException (
                 'Block of data provided must be equal to or smaller than the set block size.')
-
-        # Create a request and sign it
+        
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
         headers = {
@@ -379,74 +155,66 @@ class GlacierWriter(object):
                     "x-amz-sha256-tree-hash": bytes_to_hex(part_tree_hash),
                     "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
+        
+        self.connection.upload_part(self.vault_name,
+                                    self.uploadid,
+                                    hashlib.sha256(data).hexdigest(),
+                                    bytes_to_hex(part_tree_hash),
+                                    (self.uploaded_size, self.uploaded_size+len(data)-1),
+                                    data)
 
-        retries = 0
-        while True:
-            response = self.connection.make_request(
-                "PUT",
-                self.upload_url,
-                headers,
-                data)
-
-            # Success.
-            if response.status == 204:
-                break
-
-            # Time-out recieved: sleep for 5 minutes and try again.
-            # Do not try more than five times; after that it's over.
-            elif response.status == 408:
-                if retries >= 5:
-                    resp = json.loads(response.read())
-                    raise ResonseException(
-                        resp['message'],
-                        cause='Timeout',
-                        code=resp['code'])
-                        
-                if self.logger:
-                    logger.warning(resp['message'])
-                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
-                    
-                retries += 1
-                time.sleep(300)
-
-            else:
-                raise ResponseException(
-                    "Multipart upload part expected response status 204 (got %s):\n%s"\
-                        % (response.status, response.read()),
-                    cause=resp['message'],
-                    code=resp['code'])
+##        retries = 0
+##        while True:
+##            response = self.connection.make_request(
+##                "PUT",
+##                self.upload_url,
+##                headers,
+##                data)
+##
+##            # Success.
+##            if response.status == 204:
+##                break
+##
+##            # Time-out recieved: sleep for 5 minutes and try again.
+##            # Do not try more than five times; after that it's over.
+##            elif response.status == 408:
+##                if retries >= 5:
+##                    resp = json.loads(response.read())
+##                    raise ResonseException(
+##                        resp['message'],
+##                        cause='Timeout',
+##                        code=resp['code'])
+##                        
+##                if self.logger:
+##                    logger.warning(resp['message'])
+##                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
+##                    
+##                retries += 1
+##                time.sleep(300)
+##
+##            else:
+##                raise ResponseException(
+##                    "Multipart upload part expected response status 204 (got %s):\n%s"\
+##                        % (response.status, response.read()),
+##                    cause=resp['message'],
+##                    code=resp['code'])
 
 ##        response.read()
         self.uploaded_size += len(data)
 
     def close(self):
+        
         if self.closed:
             return
             
         # Complete the multiplart glacier upload
-        headers = {
-                    "x-amz-glacier-version": "2012-06-01",
-                    "x-amz-sha256-tree-hash": bytes_to_hex(tree_hash(self.tree_hashes)),
-                    "x-amz-archive-size": str(self.uploaded_size)
-                  }
-        response = self.connection.make_request(
-            "POST",
-            self.upload_url,
-            headers,
-            "")
-
-        if response.status != 201:
-            resp = json.loads(response.read())
-            raise ResponseException (
-                "Multipart-complete expected response status 204 (got %s):\n%s"\
-                    % (response.status, response.read()),
-                cause=resp['message'],
-                code=resp['code'])
-
-##        response.read()
-        self.archive_id = response.getheader("x-amz-archive-id")
-        self.location = response.getheader("Location")
-        self.hash_sha256 = response.getheader("x-amz-sha256-tree-hash")
+        response = self.connection.complete_multipart_upload(self.vault_name,
+                                                             self.uploadid,
+                                                             bytes_to_hex(tree_hash(self.tree_hashes)),
+                                                             self.uploaded_size)
+        self.archive_id = response['ArchiveId']
+        self.location = response['Location']
+        self.hash_sha256 = bytes_to_hex(tree_hash(self.tree_hashes))
         self.closed = True
 
     def get_archive_id(self):

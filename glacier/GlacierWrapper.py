@@ -15,7 +15,8 @@ import time
 import sys
 import re
 import traceback
-import glaciercorecalls
+##import glaciercorecalls
+import botocorecalls
 import select
 
 from functools import wraps
@@ -23,8 +24,8 @@ from dateutil.parser import parse as dtparse
 from datetime import datetime
 from pprint import pformat
 
-from glaciercorecalls import GlacierConnection, GlacierWriter
-from glaciercorecalls import GlacierVault, GlacierJob
+from botocorecalls import GlacierConnection, GlacierWriter
+
 from glacierexception import *
 
 class log_class_call(object):
@@ -179,7 +180,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                                       self.region)
                     self.glacierconn = GlacierConnection(self.aws_access_key,
                                                          self.aws_secret_key,
-                                                         region=self.region)
+                                                         region_name=self.region)
                 except boto.exception.AWSConnectionError as e:
                     raise ConnectionException(
                         "Cannot connect to Amazon Glacier.",
@@ -234,41 +235,6 @@ Connecting to Amazon SimpleDB domain %s with
             return func(*args, **kwargs)
 
         return sdb_connect_wrap
-
-    def _check_response(self, response):
-        """
-        Checks if response is correct and raise exception if it's not.
-
-        :param response: the response as receved from Amazon.
-        :type response: response
-
-        :returns: True if valid, raises exception otherwise.
-        :rtype: boolean
-        :raises: GlacierWrapper.ResponseException
-        """
-        if response.status in [403, 404]:
-            try:
-                jdata = json.loads(response.read())
-                message = '%s %s\n%s'% (response.status,
-                                       response.reason,
-                                       jdata['message'])
-            except (ValueError, KeyError) as e:
-                raise ResponseException(
-                    "Problem parsing response: %s"% jdata,
-                    cause=e)
-            
-            code = {403: ('Error_403',
-                          'Access forbidden - please check your credentials.'),
-                    404: ('Error_404',
-                          'Object not found - check name and try again.')
-                    }[response.status]
-            raise ResponseException(
-                message,
-                code=code[0],
-                cause=code[1])
-
-        self.logger.debug('Amazon response OK.')
-        return True
 
     @log_class_call('Checking whether vault name is valid.',
                      'Vault name is valid.')
@@ -455,15 +421,18 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             
         return fmt % (num, 'TB')
 
-    def _get_hash(self, data):
-        fo = glaciercorecalls.chunk_hashes(data)
-        th = glaciercorecalls.tree_hash(fo)
-        return glaciercorecalls.bytes_to_hex(th)
+    def _decode_error_message(self, e):
+        try:
+            e = json.loads(e)['message']
+        except:
+            e = None
+
+        return e
 
     @glacier_connect
     @log_class_call("Listing vaults.",
                     "Listing vaults complete.")
-    def lsvault(self):
+    def lsvault(self, limit=None):
         """
         Lists available vaults.
         
@@ -481,19 +450,26 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
         """
+        marker = None
+        vault_list = []
+        while True:
+            try:
+                response = self.glacierconn.list_vaults(marker=marker)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to recieve vault list.',
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
 
-        response = self.glacierconn.list_vaults()
-        self.logger.debug('list_vaults response received.')
-        self._check_response(response)
-        try:
-            jdata = response.read()
-            self.logger.debug(jdata)
-            vault_list = json.loads(jdata)['VaultList']
-        except (ValueError, KeyError) as e:
-            raise ResponseException(
-                "Problem parsing vault list response: %s"% jdata,
-                cause=e)
+            vault_list += response.copy()['VaultList']
+            marker = response.copy()['Marker']
+            if limit and len(vault_list) >= limit:
+                vault_list = vault_list[:limit]
+                break
 
+            if not marker:
+                break
+        
         return vault_list
 
     @glacier_connect
@@ -507,19 +483,21 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :type vault_name: str
 
         :returns: Response data.
-        :rtype: list ::
-        
-        [('x-amzn-requestid', 'Example_8WVoVPYabvPNT9pFLbalAtQhMzzu2Tl_Example'),
-         ('date', 'Mon, 01 Oct 2012 13:24:55 GMT'),
-         ('content-length', '2'),
-         ('content-type', 'application/json'),
-         ('location', '/335522851586/vaults/your_vault_name')]
+        :rtype: boto.glacier.response.GlacierResponse        
          
         :raises: GlacierWrapper.CommunicationException
         """
 
         self._check_vault_name(vault_name)
-        return GlacierVault(self.glacierconn, vault_name=vault_name).create_vault().getheaders()
+        try:
+            response = self.glacierconn.create_vault(vault_name)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to create vault with name %s.'% vault_name,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+
+        return response.copy()
 
     @glacier_connect
     @log_class_call("Removing vault.",
@@ -541,7 +519,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        return GlacierVault(self.glacierconn, vault_name=vault_name).delete_vault().getheaders()
+        try:
+            response = self.glacierconn.delete_vault(vault_name)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to remove vault with name %s.'% vault_name,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
+        return response.copy()
+
 
     @glacier_connect
     @log_class_call("Requesting vault description.",
@@ -567,23 +554,21 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         """
 
         self._check_vault_name(vault_name)
-        response = GlacierVault(self.glacierconn, vault_name=vault_name).describe_vault()
-        self._check_response(response)
         try:
-            jdata = response.read()
-            self.logger.debug(jdata)
-            res = json.loads(jdata)
-        except ValueError as e:
+            response = self.glacierconn.describe_vault(vault_name)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
-                'Failed to decode response: %s'% jdata,
-                cause=e)
-
-        return res
+                'Failed to get description of vault with name %s.'% vault_name,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
+        return response.copy()
 
     @glacier_connect
     @log_class_call("Requesting jobs list.",
                     "Active jobs list received.")
-    def list_jobs(self, vault_name):
+    def list_jobs(self, vault_name, completed=None,
+                  status_code=None, limit=None):
         """
         Provides a list of current Glacier jobs with status and other
         job details.
@@ -614,21 +599,27 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.ResponseException
         """
         self._check_vault_name(vault_name)
-        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-        response = gv.list_jobs()
-        self._check_response(response)
+        marker = None
+        job_list = []
+        while True:
+            try:
+                response = self.glacierconn.list_jobs(vault_name, completed=completed,
+                                                      status_code=status_code, marker=marker)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to recieve the jobs list for vault %s.'% vault_name,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
+            job_list += response.copy()['JobList']
+            marker = response.copy()['Marker']
+            if limit and len(job_list) >= limit:
+                job_list = job_list[:limit]
+                break
 
-        try:
-            jdata = response.read()
-            self.logger.debug(jdata)
-            job_list = json.loads(jdata)
-        except ValueError:
-            raise ResponseException(
-                "Problem parsing job list response: %s"% jdata,
-                cause=e)
+            if not marker:
+                break
 
-        
-        return job_list['JobList']
+        return job_list
 
     @glacier_connect
     @log_class_call("Requesting job description.",
@@ -665,20 +656,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         self._check_vault_name(vault_name)
         self._check_id (job_id, 'JobId')
-        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-        response = GlacierJob(gv, job_id=job_id).job_status()
-        self._check_response(response)
         try:
-            jdata = response.read()
-            self.logger.debug(jdata)
-            res = json.loads(jdata)
-        except ValueError as e:
+            response = self.glacierconn.describe_job(vault_name, job_id)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
-                "Problem parsing job description response: %s"% jdata,
-                cause=e)
-
-        return res
-
+                'Failed to get description of job with job id %s.'% job_id,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
+        return response.copy()
+    
     @glacier_connect
     @log_class_call("Aborting multipart upload.",
                     "Multipart upload successfully aborted.")
@@ -703,15 +690,20 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         
         self._check_vault_name(vault_name)
         self._check_id(upload_id, "UploadId")
-        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-        response = gv.abort_multipart(upload_id)
-        self._check_response(response)
-        return response.getheaders()
-    
+        try:
+            response = self.glacierconn.abort_multipart_upload(vault_name, upload_id)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to abort multipart upload with id %s.'% upload_id,
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
+        return response.copy()
+     
     @glacier_connect
     @log_class_call("Listing multipart uploads.",
                     "Multipart uploads list received successfully.")
-    def listmultiparts(self, vault_name):
+    def listmultiparts(self, vault_name, limit=None):
         """
         Provids a list of all currently active multipart uploads.
 
@@ -731,25 +723,27 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises: GlacierWrapper.CommunicationException
         """
         self._check_vault_name(vault_name)
-        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-        response = gv.list_multipart_uploads()
-        self._check_response(response)
-        try:
-            jdata = response.read()
-            self.logger.debug(jdata)
-            res = json.loads(jdata)
-        except ValueError as e:
-            raise ResponseException(
-                "Problem parsing listmultiparts response: %s"% jdata,
-                cause=e)
+        marker = None
+        uploads = []
+        while True:
+            try:
+                response = self.glacierconn.list_multipart_uploads(vault_name, marker=marker)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to get a list of multipart uploads for vault %s.'% vault_name,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
 
-        if res.has_key('UploadsList'):
-            res = res['UploadsList']
-
-        else:
-            res = None
-
-        return res
+            uploads += response.copy()['UploadsList']
+            marker = response.copy()['Marker']
+            if limit and len(uploads) >= limit:
+                uploads = uploads[:limit]
+                break
+            
+            if not marker:
+                break
+            
+        return uploads
 
     @glacier_connect
     @sdb_connect
@@ -811,6 +805,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             raise InputException(
                 "There is nothing to upload.")
 
+        # Log the kind of upload we're giong to do.
         if uploadid:
             self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name if file_name else 'data from stdin', vault_name))
         elif resume:
@@ -833,18 +828,14 @@ e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_siz
 
             part_size = ps
 
+        # Check whether user specified value is big enough, and adjust if needed.
         if total_size > part_size*1024*1024*self.MAX_PARTS:
-            
-            # User specified a value that is too small. Adjust.
             part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
             self.logger.warning("Part size given is too small; \
 using %s MB parts to upload."% part_size)
 
-        # Initialise the writer task.
-        read_part_size = part_size * 1024 * 1024
-        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                               part_size=part_size, logger=self.logger)
-
+        part_size_in_bytes = part_size * 1024 * 1024
+        
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -855,110 +846,109 @@ using %s MB parts to upload."% part_size)
                 if uploadid == upload['MultipartUploadId']:
                     self.logger.debug('Found a matching upload id. Continuing upload resumption attempt.')
                     self.logger.debug(upload)
+                    part_size_in_bytes = upload['PartSizeInBytes']
                     break
             else:
-                self.logger.warning('UploadId not found; starting new upload for this job.')
+                raise InputException(
+                    'Can not resume upload of this data as no existing job with this uploadid could be found.')
 
-        # Keys: ArchiveDescription, CreationDate, MultipartUploadId,
-        #       PartSizeInBytes, VaultARN
-        # Check on the data in the existing upload.
-        #
-        # Response on list_parts:
-        # {"ArchiveDescription":"Users.2012-10-07_01.05.00_10 (Full, since )",
-        #  "CreationDate":"2012-10-06T18:11:23.987Z",
-        #  "Marker":"gob11YWcKGyH6pDLWJb46gCV558_quunnFXmLcfSMOC7VErtQw",
-        #  "MultipartUploadId":"fhg8kk7p5zIr1UL0P3hI1GT_ojWrULHXNuRxCpMSn9Lw7NeSkoN8M0nysShNFiHwOoZaxa_BoxStda9373n0OJV9ZMRz",
-        #  "PartSizeInBytes":1048576,
-        #  "Parts":[{"RangeInBytes":"0-1048576",
-        #            "SHA256TreeHash":"09475d0fb20833e9e476ead57a22cb81e8d1fe8c1600fa9aefc667a89a9a51c9"},
-        #           {"RangeInBytes":"1048576-2097152",
-        #            "SHA256TreeHash":"6cf0cc77ef4b03b77044c17c589c7d004b5e2fd5ce82d5a686db555db4364b10"},
-        #           ...
-        #          ],
-        #  "VaultARN":"arn:aws:glacier:us-east-1:335522851586:vaults/Squirrel_backup"
-        # }
+        # Initialise the writer task.
+        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
+                               part_size_in_bytes=part_size_in_bytes, uploadid=uploadid, logger=self.logger)
 
         if upload:
-
-            # Fetch a list of already uploaded parts and their SHA hash.
-            read_part_size = upload['PartSizeInBytes']
             marker = None
-            gv = GlacierVault(self.glacierconn, vault_name=vault_name)
             while True:
-                if not marker:
-                    response = gv.list_parts(uploadid)
-                else:
-                    print 'Have marker %s.'% marker
-                    response = gv.list_parts(uploadid, marker=marker)
-                    
+
+                # Fetch a list of already uploaded parts and their SHA hashes.
                 try:
-                    jdata = response.read()
-                    self.logger.debug(jdata)
-                    list_parts_response = json.loads(jdata)
-                except ValueError as e:
+                    response = self.glacierconn.list_parts(vault_name, uploadid, marker=marker)
+                except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                     raise ResponseException(
-                        "Cannot get list of parts: %s"% jdata,
-                        cause=e)
+                        'Failed to get a list already uploaded parts for interrupted upload %s.'% uploadid,
+                        cause=self._decode_error_message(e.body),
+                        code=e.code)
                 
-                if response.status != 200:
-                    raise ResponseException(
-                        "Reading parts list expected response status 200 (got %s):\n%s"\
-                            % (response.status, jdata),
-                        cause=list_parts_response['message'],
-                        code=list_parts_response['code'])
-
-                # Process parts list.
-                # Parts are expected to be delivered in order, starting at 0 bytes.
-                # reader.seek(pos) go to position pos.
-                # reader.read([bytes]) reads [bytes] bytes, or until eof.
-                # raeder.tell() gives current position.
-                partlist = []
+                list_parts_response = response.copy()
                 current_position = 0
-                marker = list_parts_response['Marker']
-                p = len(list_parts_response['Parts'])
-                print 'number of parts received: %s, marker: %s, range %s.'% (p, marker, list_parts_response['Parts'][0]['RangeInBytes'])
-                if p == 0:
-                    break
 
-            sys.exit()
-            
-            for part in list_parts_response['Parts']:
-                start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                if not start == current_position:
-                    if stdin:
+                # Process the parts list.
+                # For each part of data, take the matching data range from
+                # the local file, and compare hashes.
+                # If recieving data over stdin, the parts must be sequential
+                # and the first must start at 0. For file, we can use the seek()
+                # function to handle non-sequential parts.
+                for part in list_parts_response['Parts']:
+                    start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
+                    if not start == current_position:
+                        if stdin:
+                            raise InputException(
+                                'Cannot verify non-sequential upload data from stdin.')
+                        reader.seek(start)
+
+                    # Try to read the chunk of data, and take the hash if we
+                    # have received anything.
+                    # If no data or hash mismatch, stop checking raise an
+                    # exception.
+                    data = reader.read(stop-start)
+                    if data:
+                        data_hash = botocorecalls.tree_hash(botocorecalls.chunk_hashes(data))
+                        if botocorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
+                            self.logger.debug('Part %s hash matches.')
+                            writer.tree_hashes.append(data_hash)
+                        else:
+                            raise InputException(
+                                'Received data does not match uploaded data; please check your uploadid and try again.',
+                                cause='SHA256 hash mismatch.')
+                        
+                    else:
                         raise InputException(
-                            'Cannot verify non-sequential upload data from stdin.')
-                    reader.seek(start)
+                            'Received data does not match uploaded data; please check your uploadid and try again.',
+                            cause='No or not enough data to match.')
 
-                data = reader.read(stop-start)
-                data_hash = self._get_hash(data)
-                if data_hash == part['SHA256TreeHash']:
-                    self.logger.debug('Part %s hash matches.')
-                    print 'Part %s hash matches.'% part['RangeInBytes']
-                else:
-                    self.logger.warning('Hash mismatch on part %s; aborting check.'% part['RangeInBytes'])
-                    print 'Part %s hash mismatch.'% part['RangeInBytes']
-                    upload = None
-                    print 'exiting.'
-                    sys.exit()
+                # If a marker is present, this means there are more pages
+                # of parts available. If no marker, we have the last page.
+                marker = list_parts_response['Marker']
+                writer.uploaded_size = stop
+                if not marker:
                     break
 
-                writer.uploaded_size = stop
-            print 'already uploaded: %s.'% self._size_fmt(stop)
-            print 'exiting.'
-            sys.exit()
-            
+                if total_size > 0:
+                    msg = '\rChecked %s of %s (%s%%).' \
+                          % (self._size_fmt(writer.uploaded_size),
+                             self._size_fmt(total_size),
+                             int(100 * writer.uploaded_size/total_size))
+                else:
+                    msg = '\rChecked %s.' \
+                          % (self._size_fmt(writer.uploaded_size))
+                    
+                self._progress(msg)
+
+            # Finished checking; log this and print the final status update
+            # before resuming the upload.
+            self.logger.info('Already uploaded: %s. Continuing from there.'% self._size_fmt(stop))
+            if total_size > 0:
+                msg = '\rChecked %s of %s (%s%%). Check done; resuming upload.' \
+                      % (self._size_fmt(writer.uploaded_size),
+                         self._size_fmt(total_size),
+                         int(100 * writer.uploaded_size/total_size))
+            else:
+                msg = '\rChecked %s. Check done; resuming upload.' \
+                      % (self._size_fmt(writer.uploaded_size))
+
+            self._progress(msg)
                 
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
-        for part in iter((lambda:reader.read(read_part_size)), ''):
+        start_bytes = writer.uploaded_size
+        for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
             writer.write(part)
             current_time = time.time()
-            overall_rate = int(writer.uploaded_size/(current_time - start_time))
+            overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
             if total_size > 0:
                 
                 # Calculate transfer rates in bytes per second.
-                current_rate = int(read_part_size/(current_time - previous_time))
+                current_rate = int(part_size_in_bytes/(current_time - previous_time))
 
                 # Estimate finish time, based on overall transfer rate.
                 if overall_rate > 0:
@@ -975,14 +965,13 @@ using %s MB parts to upload."% part_size)
                          self._size_fmt(current_rate, 2),
                          self._size_fmt(overall_rate, 2),
                          eta)
-                self._progress(msg)
 
             else:
                 msg = '\rWrote %s. Rate %s/s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(overall_rate, 2))
-                self._progress(msg)
 
+            self._progress(msg)
             previous_time = current_time
             self.logger.debug(msg)
 
@@ -1023,7 +1012,7 @@ using %s MB parts to upload."% part_size)
     @glacier_connect
     @log_class_call("Processing archive retrieval job.",
                     "Archive retrieval job response received.")
-    def getarchive(self, vault, archive):
+    def getarchive(self, vault_name, archive_id):
         """
         Requests Amazon Glacier to make archive available for download.
         Returns a tuple (action, job status, job id, search results)
@@ -1043,71 +1032,56 @@ using %s MB parts to upload."% part_size)
         :param archive: ArchiveID of archive to be retrieved.
         :type archive: str
 
-        :returns: Tuple of Vault job and Glacier job
+        :returns: Tuple of (status, job, JobId)
                   TODO: Return example
-        :rtype: (json, json)
+        :rtype: (str, dict, str)
         """
 
         results = None
-        self._check_vault_name(vault)
-        self._check_id(archive, 'ArchiveId')
-            
-##        else:
-##            if file_name:
-##                results = search(file_name=file_name)
-##            elif search_term:
-##                results = search(search_term=search_term)
-##            else:
-##                raise InputException(
-##                    "Must provide at least one of archive ID, a file name or a search term.")
-##
-##            if len(results) == 0:
-##                raise InputException(
-##                    "No results.")
-##
-##            if len(results) > 1:
-##                raise InputException(
-##                    "Too many results; please narrow down your search terms.")
-##
-##            archive = results[0]['archive_id']
-
-        # We have a unique result; check whether we have a retrieval job
-        # running for it.
-        job_list = self.listjobs(vault)
+        self._check_vault_name(vault_name)
+        self._check_id(archive_id, 'ArchiveId')
+        
+        # Check whether we have a retrieval job for the archive.
+        job_list = self.list_jobs(vault_name)
         for job in job_list:
-            if job['ArchiveId'] == archive:
-                
-                # no need to start another archive retrieval
-                if not job['Completed']:
-                    return ('running', job, None, results)
-                
+            if job['ArchiveId'] == archive_id:
                 if job['Completed']:
-                    job2 = GlacierJob(gv, job_id=job['JobId'])
-                    return ('ready', job, job2, results)
+                    return ('ready', job, job['JobId'])
 
-        # No job found related to this archive, start a new job.        
-        job = gv.retrieve_archive(archive)
-        return ("initiated", job, None, results)
+                return ('running', job, None)
+            
+        # No job found related to this archive, start a new job.
+        job_data = {'ArchiveId': archive_id,
+                    'Type': archive-retrieval}
+        try:
+            response = self.glacierconn.initiate_job(vault_name, job_data)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to initiate an archive retrieval job for archive %s in vault %s.'% (archive_id, vault_name),
+                cause=self._decode_error_message(e.body),
+                code=e.code)
+        
+        job = response.copy()
+        return ('initiated', job, None)
 
     @glacier_connect
     @sdb_connect
     @log_class_call("Download an archive.",
                     "Download archive done.")
-    def download(self, vault, archive, out_file=None, overwrite=False):
+    def download(self, vault_name, archive_id, out_file=None, overwrite=False):
         """
         Download a file from Glacier, and store it in out_file.
         If no out_file is given, the file will be dumped on stdout.
         """
 
         # Sanity checking on the input.
-        self._check_vault_name(vault)
-        self._check_id(archive, 'ArchiveId')
+        self._check_vault_name(vault_name)
+        self._check_id(archive_id, 'ArchiveId')
 
         # Check whether the requested file is available from Amazon Glacier.
-        gv = GlacierVault(self.glacierconn, vault_name=vault)
-        job_list = self.listjobs(vault)
+        job_list = self.list_jobs(vault_name)
         for job in job_list:
-            if job['ArchiveId'] == archive:
+            if job['ArchiveId'] == archive_id:
                 if not job['Completed']:
                     raise CommunicationException(
                         "Archive retrieval request not completed yet. Please try again later.")
@@ -1134,14 +1108,18 @@ your archive ID is correct, and start a retrieval job using \
                     "Cannot access the ouput file.",
                     cause=e)
 
-
-        job2 = GlacierJob(gv, job_id=job['JobId'])
         if out_file:
             self.logger.debug('Starting download of archive to file %s.'% out_file)
             ffile = open(out_file, "w")
-            ffile.write(job2.get_output().read())
+            try:
+                ffile.write(self.glacierconn.get_output(vault_name, job['JobId']))
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to download archive %s.'% archive_id,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
+            
             ffile.close()
-                
             self.logger.debug('Download of archive finished.')
 
             #TODO: tree-hash check.
@@ -1149,7 +1127,13 @@ your archive ID is correct, and start a retrieval job using \
         
         else:
             self.logger.debug('Downloading archive and sending output to stdout.')
-            print job2.get_output().read(),
+            try:
+                print self.glacierconn.get_output(vault_name, job['JobId']),
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to download archive %s.'% archive_id,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
 
     @glacier_connect
     @sdb_connect
@@ -1212,7 +1196,7 @@ your archive ID is correct, and start a retrieval job using \
     @glacier_connect
     @sdb_connect
     @log_class_call("Deleting archive.", "Archive deleted.")
-    def rmarchive(self, vault, archive):
+    def rmarchive(self, vault_name, archive_id):
         """
         Remove an archive from an Amazon Glacier vault.
 
@@ -1223,10 +1207,15 @@ your archive ID is correct, and start a retrieval job using \
 
         :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
         """
-        self._check_vault_name(vault)
-        self._check_id(archive, 'ArchiveId')
-        response = GlacierVault(self.glacierconn, vault_name=vault).delete_archive(archive)
-        self._check_response(response)
+        self._check_vault_name(vault_name)
+        self._check_id(archive_id, 'ArchiveId')
+        try:
+            self.glacierconn.delete_archive(vault_name, archive_id)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                'Failed to remove archive %s from vault %s.'% (archive_id, vault_name),
+                cause=self._decode_error_message(e.body),
+                code=e.code)
 
         if self.bookkeeping:
             try:
@@ -1237,7 +1226,7 @@ your archive ID is correct, and start a retrieval job using \
                 #       (wvmarle: is this necessary? Archive is gone, who cares
                 #       whether it was in the db to begin with.)
                 query = ('select * from `%s` where archive_id="%s"' %
-                            (self.bookkeeping_domain_name, archive))
+                            (self.bookkeeping_domain_name, archive_id))
                 items = self.sdb_domain.select(query)
             except boto.exception.SDBResponseError as e:
                 raise CommunicationException(
@@ -1293,8 +1282,6 @@ your archive ID is correct, and start a retrieval job using \
         """
 
         self._check_vault_name(vault_name)
-        gv = GlacierVault(self.glacierconn, vault_name=vault_name)
-        
         inventory = None
         inventory_job = None
         if not refresh:
@@ -1303,7 +1290,7 @@ your archive ID is correct, and start a retrieval job using \
             # has been completed, and whether any is in progress. We want
             # to find the latest finished job, or that failing the latest
             # in progress job.
-            job_list = self.listjobs(vault_name)
+            job_list = self.list_jobs(vault_name)
             inventory_done = False
             for job in job_list:
                 if job['Action'] == "InventoryRetrieval":
@@ -1323,16 +1310,9 @@ your archive ID is correct, and start a retrieval job using \
             # If inventory retrieval is complete, process it.
             if inventory_done:
                 self.logger.debug('Fetching results of finished inventory retrieval.')
-                response = GlacierJob(gv, job_id=inventory_job['JobId']).get_output()
-                try:
-                    jdata = response.read()
-                    self.logger.debug(jdata)
-                    inventory = json.loads(jdata)
-                except ValueError as e:
-                    raise ResponseException(
-                        "Cannot process inventory data: %s"% jdata,
-                        cause=e)
-
+                response = self.conn.get_job_output(vault_name, inventory_job['JobId'])
+                inventory = response.copy()
+                
                 # if bookkeeping is enabled update cache
                 if self.bookkeeping:
                     self.logger.debug('Updating the bookkeeping with the latest inventory.')
@@ -1350,8 +1330,16 @@ your archive ID is correct, and start a retrieval job using \
         # through describejob to return.
         if refresh or not inventory_job:
             self.logger.debug('No inventory jobs finished or running; starting a new job.')
-            new_job = gv.retrieve_inventory(format="JSON")
-            inventory_job = self.describejob(vault_name, new_job.job_id)
+            job_data = {'Type': 'inventory-retrieval'}
+            try:
+                new_job = self.glacierconn.initiate_job(vault_name, job_data)
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                raise ResponseException(
+                    'Failed to create a new inventory retrieval job for vault %s.'% vault_name,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
+            
+            inventory_job = self.describejob(vault_name, new_job['JobId'])
 
         return (inventory_job, inventory)
     
