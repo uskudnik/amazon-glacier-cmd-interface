@@ -15,8 +15,7 @@ import locale
 
 from prettytable import PrettyTable
 
-##from GlacierWrapper import GlacierWrapper
-from BotoWrapper import GlacierWrapper
+from GlacierWrapper import GlacierWrapper
 
 from functools import wraps
 from glacierexception import *

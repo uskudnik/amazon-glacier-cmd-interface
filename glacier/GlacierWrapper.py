@@ -15,8 +15,7 @@ import time
 import sys
 import re
 import traceback
-##import glaciercorecalls
-import botocorecalls
+import glaciercorecalls
 import select
 
 from functools import wraps
@@ -24,7 +23,7 @@ from dateutil.parser import parse as dtparse
 from datetime import datetime
 from pprint import pformat
 
-from botocorecalls import GlacierConnection, GlacierWriter
+from glaciercorecalls import GlacierConnection, GlacierWriter
 
 from glacierexception import *
 
@@ -892,8 +891,8 @@ using %s MB parts to upload."% part_size)
                     # exception.
                     data = reader.read(stop-start)
                     if data:
-                        data_hash = botocorecalls.tree_hash(botocorecalls.chunk_hashes(data))
-                        if botocorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
+                        data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
+                        if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
                             self.logger.debug('Part %s hash matches.')
                             writer.tree_hashes.append(data_hash)
                         else:
