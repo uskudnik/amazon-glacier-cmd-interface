@@ -148,7 +148,9 @@ When downloading a file, you first must request the file to be retrieved by Glac
 Uploading an archive.
 ^^^^^^^^^^^^^^^^^^^^^
 
-``$ glacier-cmd upload <vault name> /path/to/archive "description of archive"``
+``$ glacier-cmd upload <vault name> /path/to/archive [path/to/anotherarchive]``
+
+You may add an arbitrary number of files on the command line, or use wildcards in the file names.
 
 Note that the description of the archive may be no more than 1,024 characters, and contain only 7-bit ASCII characters without control codes, specifically ASCII values 32-126 decimal or 0x20-0x7E hexadecimal.
 
@@ -158,13 +160,18 @@ Note: this hash is not the same as you get when running the ``sha256sum /path/to
 
 Uploading options.
 """"""""""""""""""
-* ``--blocksize <size in MB>``
+* ``--description "description of archive"``
 
-This overrides the default block size, and the caclulated optimal block size. The size is given in MB, and must be a power of two. Valid values are 1, 2, 4, 8, ...,  2048, 4096.
+Set a description of your archive. This may be up to 1024 characters long, and will be listed in the inventory of your vault, and stored in the bookkeeping database. If no description given, the file name of the archive is used instead.
 
-Amazon Glacier limits uploads to 10,000 blocks. With the default block size of 128 MB, this means archives are limited to about 1.3 TB. For larger archives you must set a larger block size; for smaller archives you may set a smaller block size. If the block size given is too small to fit the file in 10,000 parts, it will be automaticially changed to the minimal required block size.  Some examples:
+* ``--partsize <size in MB>``
 
-blocksize  Maximum archive size
+This overrides the default part size, and the calculated optimal part size. The size is given in MB, and must be a power of two. Valid values are 1, 2, 4, 8, ...,  2048, 4096.
+
+Amazon Glacier limits uploads to 10,000 parts. With the default part size of 128 MB, this means archives are limited to about 1.3 TB. For larger archives you must set a larger part size; for smaller archives you may set a smaller part size. If the part size given is too small to fit the file in 10,000 parts, it will be automaticially changed to the minimal required part size.
+Some examples::
+
+partsize   Maximum archive size
 1          1*1024*1024*10000 ~= 9.7 GB
 4          4*1024*1024*10000 ~= 39 GB
 16         16*1024*1024*10000 ~= 156 GB
@@ -185,6 +192,11 @@ Specify a file name for your archive.
 This is required when you pipe in data over stdin, and can be useful to override the local file name of the archive, for example when the local file is a temporary file with a randomly generated name. This file name will be used for the bookkeeping entry of this upload. ::
 
    $ glacier-cmd upload --name /path/BetterName Test /tmp/temp.tQ6948 "Some description"
+
+* ``--bacula``
+
+The file name is a bacula-style list of multiple files. This is useful if this script is used in conjunction with the Bacula backup software.
+The file list should look like ``/path/to/backups/vol001|vol002|vol003``.
 
 Downloading an archive.
 ^^^^^^^^^^^^^^^^^^^^^^^
