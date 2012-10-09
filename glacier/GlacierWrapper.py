@@ -1151,16 +1151,16 @@ your archive ID is correct, and start a retrieval job using \
         if region:
             self._check_region(region)
 
-        if file_name and ('"' in file_name or "'" in file_name):
-            raise InputException(
-                'Quotes like \' and \" are not allowed in search terms.',
-                cause='Invalid search term %s: contains quotes.'% file_name)
-                
-
-        if search_term and ('"' in search_term or "'" in search_term):
-            raise InputException(
-                'Quotes like \' and \" are not allowed in search terms.',
-                cause='Invalid search term %s: contains quotes.'% search_term)
+##        if file_name and ('"' in file_name or "'" in file_name):
+##            raise InputException(
+##                'Quotes like \' and \" are not allowed in search terms.',
+##                cause='Invalid search term %s: contains quotes.'% file_name)
+##                
+##
+##        if search_term and ('"' in search_term or "'" in search_term):
+##            raise InputException(
+##                'Quotes like \' and \" are not allowed in search terms.',
+##                cause='Invalid search term %s: contains quotes.'% search_term)
 
         self.logger.debug('Search terms: vault %s, region %s, file name %s, search term %s'%
                           (vault, region, file_name, search_term))
@@ -1172,23 +1172,29 @@ your archive ID is correct, and start a retrieval job using \
             search_params += ["vault='%s'" % (vault,)]
 
         if file_name:
-            search_params += ["filename like '%"+file_name+"%'"]
+            search_params += ["filename like '%"+file_name.replace("'", "''")+"%'"]
             
         if search_term:
-            search_params += ["description like '%"+search_term+"%'"]
+            search_params += ["description like '%"+search_term.replace("'", "''")+"%'"]
 
         if search_params:
             search_params = " and ".join(search_params)
             query = 'select * from `%s` where %s' % (self.bookkeeping_domain_name, search_params)
         else:
-            query = 'select * from `%s`' % (self.bookkeeping_domain_name, search_params)
+            query = 'select * from `%s`' % self.bookkeeping_domain_name
 
         self.logger.debug('Query: "%s"'% query)
         result = self.sdb_domain.select(query)
         items = []
-        for item in result:
-            self.logger.debug('Next search result:\n%s'% item)
-            items.append(item)
+        try:
+            for item in result:
+                self.logger.debug('Next search result:\n%s'% item)
+                items.append(item)
+        except boto.exception.SDBResponseError as e:
+            raise ResponseException(
+                    'SimpleDB did not like your query with parameters %s.'% search_params,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
 
         return items
 
