@@ -26,12 +26,14 @@ Bacula is a popular backup software, which allows for scripts to be run after a 
 
 Job {
   # other JobDefs.
-  RunAfterJob = "/usr/local/bin/glacier-cmd upload <vault> %v %n"
+  RunAfterJob = "/usr/local/bin/glacier-cmd upload <vault> /path/to/backups/%v --description %n --bacula"
 }
 
 This example will pass the volume name as input file name and the job name as description to glacier-cmd for uploading of the volume to <vault>. Bacula will wait until the script finishes, and if successful give an OK on the backup. Note that this may block other backup jobs, if any.
 
-To not block other backup jobs, and run the upload independent from Bacula, use::
+Mind Bacula will NOT add the path name to the archive file name, you will have to add this path before the %v to make this work. In case there are multiple volumes in your archive, Bacula provides them all separated by a | character. The ``--bacula`` switch tells ``glacier-cmd`` to parse files accordingly.
+
+To not block other backup jobs, and run the upload independent from Bacula, you may use something like this::
 
 Job {
   # other JobDefs.
@@ -40,7 +42,11 @@ Job {
 
 The content of ``/usr/local/bin/backup_to_glacier``::
 
-echo "/usr/local/bin/glacier-cmd --logtostdout upload Squirrel_backup /backup/bacula/$1 \"$2 ($3, since $4)\"" | batch
+echo "/usr/local/bin/glacier-cmd --logtostdout upload MyVault /path/to/backups/$1 --description \"$2 ($3, since $4)\" --bacula" | batch
+
+The actual command starting the upload will now look something like this::
+
+/usr/local/bin/glacier-cmd --logtostdout upload MyVault '/path/to/backups/vol001|vol002|vol003' --description "System.2012-10-09_04.35.00_09 (Incremental, since 2012-10-08 04:35:03)" --bacula
 
 This way it will run the upload as soon as the system is not too busy - in many cases that will be instantly. In this case, any output from glacier-cmd will be e-mailed to <bacula@localhost>. Make sure to add bacula as an alias for a real user, as otherwise you will not see any of this mail.
 
