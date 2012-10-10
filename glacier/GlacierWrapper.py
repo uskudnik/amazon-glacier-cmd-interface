@@ -276,7 +276,7 @@ Connecting to Amazon SimpleDB domain %s with
 
     @log_class_call('Checking whether vault description is valid.',
                     'Vault description is valid.')
-    def _check_vault_description(self, description):
+    def _check_description(self, description):
         """
         Checks whether a vault description is valid (at least one character,
         not too long, no illegal characters).
@@ -292,7 +292,7 @@ Connecting to Amazon SimpleDB domain %s with
             raise InputException(
                 u"Description must be no more than %s characters."% self.MAX_VAULT_DESCRIPTION_LENGTH,
                 cause='Vault description contains more than %s characters.'% self.MAX_VAULT_DESCRIPTION_LENGTH,
-                code="VaultDescriptionError")
+                code="DescriptionError")
 
         for char in description:
             n = ord(char)
@@ -302,7 +302,7 @@ Connecting to Amazon SimpleDB domain %s with
 control codes, specifically ASCII values 32-126 decimal \
 or 0x20-0x7E hexadecimal.""",
                     cause="Invalid characters in the vault name.",
-                    code="VaultDescriptionError")
+                    code="DescriptionError")
             
         return True
 
@@ -804,14 +804,15 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             description = file_name if file_name else 'No description.'
 
         if description:
-            self._check_vault_description(description)
+            self._check_description(description)
             
         if uploadid:
             self._check_id(uploadid, 'UploadId')
 
         if resume and stdin:
             raise InputException(
-                'You must provide the UploadId to resume upload of streams from stdin.\nUse glacier-cmd listmultiparts <vault> to find the UploadId.')
+                'You must provide the UploadId to resume upload of streams from stdin.\nUse glacier-cmd listmultiparts <vault> to find the UploadId.',
+                code='CommandError')
 
         # If file_name is given, try to use this file(s).
         # Otherwise try to read data from stdin.
@@ -820,7 +821,8 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         if not stdin:
             if not file_name:
                 raise InputException(
-                    "No file name given for upload.")
+                    "No file name given for upload.",
+                    code='CommandError')
             
             try:
                 reader = open(file_name, 'rb')
@@ -828,14 +830,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             except IOError as e:
                 raise InputException(
                     "Could not access file: %s."% file_name,
-                    cause=e)
+                    cause=e,
+                    code='FileError')
                 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
         else:
             raise InputException(
-                "There is nothing to upload.")
+                "There is nothing to upload.",
+                code='CommandError')
 
         # Log the kind of upload we're going to do.
         if uploadid:
@@ -882,7 +886,8 @@ using %s MB parts to upload."% part_size)
                     break
             else:
                 raise InputException(
-                    'Can not resume upload of this data as no existing job with this uploadid could be found.')
+                    'Can not resume upload of this data as no existing job with this uploadid could be found.',
+                    code='IdError')
 
         # Initialise the writer task.
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
@@ -915,7 +920,8 @@ using %s MB parts to upload."% part_size)
                     if not start == current_position:
                         if stdin:
                             raise InputException(
-                                'Cannot verify non-sequential upload data from stdin.')
+                                'Cannot verify non-sequential upload data from stdin.',
+                                code='ResumeError')
                         reader.seek(start)
 
                     # Try to read the chunk of data, and take the hash if we
@@ -932,12 +938,14 @@ using %s MB parts to upload."% part_size)
                         else:
                             raise InputException(
                                 'Received data does not match uploaded data; please check your uploadid and try again.',
-                                cause='SHA256 hash mismatch.')
+                                cause='SHA256 hash mismatch.',
+                                code='ResumeError')
                         
                     else:
                         raise InputException(
                             'Received data does not match uploaded data; please check your uploadid and try again.',
-                            cause='No or not enough data to match.')
+                            cause='No or not enough data to match.',
+                            code='ResumeError')
 
                 # If a marker is present, this means there are more pages
                 # of parts available. If no marker, we have the last page.
@@ -1124,7 +1132,9 @@ using %s MB parts to upload."% part_size)
             if job['ArchiveId'] == archive_id:
                 if not job['Completed']:
                     raise CommunicationException(
-                        "Archive retrieval request not completed yet. Please try again later.")
+                        "Archive retrieval request not completed yet. Please try again later.",
+                        code='NotReady')
+                
                 self.logger.debug('Archive retrieval completed; archive is available for download now.')
                 break
             
@@ -1132,7 +1142,8 @@ using %s MB parts to upload."% part_size)
             raise InputException(
                 "Requested archive not available. Please make sure \
 your archive ID is correct, and start a retrieval job using \
-'getarchive' if necessary.")
+'getarchive' if necessary.",\
+                'IdError')
 
         # Check whether we can access the file the archive has to be written to.
         if out_file:
@@ -1146,7 +1157,8 @@ your archive ID is correct, and start a retrieval job using \
             except IOError as e:
                 raise InputException(
                     "Cannot access the ouput file.",
-                    cause=e)
+                    cause=e,
+                    code='FileError')
 
         if out_file:
             self.logger.debug('Starting download of archive to file %s.'% out_file)
@@ -1183,26 +1195,17 @@ your archive ID is correct, and start a retrieval job using \
 
         # Sanity checking.
         if not self.bookkeeping:
-            raise Exception(
-                u"You must enable bookkeeping to be able to do searches.")
+            raise InputException(
+                "You must enable bookkeeping to be able to do searches.",
+                cause='Bookkeeping not enabled.',
+                code='BookkeepingError')
 
         if vault:
             self._check_vault_name(vault)
             
         if region:
             self._check_region(region)
-
-##        if file_name and ('"' in file_name or "'" in file_name):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% file_name)
-##                
-##
-##        if search_term and ('"' in search_term or "'" in search_term):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% search_term)
-
+            
         self.logger.debug('Search terms: vault %s, region %s, file name %s, search term %s'%
                           (vault, region, file_name, search_term))
         search_params = []
@@ -1277,7 +1280,7 @@ your archive ID is correct, and start a retrieval job using \
             except boto.exception.SDBResponseError as e:
                 raise CommunicationException(
                     "Cannot get archive info from Amazon SimpleDB.",
-                    code="SdbReadError",
+                    code="SdbCommunicationError",
                     cause=e)
             
             try:
@@ -1286,7 +1289,7 @@ your archive ID is correct, and start a retrieval job using \
             except boto.exception.SDBResponseError as e:
                 raise CommunicationException(
                     "Cannot delete item from Amazon SimpleDB.",
-                    code="SdbWriteError",
+                    code="SdbCommunicationError",
                     cause=e)
 
     @glacier_connect
@@ -1369,7 +1372,7 @@ your archive ID is correct, and start a retrieval job using \
                         raise CommunicationException(
                             "Cannot update inventory cache, Amazon SimpleDB is not happy.",
                             cause=e,
-                            code="SdbWriteError")
+                            code="SdbCommunicationError")
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details

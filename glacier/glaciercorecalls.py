@@ -101,11 +101,13 @@ class GlacierWriter(object):
         
         if self.closed:
             raise CommunicationError(
-                "Tried to write to a GlacierWriter that is already closed.")
+                "Tried to write to a GlacierWriter that is already closed.",
+                code='InternalError')
 
         if len(data) > self.part_size:
             raise InputException (
-                'Block of data provided must be equal to or smaller than the set block size.')
+                'Block of data provided must be equal to or smaller than the set block size.',
+                code='InternalError')
         
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)

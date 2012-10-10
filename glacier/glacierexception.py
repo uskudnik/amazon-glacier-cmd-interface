@@ -26,7 +26,24 @@ class GlacierException(Exception):
 
     TODO: describe usage.
     """
-    
+
+    ERRORCODE = {'InternalError': 255,        # Library internal error.
+                 'UndefinedErrorCode': 254,   # Undefined code.
+                 'GlacierConnectionError': 1, # Can not connect to Glacier. 
+                 'SdbConnectionError': 2,     # Can not connect to SimpleDB.
+                 'CommandError': 3,           # Command line is invalid.
+                 'VaultNameError': 4,         # Invalid vault name.
+                 'DescriptionError': 5,       # Invalid archive description.
+                 'IdError': 6,                # Invalid upload/archive/job ID given.
+                 'RegionError': 7,            # Invalid region given.
+                 'FileError': 8,              # Error related to reading/writing a file.
+                 'ResumeError': 9,            # Problem resuming a multipart upload.
+                 'NotReady': 10,              # Requested download is not ready yet.
+                 'BookkeepingError': 11,      # Bookkeeping not available.
+                 'SdbCommunicationError': 12, # Problem reading/writing SimpleDB data.
+                 'ResourceNotFoundException': 13} # Glacier can not find the requested resource.
+                 
+                 
     def __init__(self, message, code=None, cause=None):
         """
         Constructor. Logs the error.
@@ -39,6 +56,7 @@ class GlacierException(Exception):
         :type cause: str
         """
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.exitcode = self.ERRORCODE[code] if code in self.ERRORCODE else 254
         self.code = code
         if cause:
             self.logger.error('ERROR: %s'% cause)
@@ -60,6 +78,8 @@ class GlacierException(Exception):
         self.message = message
         self.logger.info(self.fetch(message=True))
         self.logger.debug(self.fetch(stack=True))
+        if self.exitcode == 254:
+            self.logger.debug('Unknown error code: %s.'% code)
 
     # Works as a generator to help get the stack trace and the cause
     # written out.
