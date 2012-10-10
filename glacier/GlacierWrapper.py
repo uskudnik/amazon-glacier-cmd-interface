@@ -18,6 +18,9 @@ import traceback
 import glaciercorecalls
 import select
 import hashlib
+import fcntl
+import termios
+import struct
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -385,6 +388,12 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         v |= v >> 16
         return v + 1
 
+    def _bold(self, msg):
+        """
+        Uses ANSI codes to make text bold for printing on the tty.
+        """
+        return u'\033[1m%s\033[0m' % msg
+
     def _progress(self, msg):
         """
         A progress indicator. Prints the progress message if stdout
@@ -394,9 +403,20 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :type msg: str
         """
         if sys.stdout.isatty():
-            print msg,
-            sys.stdout.flush()
 
+            # Get the current screen width.
+            cols = struct.unpack('hh',  fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, '1234'))[1]
+
+            # Make sure the message fits on a single line, strip if not,
+            # and add spaces to fill the line if it's shorter (to erase
+            # old characters from longer lines)
+            msg = msg[:cols] if len(msg)>cols else msg
+            if len(msg)<cols:
+                for i in range(cols-len(msg)):
+                    msg += ' '
+
+            sys.stdout.write(msg + '\r')
+            sys.stdout.flush()
     def _size_fmt(self, num, decimals=1):
         """
         Formats byte sizes in human readable format. Anything bigger
@@ -770,6 +790,13 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises:
         """
 
+        # Switch off debug logging for boto, as otherwise it's
+        # filling up the log with the data sent!
+        if self.logger.getEffectiveLevel() == 10:
+            logging.getLogger('boto').setLevel(logging.INFO)
+
+##        import pdb; pdb.set_trace()
+
         # Do some sanity checking on the user values.
         self._check_vault_name(vault_name)
         self._check_region(region)
@@ -786,7 +813,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             raise InputException(
                 'You must provide the UploadId to resume upload of streams from stdin.\nUse glacier-cmd listmultiparts <vault> to find the UploadId.')
 
-        # If file_list is given, try to use this file(s).
+        # If file_name is given, try to use this file(s).
         # Otherwise try to read data from stdin.
         total_size = 0
         reader = None
@@ -797,6 +824,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             
             try:
                 reader = open(file_name, 'rb')
+                total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
                     "Could not access file: %s."% file_name,
@@ -811,9 +839,9 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         # Log the kind of upload we're going to do.
         if uploadid:
-            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_list[0] if file_list else 'data from stdin', vault_name))
+            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name if file_name else 'data from stdin', vault_name))
         elif resume:
-            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_list, vault_name))
+            self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name, vault_name))
         else:
             self.logger.info('Starting upload of %s to %s.\nDescription: %s'% (file_name if file_name else 'data from stdin', vault_name, description))
 
@@ -898,8 +926,9 @@ using %s MB parts to upload."% part_size)
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
-                            self.logger.debug('Part %s hash matches.')
+                            self.logger.debug('Part %s hash matches.'% part['RangeInBytes'])
                             writer.tree_hashes.append(data_hash)
+                            print part['RangeInBytes']
                         else:
                             raise InputException(
                                 'Received data does not match uploaded data; please check your uploadid and try again.',
@@ -918,12 +947,12 @@ using %s MB parts to upload."% part_size)
                     break
 
                 if total_size > 0:
-                    msg = '\rChecked %s of %s (%s%%).' \
+                    msg = 'Checked %s of %s (%s%%).' \
                           % (self._size_fmt(writer.uploaded_size),
                              self._size_fmt(total_size),
-                             int(100 * writer.uploaded_size/total_size))
+                             self._bold(str(int(100 * writer.uploaded_size/total_size))))
                 else:
-                    msg = '\rChecked %s.' \
+                    msg = 'Checked %s.' \
                           % (self._size_fmt(writer.uploaded_size))
                     
                 self._progress(msg)
@@ -932,12 +961,12 @@ using %s MB parts to upload."% part_size)
             # before resuming the upload.
             self.logger.info('Already uploaded: %s. Continuing from there.'% self._size_fmt(stop))
             if total_size > 0:
-                msg = '\rChecked %s of %s (%s%%). Check done; resuming upload.' \
+                msg = 'Checked %s of %s (%s%%). Check done; resuming upload.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(total_size),
-                         int(100 * writer.uploaded_size/total_size))
+                         self._bold(str(int(100 * writer.uploaded_size/total_size))))
             else:
-                msg = '\rChecked %s. Check done; resuming upload.' \
+                msg = 'Checked %s. Check done; resuming upload.' \
                       % (self._size_fmt(writer.uploaded_size))
 
             self._progress(msg)
@@ -962,16 +991,16 @@ using %s MB parts to upload."% part_size)
                     time_left = "Unknown"
                     eta = "Unknown"
 
-                msg = '\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+                msg = 'Wrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(total_size),
-                         int(100 * writer.uploaded_size/total_size),
+                         self._bold(str(int(100 * writer.uploaded_size/total_size))),
                          self._size_fmt(current_rate, 2),
                          self._size_fmt(overall_rate, 2),
                          eta)
 
             else:
-                msg = '\rWrote %s. Rate %s/s.' \
+                msg = 'Wrote %s. Rate %s/s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(overall_rate, 2))
 
@@ -982,7 +1011,7 @@ using %s MB parts to upload."% part_size)
         writer.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
-        msg = '\rWrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
+        msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
                                             self._size_fmt(overall_rate, 2))
         self._progress(msg)
         self.logger.info(msg)

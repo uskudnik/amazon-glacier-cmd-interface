@@ -30,44 +30,7 @@ from glacierexception import *
 class GlacierConnection(boto.glacier.layer1.Layer1):
 
     pass
-
     
-##class GlacierJob(object):
-##    def __init__(self, vault, params=None, job_id=None):
-##        self.vault = vault
-##        self.params = params
-##        self.job_id = job_id
-##
-##    def initiate(self):
-##        headers = {
-##                    "x-amz-glacier-version": "2012-06-01",
-##                  }
-##        response = self.vault.make_request("POST", "/jobs", headers, json.dumps(self.params))
-##        if response.status != 202:
-##            resp = json.loads(response.read())
-##            raise ResponseException(
-##                "Initiating job expected response status 202 (got %s):\n%s"\
-##                    % (response.status, response.read()),
-##                cause=resp['message'],
-##                code=resp['code'])
-##
-####        response.read()
-##        self.job_id = response.getheader("x-amz-job-id")
-##        self.location = response.getheader("Location")
-##
-##    def get_output(self, range_from=None, range_to=None):
-##        headers = {}
-##        if range_from is not None or range_to is not None:
-##            if range_from is None or range_to is None:
-##                raise InputException (
-##                    "If you specify one of range_from or range_to you must specify the other.")
-##
-##            headers["Range"] = "bytes %d-%d" % (range_from, range_to)
-##        return self.vault.make_request("GET", "/jobs/%s/output" % (self.job_id,))
-##
-##    def job_status(self):
-##        response = self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
-##        return self.vault.make_request("GET", "/jobs/%s" % (self.job_id,))
 
 def chunk_hashes(data):
     """
@@ -109,7 +72,7 @@ class GlacierWriter(object):
     Presents a file-like object for writing to a Amazon Glacier
     Archive. The data is written using the multi-part upload API.
     """
-    DEFAULT_PART_SIZE = 128 # in MB
+    DEFAULT_PART_SIZE = 128 # in MB, power of 2.
     
     def __init__(self, connection, vault_name,
                  description=None, part_size_in_bytes=DEFAULT_PART_SIZE*1024*1024,
