@@ -73,7 +73,8 @@ def handle_errors(fn):
             # We are only interested in the error message in case it is a
             # self-caused exception.
             e.write(indentation='||  ', stack=False, message=True)
-            sys.exit(1)
+            print 'code: %s, exitcode: %s'% (e.code, e.exitcode)
+            sys.exit(e.exitcode)
 
     return wrapper
 
