@@ -12,6 +12,7 @@ import ConfigParser
 import argparse
 import re
 import locale
+import glob
 
 from prettytable import PrettyTable
 
@@ -187,11 +188,28 @@ def upload(args):
 
     glacier = default_glacier_wrapper(args)
     args.filename = args.filename if args.filename else [None]
+
     for f in args.filename:
-        response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
-                                  args.name, args.partsize, args.uploadid, args.resume)
-        print "Created archive with ID: ", response[0]
-        print "Archive SHA256 tree hash: ", response[1]
+        if f:
+
+            # In case the shell does not expand wildcards, if any, do this here.
+            if f[0] == '~':
+                f = os.path.expanduser(f)
+            globbed = glob.glob(f)
+            if globbed:
+                for g in globbed:
+                    response = glacier.upload(args.vault, g, args.description, args.region, args.stdin,
+                                              args.name, args.partsize, args.uploadid, args.resume)
+                    print "Uploaded file: %s."% g
+                    print "Created archive with ID: %s"% response[0]
+                    print "Archive SHA256 tree hash: %s."% response[1]
+        else:
+
+            # No file name; using stdin.
+            response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
+                                      args.name, args.partsize, args.uploadid, args.resume)
+            print "Created archive with ID: %s"% response[0]
+            print "Archive SHA256 tree hash: %s."% response[1]
 
 @handle_errors
 def getarchive(args):
