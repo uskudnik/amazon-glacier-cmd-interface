@@ -14,6 +14,7 @@ Contents:
    About
    Installation
    Usage
+   Bookkeeping
    Development
    Scripting
    License

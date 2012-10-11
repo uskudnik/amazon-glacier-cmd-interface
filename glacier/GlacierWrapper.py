@@ -1067,13 +1067,13 @@ using %s MB parts to upload."% part_size)
 
         If retrieval job is not yet initiated:
                 initiate a job,
-                return tuple ("initiated", job status, None, results)
+                return tuple ("initiated", job, None)
                 
         If retrieval job is already initiated:
-                return tuple ("running", job status, None, results).
+                return tuple ("running", job, None).
                 
         If the file is ready for download:
-                return tuple ("ready", job status, GlacierJob, results).
+                return tuple ("ready", job, jobId).
 
         :param vault: Vault name from where we want to retrieve the archive.
         :type vault: str
@@ -1100,7 +1100,7 @@ using %s MB parts to upload."% part_size)
             
         # No job found related to this archive, start a new job.
         job_data = {'ArchiveId': archive_id,
-                    'Type': archive-retrieval}
+                    'Type': 'archive-retrieval'}
         try:
             response = self.glacierconn.initiate_job(vault_name, job_data)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:

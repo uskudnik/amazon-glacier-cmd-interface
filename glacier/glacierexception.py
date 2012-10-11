@@ -42,7 +42,8 @@ class GlacierException(Exception):
                  'NotReady': 10,              # Requested download is not ready yet.
                  'BookkeepingError': 11,      # Bookkeeping not available.
                  'SdbCommunicationError': 12, # Problem reading/writing SimpleDB data.
-                 'ResourceNotFoundException': 13} # Glacier can not find the requested resource.
+                 'ResourceNotFoundException': 13, # Glacier can not find the requested resource.
+                 'InvalidParameterValueException': 14} # Parameter not accepted.
                  
                  
     def __init__(self, message, code=None, cause=None):

@@ -15,12 +15,9 @@ and downloading archives and bookkeeping of created archives.
 Installation:
 -------------
 
-Required libraries are glaciercorecalls (temporarily, while we wait for glacier 
-support to land in boto's develop branch) and boto - at the moment you still 
-need to use development branch of boto.
+Required libraries are glaciercorecalls and boto, use version 2.6.0 or newer.
 
-You also need to install GIT, with something like `apt-get install git`, 
-because boto sources are downloaded from repository.
+You also need to install GIT, with something like `apt-get install git` to download sources from github.
 
     >>> python setup.py install
     >>> glacier-cmd [args] 
@@ -54,6 +51,9 @@ Here is an example configuration:
     region=us-east-1
     bookkeeping=True
     bookkeeping-domain-name=your_simple_db_domain_name
+    logfile=~/.glacier-cmd.log
+    loglevel=INFO
+    output=print
 
 You can also pass in all these options as environment variables:
 
@@ -111,14 +111,13 @@ You can list active jobs by using `listjobs`:
 To upload archive use `upload`. You can upload data from file or data from
 stdin. To upload from file:
 
-    $ glacier-cmd upload Test /path/SomeFile "The file description"
+    $ glacier-cmd upload Test /path/SomeFile --description "The file description"
     Created archive with ID: EQocIYw9ZmofbWixjD2oKb8faeIg4D1uSi1PxpdyBVy__lDMCWcmXLIzNKBP4ikPH3Ngn4w8ApqCMN7XJqNL7V4sxRzq42Zu74DctpLG9GSPSNjLc1_vorGVk3YqVEdjd2cqnWTdiA
     Archive SHA256 hash: e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0
 
-You can only compare the SHA256 returned by AWS with the locally computed one
-(using the `shasum` utility) if your archive was under 1Mb.
+You can only compare the SHA256 returned by AWS with the locally computed one (using the `shasum` utility) if your archive was under 1Mb. Use the built-in treehash function instead.
 
-    $ shasum -a 256 SomeFile
+    $ glacier-cmd treehash SomeFile
     e837acd31ee9b04a73fb176f1845695364dfabe019fca17f4097cf80687082c0  SomeFile
 
 For files larger than 1Mb, a special SHA256 needs to be computed. There are
@@ -129,11 +128,11 @@ If you are uploading a temp file with a meaningless name, or using --stdin, you
 can use the --name option to tell glacier to ignore the file name and use the
 given name when it creates the bookkeeping entry:
 
-    $ glacier-cmd upload --name /path/BetterName Test /tmp/temp.tQ6948 "Some description"
+    $ glacier-cmd upload Test /tmp/temp.tQ6948 --description "Some description" --name /path/BetterName
 
 To upload from stdin:
 
-    $ TODO: example for using --stdin
+    $ cat file | glacier-cmd upload Test --description "Some description" --stdin  --name /path/BetterName
 
 IMPORTANT NOTE: If you're uploading from stdin, and you don't specify a
 --partsize option, your upload will be limited to 1.3Tb, and the progress
@@ -209,54 +208,85 @@ To abort one of the multipart uploads, use `abortmultipart` subcommand:
 
 
 Usage description(help):
+$ glacier-cmd --help
+usage: glacier-cmd [-h] [-c FILE] [--logtostdout]
+                   [--aws-access-key AWS_ACCESS_KEY]
+                   [--aws-secret-key AWS_SECRET_KEY] [--region REGION]
+                   [--bookkeeping]
+                   [--bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME]
+                   [--logfile LOGFILE]
+                   [--loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}]
+                   [--output {print,csv,json}]
 
-    positional arguments (subcommands):
-        lsvault             List vaults
-        mkvault             Create a new vault
-        rmvault             Remove vault
-        listjobs            List jobs
-        describejob         Describe job
-        upload              Upload an archive
-        getarchive          Get a file by explicitly setting archive id
-        rmarchive           Remove archive
-        search              Search SimpleDB database (if it was created)
-        inventory           List inventory of a vault
-        download            Download a file by searching through SimpleDB cache
-                            for it.
-        describevault       Describe a vault
-        listmultipart       List multipart uploads currently in progress
-        abortmultipart      Abort one of the multipart uploads currently in progress
 
-    optional arguments:
-    -h, --help            show this help message and exit
-    -c FILE, --conf FILE  Specify config file
+{mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash}
+                  ...
 
-    aws:
-    --aws-access-key AWS_ACCESS_KEY
-                            Your aws access key (Required if you haven't created
-                            .glacier-cmd or /etc/glacier-cmd.conf config file)
-    --aws-secret-key AWS_SECRET_KEY
-                            Your aws secret key (Required if you haven't created
-                            .glacier-cmd or /etc/glacier-cmd.conf config file)
+Command line interface for Amazon Glacier
 
-    glacier:
-    --region REGION       Region where glacier should take action (Required if
-                            you haven't created .glacier-cmd config or 
-                            /etc/glacier-cmd.conf file)
-    --bookkeeping         Should we keep book of all created archives. This
-                            requires a SimpleDB account and it's bookkeeping
-                            domain name set
-    --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
-                            SimpleDB domain name for bookkeeping.
+optional arguments:
+ -h, --help            show this help message and exit
+ -c FILE, --conf FILE  Name of the file to log messages to. (default:
+                       ~/.glacier-cmd)
+ --logtostdout         Send log messages to stdout instead of the config
+                       file. (default: False)
+
+Subcommands:
+  {mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash}
+                       For subcommand help, use: glacier-cmd <subcommand> -h
+   mkvault             Create a new vault.
+   lsvault             List available vaults.
+   describevault       Describe a vault.
+   rmvault             Remove a vault.
+   upload              Upload an archive to Amazon Glacier.
+   listmultiparts      List all active multipart uploads.
+   abortmultipart      Abort a multipart upload.
+   inventory           List inventory of a vault, if available. If not
+                       available, creates inventory retrieval job if none
+                       running already.
+   getarchive          Requests to make an archive available for download.
+   download            Download a file by archive id.
+   rmarchive           Remove archive from Amazon Glacier.
+   search              Search Amazon SimpleDB database for available archives
+                       (requires bookkeeping to be enabled).
+   listjobs            List active jobs in a vault.
+   describejob         Describe a job.
+   treehash            Calculate the tree-hash (Amazon style sha256-hash) of
+                       a file.
+
+aws:
+ --aws-access-key AWS_ACCESS_KEY
+                       Your aws access key (Required if you have not created
+                       a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
+                       (default: AKIAIP5VPUSCSJQ6BSSQ)
+ --aws-secret-key AWS_SECRET_KEY
+                       Your aws secret key (Required if you have not created
+                       a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
+                       (default: WDgq6ZZn7Y4Lkt5LxPuionw2pTLbonwdFZz1BGtS)
+
+glacier:
+ --region REGION       Region where you want to store your archives (Required
+                       if you have not created a ~/.glacier-cmd or /etc
+                       /glacier-cmd.conf config file) (default: us-east-1)
+ --bookkeeping         Should we keep book of all created archives. This
+                       requires a Amazon SimpleDB account and its bookkeeping
+                       domain name set (default: True)
+ --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
+                       Amazon SimpleDB domain name for bookkeeping. (default:
+                       squirrel)
+ --logfile LOGFILE     File to write log messages to. (default: /home/wouter
+                       /.glacier-cmd.log)
+ --loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}
+                       Set the lowest level of messages you want to log.
+                       (default: DEBUG)
+ --output {print,csv,json}
+                       Set how to return results: print to the screen, or as
+                       csv resp. json string. (default: print)
+
 
 TODO:
 -----
 
-- Integrate with boto
-- Support for output status codes
-- Migrate documentation to sphinx
-- Documentation examples of output from specific commands
-- Description for command line arguments
 - Tests
 
 Changelog:
