@@ -13,6 +13,8 @@ import argparse
 import re
 import locale
 import glob
+import csv
+import json
 
 from prettytable import PrettyTable
 
@@ -21,39 +23,111 @@ from GlacierWrapper import GlacierWrapper
 from functools import wraps
 from glacierexception import *
 
-def print_headers(headers):
-    table = PrettyTable(["Header", "Value"])
-    for header in headers:
-        if len(str(header[1])) < 100:
-            table.add_row(header)
-
-    print table
-
-def print_output(output, keys=None, sort_key=None):
+def output_headers(headers, output):
     """
-    Prettyprints output. Expects a list of identical dicts.
-    Use the dict keys as headers; one line for each item.
+    Prints a list of headers - single item output.
 
-    output: list of dicts, each dict {'header_key1':'data', 'header_key2':'data2' ... }
-    keys: dict of header keys {'header1': 'header_key1', 'header2', 'header_key2'...}
+    :param headers: the output to be printed as {'header1':'data1',...}
+    :type headers: dict
     """
-
-    if len(output) == 0:
-        print 'No output!'
-        return
-
-    headers = [keys[k] for k in keys.keys()] if keys else output[0].keys()
-    table = PrettyTable(headers)
-    for line in output:
-        table.add_row([line[k] for k in (keys.keys() if keys else headers)])
-
-    if sort_key:
-        table.sortby = sort_key
+    rows = [(k, headers[k]) for k in headers.keys()]
+    if output == 'print':
+        table = PrettyTable(["Header", "Value"])
+        for row in rows:
+            if len(str(row[1])) < 100:
+                table.add_row(row)
         
-    print table
-    
+        print table
+        
+    if output == 'csv':
+        csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
+        for row in rows:
+            csvwriter.writerow(row)
+        
+    if output == 'json':
+        print json.dumps(headers)
+
+def output_table(results, output, keys=None, sort_key=None):
+    """
+    Prettyprints results. Expects a list of identical dicts.
+    Use the dict keys as headers unless keys is given; one line for each item.
+
+    Expected format of data is a list of dicts:
+    [{'key1':'data1.1', 'key2':'data1.2', ... },
+     {'key1':'data1.2', 'key2':'data2.2', ... },
+     ...]
+    keys: dict of headers to be printed for each key:
+    {'key1':'header1', 'key2':'header2',...}
+
+    sort_key: the key to use for sorting the table.
+    """
+
+    if output == 'print':
+        if len(results) == 0:
+            print 'No output!'
+            return
+
+        headers = [keys[k] for k in keys.keys()] if keys else results[0].keys()
+        table = PrettyTable(headers)
+        for line in results:
+            table.add_row([line[k] for k in (keys.keys() if keys else headers)])
+
+        if sort_key:
+            table.sortby = keys[sort_key] if keys else sort_key
+            
+        print table
+        
+    if output == 'csv':
+        csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
+        keys = results[0].keys()
+        csvwriter.writerow(keys)
+        for row in results:
+            csvwriter.writerow([row[k] for k in keys])
+            
+    if output == 'json':
+        print json.dumps(results)
+
+def output_msg(msg, output, success=True):
+    """
+    In case of a single message output, e.g. nothing found.
+
+    :param msg: a single message to output.
+    :type msg: str
+    :param success: whether the operation was a success or not.
+    :type success: boolean
+    """
+    if output == 'print':
+        print msg
+        
+    if output == 'csv':
+        csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
+        csvwriter.writerow(msg)
+            
+    if output == 'json':
+        print json.dumps(msg)
+        
+    if not success:
+        sys.exit(125)
+
+def size_fmt(num, decimals = 1):
+    """
+    Formats file sizes in human readable format. Anything bigger than TB
+    is returned is TB. Number of decimals is optional, defaults to 1.
+    """
+    fmt = "%%3.%sf %%s"% decimals
+    for x in ['bytes','KB','MB','GB']:
+        if num < 1024.0:
+            return fmt % (num, x)
+        
+        num /= 1024.0
+        
+    return fmt % (num, 'TB')
 
 def default_glacier_wrapper(args):
+    """
+    Convenience function to call an instance of GlacierWrapper
+    with all required arguments.
+    """
     return GlacierWrapper(args.aws_access_key,
                           args.aws_secret_key,
                           args.region,
@@ -64,6 +138,9 @@ def default_glacier_wrapper(args):
                           logtostdout=args.logtostdout)
 
 def handle_errors(fn):
+    """
+    Decorator for exception handling.
+    """
     @wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -73,35 +150,46 @@ def handle_errors(fn):
             # We are only interested in the error message in case it is a
             # self-caused exception.
             e.write(indentation='||  ', stack=False, message=True)
-            print 'code: %s, exitcode: %s'% (e.code, e.exitcode)
             sys.exit(e.exitcode)
 
     return wrapper
 
 @handle_errors
 def lsvault(args):
+    """
+    Returns a list of vaults (if any).
+    """
     glacier = default_glacier_wrapper(args)
     vault_list = glacier.lsvault()
     keys = {'VaultName': "Vault name",
             'VaultARN': "ARN",
             'CreationDate': "Created",
             'SizeInBytes': "Size"}
-    print_output(vault_list, keys=keys)
+    output_table(vault_list, args.output, keys=keys)
 
 @handle_errors
 def mkvault(args):
+    """
+    Create a new vault.
+    """
     glacier = default_glacier_wrapper(args)
     response = glacier.mkvault(args.vault)
-    print_headers([(k, response[k]) for k in response.keys()])
+    output_headers(response, args.output)
 
 @handle_errors
 def rmvault(args):
+    """
+    Remove a vault.
+    """
     glacier = default_glacier_wrapper(args)
     response = glacier.rmvault(args.vault)
-    print_headers([(k, response[k]) for k in response.keys()])
+    output_headers(response, args.output)
 
 @handle_errors
 def describevault(args):
+    """
+    Give the description of a vault.
+    """
     glacier = default_glacier_wrapper(args)
     response = glacier.describevault(args.vault)
     headers = {'LastInventoryDate': "LastInventory",
@@ -109,32 +197,38 @@ def describevault(args):
                'SizeInBytes': "Size",
                'VaultARN': "ARN",
                'CreationDate': "Created"}
-    print_headers([(headers[k], response[k]) for k in headers.keys()])
+    output_headers(response, args.output)
 
 @handle_errors
 def listmultiparts(args):
+    """
+    Give an overview of all multipart uploads that are not finished.
+    """
     glacier = default_glacier_wrapper(args)
-
     response = glacier.listmultiparts(args.vault)
     if not response:
-        print 'No active multipart uploads.'
-
+        output_msg('No active multipart uploads.', args.output, success=False)
     else:
-        headers = sorted(response[0].keys())
-        print_output(response)
+        output_table(response, args.output)
 
 @handle_errors
 def abortmultipart(args):
+    """
+    Abort a multipart upload which is in progress.
+    """
     glacier = default_glacier_wrapper(args)
     response = glacier.abortmultipart(args.vault, args.uploadId)
-    print_headers([(k, response[k]) for k in response.keys()])
+    output_headers(response, args.output)
 
 @handle_errors
 def listjobs(args):
+    """
+    List all the active jobs for a vault.
+    """
     glacier = default_glacier_wrapper(args)
     job_list = glacier.list_jobs(args.vault)
     if job_list == []:
-        print 'No jobs.'
+        output_msg('No jobs.', args.output, success=False)
         return
 
     headers = {'Action': "Action",
@@ -143,44 +237,42 @@ def listjobs(args):
                'CreationDate': "Initiated",
                'VaultARN': "VaultARN",
                'JobId': "Job ID"}
-    print_output(job_list, headers)
+    output_table(job_list, args.output, keys=headers)
 
 @handle_errors
 def describejob(args):
+    """
+    Give the description of a job.'
+    """
     glacier = default_glacier_wrapper(args)
     job = glacier.describejob(args.vault, args.jobid)
-    print_headers([(k, job[k]) for k in job.keys()])
+    output_headers(job, args.output)
 
 @handle_errors
 def download(args):
+    """
+    Download an archive.
+    """
     glacier = default_glacier_wrapper(args)
     response = glacier.download(args.vault, args.archive, args.outfile, args.overwrite)
+    
+    # Only print result when writing to file, to not mess up the download.
     if args.outfile:
-
-        # Only print result when writing to file, to not mess up the download.
-        print response
-
-# Formats file sizes in human readable format. Anything bigger than TB
-# is returned is TB. Number of decimals is optional, defaults to 1.
-def size_fmt(num, decimals = 1):
-    fmt = "%%3.%sf %%s"% decimals
-    for x in ['bytes','KB','MB','GB']:
-        if num < 1024.0:
-            return fmt % (num, x)
-        
-        num /= 1024.0
-        
-    return fmt % (num, 'TB')
+        output_msg(response, args.output, success=True)
 
 @handle_errors
 def upload(args):
+    """
+    Upload a file or a set of files to a Glacier vault.
+    """
 
     # See if we got a bacula-style file set.
     # This is /path/to/vol001|vol002|vol003
     if args.bacula:
         if len(args.filename) > 1:
             raise InputException(
-                'Bacula-style file name can accept only one file name.')
+                'Bacula-style file name input can accept only one file name argument.')
+        
         fileset = args.filename[0].split('|')
         if len(fileset) > 1:
             dirname = os.path.dirname(fileset[0])
@@ -189,83 +281,128 @@ def upload(args):
 
     glacier = default_glacier_wrapper(args)
     args.filename = args.filename if args.filename else [None]
-
     for f in args.filename:
         if f:
 
             # In case the shell does not expand wildcards, if any, do this here.
             if f[0] == '~':
                 f = os.path.expanduser(f)
+
+            results = []
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
                     response = glacier.upload(args.vault, g, args.description, args.region, args.stdin,
                                               args.name, args.partsize, args.uploadid, args.resume)
-                    print "Uploaded file: %s."% g
-                    print "Created archive with ID: %s"% response[0]
-                    print "Archive SHA256 tree hash: %s."% response[1]
+                    result = {"Uploaded file": g,
+                              "Created archive with ID": response[0],
+                              "Archive SHA256 tree hash": response[1]}
+                    
         else:
 
             # No file name; using stdin.
             response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
                                       args.name, args.partsize, args.uploadid, args.resume)
-            print "Created archive with ID: %s"% response[0]
-            print "Archive SHA256 tree hash: %s."% response[1]
+            result = {"Created archive with ID": response[0],
+                      "Archive SHA256 tree hash": response[1]}
+            
+        results.append(result)
+        
+    output_table(results, args.output) if len(results) > 1 else output_headers(results[0], args.output)
 
 @handle_errors
 def getarchive(args):
+    """
+    Initiate an archive retrieval job.
+    """
     glacier = default_glacier_wrapper(args)
     response = glacier.getarchive(args.vault, args.archive)
-    print_output(response)
-
+    output_table(response, args.output)
 
 @handle_errors
 def rmarchive(args):
+    """
+    Remove an archive from a vault.
+    """
     glacier = default_glacier_wrapper(args)
     glacier.rmarchive(args.vault, args.archive)
-    print "archive removed."
- 
+    output_msg("Archive removed.", args.output, success=True)
 
 @handle_errors
-def search(args, print_results=True):
+def search(args):
+    """
+    Search the database for file name or description.
+    """
     glacier = default_glacier_wrapper(args)
     response = glacier.search(vault=args.vault,
                               region=args.region,
                               search_term=args.searchterm,
-                              file_name=args.filename,
-                              print_results=True)
-    print_output(response)
+                              file_name=args.filename)
+    output_table(response, args.output)
 
 @handle_errors
 def inventory(args):
+    """
+    Fetch latest inventory (or start a retrieval job if not ready).
+    """
     glacier = default_glacier_wrapper(args)
-    print 'Checking inventory, please wait.'
+    output = args.output
+    if sys.stdout.isatty() and output == 'print':
+        print 'Checking inventory, please wait.\r',
+        sys.stdout.flush()
+        
     job, inventory = glacier.inventory(args.vault, args.refresh)
     if inventory:
-        print "Inventory of vault: %s" % (inventory["VaultARN"],)
-        print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
-        print "Content:"
+        if sys.stdout.isatty() and output == 'print':
+            print "Inventory of vault: %s" % (inventory["VaultARN"],)
+            print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
+            print "Content:"
+            
         headers = {'ArchiveDescription': 'Archive Description',
                    'CreationDate': 'Uploaded',
-                   "Size": 'Size',
+                   'Size': 'Size',
                    'ArchiveId': 'Archive ID',
                    'SHA256TreeHash': 'SHA256 tree hash'}
-        print_output(inventory['ArchiveList'], keys=headers)
-        size = 0
-        for item in inventory['ArchiveList']:
-            size += int(item['Size'])
+        output_table(inventory['ArchiveList'], args.output, keys=headers)
+        if sys.stdout.isatty() and output == 'print':
+            size = 0
+            for item in inventory['ArchiveList']:
+                size += int(item['Size'])
 
-        print 'This vault contains %s items, total size %s.'% (len(inventory['ArchiveList']), size_fmt(size))
+            print 'This vault contains %s items, total size %s.'% (len(inventory['ArchiveList']), size_fmt(size))
 
     else:
-        print "Inventory retrieval in progress."
-        print "Job ID: %s."% job['JobId']
-        print "Job started (time in UTC): %s."% job['CreationDate']
+        result = {'Status':'Inventory retrieval in progress.',
+                  'Job ID':job['JobId'],
+                  'Job started (time in UTC)':job['CreationDate']}
+        output_headers(result, args.output)
 
 @handle_errors
 def treehash(args):
+    """
+    Calculates the tree hash of the given file(s).
+    """
     glacier = default_glacier_wrapper(args)
-    print glacier.get_tree_hash(args.filename)
+    hash_results = []
+    for f in args.filename:
+        if f:
+
+            # In case the shell does not expand wildcards, if any, do this here.
+            if f[0] == '~':
+                f = os.path.expanduser(f)
+                
+            globbed = glob.glob(f)
+            if globbed:
+                for g in globbed:
+                    hash_results.append(
+                        {'File name': g,
+                         'SHA256 tree hash': glacier.get_tree_hash(g)})
+        else:
+            raise InputException(
+                'No file name given.',
+                code='CommandError')
+
+    output_table(hash_results, args.output)
 
 def main():
     program_description = u"""
@@ -337,9 +474,6 @@ def main():
                        default=default("region"),
                        help="Region where you want to store \
                              your archives " + help_msg_config)
-
-    # This appears to work slightly different between
-    # Python versions!
     bookkeeping = default("bookkeeping") and True
     group.add_argument('--bookkeeping',
                        required=False,
@@ -348,7 +482,6 @@ def main():
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
                              bookkeeping domain name set")
-    
     group.add_argument('--bookkeeping-domain-name',
                         required=False,
                         default=default("bookkeeping-domain-name"),
@@ -363,6 +496,11 @@ def main():
                        choices=["-1", "DEBUG", "0", "INFO", "1", "WARNING",
                                 "2", "ERROR", "3", "CRITICAL"],
                        help="Set the lowest level of messages you want to log.")
+    group.add_argument('--output',
+                       required=False,
+                       default=default('output') if default('output') else 'print',
+                       choices=['print', 'csv', 'json'],
+                       help='Set how to return results: print to the screen, or as csv resp. json string.')
 
     # glacier-cmd mkvault <vault>
     parser_mkvault = subparsers.add_parser("mkvault",
@@ -550,7 +688,7 @@ E.g.: /path/to/backup/vol001|vol002|vol003''')
     # glacier-cmd hash <filename>
     parser_describejob = subparsers.add_parser('treehash',
         help='Calculate the tree-hash (Amazon style sha256-hash) of a file.')
-    parser_describejob.add_argument('filename',
+    parser_describejob.add_argument('filename', nargs='*',
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
 

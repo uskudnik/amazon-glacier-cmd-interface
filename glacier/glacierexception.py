@@ -27,8 +27,9 @@ class GlacierException(Exception):
     TODO: describe usage.
     """
 
-    ERRORCODE = {'InternalError': 255,        # Library internal error.
-                 'UndefinedErrorCode': 254,   # Undefined code.
+    ERRORCODE = {'InternalError': 127,        # Library internal error.
+                 'UndefinedErrorCode': 126,   # Undefined code.
+                 'NoResults': 125,            # Operation yielded no results.
                  'GlacierConnectionError': 1, # Can not connect to Glacier. 
                  'SdbConnectionError': 2,     # Can not connect to SimpleDB.
                  'CommandError': 3,           # Command line is invalid.
@@ -145,8 +146,6 @@ to get output when calling this function.\n')
 
         return out
 
-
-
 class InputException(GlacierException):
     """
     Exception that is raised when there is someting wrong with the
@@ -192,10 +191,6 @@ class CommunicationException(GlacierException):
     Exception that is raised when there is something wrong in
     the communication with an external library like boto.
     """
-
-    SdbReadError = 8
-    SdbWriteError = 9
-
     def __init__(self, message, code=None, cause=None):
         """ Handles the exception.
 
@@ -212,14 +207,8 @@ class ResponseException(GlacierException):
     """
     Exception that is raised when there is an http response error.
     """
-    
-    # Will be removed when merge with boto
-    Error_403 = 403
     def __init__(self, message, code=None, cause=None):
         GlacierException.__init__(self, message, code=code, cause=cause)
-
-
-
 
 if __name__ == '__main__':
     class ChildrenException(Exception):
