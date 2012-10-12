@@ -1,10 +1,13 @@
-**Glacier command line utility was renamed from `glacier` to `glacier-cmd`,   
-because of inconsistencies with boto.**
+Release notes
+=============
 
-**Renamed configuration file from `.glacier` to `.glacier-cmd` to reflect new
-name of this utility.** 
+**Glacier command line utility was renamed from `glacier` to `glacier-cmd`, because of inconsistencies with boto.**
 
-**For everybody having problems with install, don't forget to install git**
+**Renamed configuration file from `.glacier` to `.glacier-cmd` to reflect new name of this utility.** 
+
+**Command line parameter description changed from positional argument to optional argument. This means from now on you must add `--description <description>` on the command line to give a description. This to allow for multiple file names and wild cards to be used in conjunction with the `upload` subcommand.**
+
+**For everybody having problems with install, don't forget to install git.**
 
 Amazon Glacier CLI
 ==================
@@ -282,6 +285,28 @@ glacier:
  --output {print,csv,json}
                        Set how to return results: print to the screen, or as
                        csv resp. json string. (default: print)
+
+
+Bandwidth throttling
+--------------------
+
+`glacier-cmd` does not by itself support bandwidth throttling and uses all the available bandwidth it can get hold off. Should you require bandwidth throttling you should use a utility designed for such purpose. One such utility is [tc](http://linux.die.net/man/8/tc). A short [example](https://github.com/uskudnik/amazon-glacier-cmd-interface/issues/32#issuecomment-8754845) by @gburca:
+    
+    TC=/sbin/tc
+    IF=eth0
+    REGION="us-east-1"
+    IP=`dig +short +answer "glacier.${REGION}.amazonaws.com" A | grep -v '\.$' | tr '\n' ' '`
+    U32="$TC filter add dev $IF protocol ip parent 1:0 prio 1 u32"
+
+    $TC qdisc add dev $IF root handle 1: htb default 30
+    $TC class add dev $IF parent 1: classid 1:2 htb rate 200kbps
+    for ip in $IP; do
+        $U32 match ip dst $ip/32 flowid 1:2
+    done
+
+and later, to disable filtering:
+    
+    $TC qdisc del dev $IF root
 
 
 TODO:
