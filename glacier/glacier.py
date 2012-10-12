@@ -254,9 +254,8 @@ def download(args):
     Download an archive.
     """
     glacier = default_glacier_wrapper(args)
-    response = glacier.download(args.vault, args.archive, args.outfile, args.overwrite)
-    
-    # Only print result when writing to file, to not mess up the download.
+    response = glacier.download(args.vault, args.archive, args.partsize,
+                                out_file_name=args.outfile, overwrite=args.overwrite)
     if args.outfile:
         output_msg(response, args.output, success=True)
 
@@ -298,6 +297,13 @@ def upload(args):
                               "Created archive with ID": response[0],
                               "Archive SHA256 tree hash": response[1]}
                     
+                    print "Uploaded file: %s."% g
+                    print "Created archive with ID: %s"% response[0]
+                    print "Archive SHA256 tree hash: %s."% response[1]
+            else:
+                raise InputException(
+                    "File name given for upload can not be found: %s."% f,
+                    code='CommandError')
         else:
 
             # No file name; using stdin.
@@ -635,17 +641,47 @@ E.g.: /path/to/backup/vol001|vol002|vol003''')
 
     # glacier-cmd download <vault> <archive> [--outfile <file name>]
     parser_download = subparsers.add_parser('download',
+        formatter_class=argparse.RawTextHelpFormatter,
         help='Download a file by archive id.')
     parser_download.add_argument('vault',
         help="Specify the vault in which archive is located.")
     parser_download.add_argument('archive',
         help='The archive to be downloaded.')
     parser_download.add_argument('--outfile',
-        help='The name of the local file to store the archive. \
-              If omitted, stdout will be used.')
+        help='''\
+The name of the local file to store the archive.
+If omitted, stdout will be used.''')
     parser_download.add_argument('--overwrite', action='store_true',
-        help='Overwrite an existing local file if one exists when \
-              downloading an archive.')
+        help='''
+Overwrite an existing local file if one exists when
+downloading an archive.''')
+    parser_download.add_argument('--partsize', type=int, default=-1,
+        help='''\
+Part size to use for download (in MB). Must
+be a power of 2 in the range:
+    1, 2, 4, 8, ..., 2,048, 4,096.
+Values that are not a power of 2 will be
+adjusted upwards to the next power of 2.
+
+Amazon accepts up to 10,000 parts per download.
+
+Smaller parts result in more frequent progress
+updates, and less bandwidth wasted if a part
+needs to be re-transmitted. On the other hand,
+smaller parts limit the size of the archive that
+can be downloaded and result in slower overall
+performance. Some examples:
+
+partsize  MaxArchiveSize
+    1        1*1024*1024*10000 ~= 9.7 GB
+    4        4*1024*1024*10000 ~= 39 GB
+   16       16*1024*1024*10000 ~= 156 GB
+  128      128*1024*1024*10000 ~= 1.2 TB
+ 4096     4096*1024*1024*10000 ~= 39 TB
+
+If not given, the smallest possible part size
+will be used depending on the size of the job
+at hand.''')
     parser_download.set_defaults(func=download)
 
     # glacier-cmd rmarchive <vault> <archive>
