@@ -14,7 +14,9 @@ import re
 import locale
 
 from prettytable import PrettyTable
+
 from GlacierWrapper import GlacierWrapper
+
 from functools import wraps
 from glacierexception import *
 
@@ -39,15 +41,10 @@ def print_output(output, keys=None, sort_key=None):
         print 'No output!'
         return
 
-    headers = [k for k in keys.keys()] if keys else output[0].keys()
-
+    headers = [keys[k] for k in keys.keys()] if keys else output[0].keys()
     table = PrettyTable(headers)
-
     for line in output:
-        if keys:
-            table.add_row([line[keys[k]] for k in keys])
-        else:
-            table.add_row([line[k] for k in headers])
+        table.add_row([line[k] for k in (keys.keys() if keys else headers)])
 
     if sort_key:
         table.sortby = sort_key
@@ -83,40 +80,34 @@ def handle_errors(fn):
 def lsvault(args):
     glacier = default_glacier_wrapper(args)
     vault_list = glacier.lsvault()
-    keys = {"Vault name": 'VaultName',
-            "ARN": 'VaultARN',
-            "Created": 'CreationDate',
-            "Size": 'SizeInBytes'}
-##    print_output(vault_list, keys=keys, sort_key="Vault name")
+    keys = {'VaultName': "Vault name",
+            'VaultARN': "ARN",
+            'CreationDate': "Created",
+            'SizeInBytes': "Size"}
     print_output(vault_list, keys=keys)
 
 @handle_errors
 def mkvault(args):
     glacier = default_glacier_wrapper(args)
-
     response = glacier.mkvault(args.vault)
-    print dict(response)["location"]
-    print print_headers(response)
+    print_headers([(k, response[k]) for k in response.keys()])
 
 @handle_errors
 def rmvault(args):
     glacier = default_glacier_wrapper(args)
-
     response = glacier.rmvault(args.vault)
-    print print_headers(response)
+    print_headers([(k, response[k]) for k in response.keys()])
 
 @handle_errors
 def describevault(args):
     glacier = default_glacier_wrapper(args)
-
     response = glacier.describevault(args.vault)
-
-    keys = {"LastInventory": 'LastInventoryDate',
-            "Archives": 'NumberOfArchives',
-            "Size": 'SizeInBytes',
-            "ARN": 'VaultARN',
-            "Created": 'CreationDate'}
-    print_output(response, keys=keys)
+    headers = {'LastInventoryDate': "LastInventory",
+               'NumberOfArchives': "Archives",
+               'SizeInBytes': "Size",
+               'VaultARN': "ARN",
+               'CreationDate': "Created"}
+    print_headers([(headers[k], response[k]) for k in headers.keys()])
 
 @handle_errors
 def listmultiparts(args):
@@ -130,48 +121,33 @@ def listmultiparts(args):
         headers = sorted(response[0].keys())
         print_output(response)
 
-##    print "Marker: ", response['Marker']
-##    if len(response['UploadsList']) > 0:
-##        headers = sorted(response['UploadsList'][0].keys())
-##        table = PrettyTable(headers)
-##        for entry in response['UploadsList']:
-##            table.add_row([locale.format('%d', entry[k], grouping=True) if k == 'PartSizeInBytes'
-##                           else entry[k] for k in headers ])
-##        print table
-
 @handle_errors
 def abortmultipart(args):
     glacier = default_glacier_wrapper(args)
-    
     response = glacier.abortmultipart(args.vault, args.uploadId)
-    print_headers(response)
+    print_headers([(k, response[k]) for k in response.keys()])
 
 @handle_errors
 def listjobs(args):
     glacier = default_glacier_wrapper(args)
-
-    job_list = glacier.listjobs(args.vault)
-
+    job_list = glacier.list_jobs(args.vault)
     if job_list == []:
         print 'No jobs.'
         return
 
-    headers = {"Action": 'Action',
-               "Archive ID": 'ArchiveId',
-               "Status": 'StatusCode',
-               "Initiated": 'CreationDate',
-               "VaultARN": 'VaultARN',
-               "Job ID": 'JobId'}
-    print_output(job_list, keys=headers)
-
+    headers = {'Action': "Action",
+               'ArchiveId': "Archive ID",
+               'StatusCode': "Status",
+               'CreationDate': "Initiated",
+               'VaultARN': "VaultARN",
+               'JobId': "Job ID"}
+    print_output(job_list, headers)
 
 @handle_errors
 def describejob(args):
     glacier = default_glacier_wrapper(args)
-    gj = glacier.describejob(args.vault, args.jobid)
-    print "Archive ID: %s\nJob ID: %s\nCreated: %s\nStatus: %s\n" % (gj['ArchiveId'],
-                                                                     args.jobid, gj['CreationDate'],
-                                                                     gj['StatusCode'])
+    job = glacier.describejob(args.vault, args.jobid)
+    print_headers([(k, job[k]) for k in job.keys()])
 
 @handle_errors
 def download(args):
@@ -179,9 +155,8 @@ def download(args):
     response = glacier.download(args.vault, args.archive, args.outfile, args.overwrite)
     if args.outfile:
 
-        # Only print result when writing to file.
+        # Only print result when writing to file, to not mess up the download.
         print response
-
 
 ### Formats file sizes in human readable format. Anything bigger than TB
 ### is returned is TB. Number of decimals is optional, defaults to 1.
@@ -199,7 +174,7 @@ def download(args):
 def upload(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.upload(args.vault, args.filename, args.description, args.region, args.stdin,
-                              args.partsize)
+                              args.partsize, args.uploadid, args.resume)
     print "Created archive with ID: ", response[0]
     print "Archive SHA256 tree hash: ", response[1]
 
@@ -228,28 +203,30 @@ def search(args, print_results=True):
                               print_results=True)
     print_output(response)
 
-
-
+@handle_errors
 def inventory(args):
-
     glacier = default_glacier_wrapper(args)
     job, inventory = glacier.inventory(args.vault, args.refresh)
-
     if inventory:
         print "Inventory of vault: %s" % (inventory["VaultARN"],)
         print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
         print "Content:"
-        headers = {"Archive Description": 'ArchiveDescription',
-                   "Uploaded": 'CreationDate',
+        headers = {'ArchiveDescription': 'Archive Description',
+                   'CreationDate': 'Uploaded',
                    "Size": 'Size',
-                   "Archive ID": 'ArchiveId',
-                   "SHA256 tree hash": 'SHA256TreeHash'}
+                   'ArchiveId': 'Archive ID',
+                   'SHA256TreeHash': 'SHA256 tree hash'}
         print_output(inventory['ArchiveList'], keys=headers)
 
     else:
         print "Inventory retrieval in progress."
         print "Job ID: %s."% job['JobId']
         print "Job started (time in UTC): %s."% job['CreationDate']
+
+@handle_errors
+def treehash(args):
+    glacier = default_glacier_wrapper(args)
+    print glacier.get_tree_hash(args.filename)
 
 def main():
     program_description = u"""
@@ -322,9 +299,12 @@ def main():
                        help="Region where you want to store \
                              your archives " + help_msg_config)
 
+    # This appears to work slightly different between
+    # Python versions!
+    bookkeeping = default("bookkeeping") and True
     group.add_argument('--bookkeeping',
                        required=False,
-                       default=default("bookkeeping")==True and True,
+                       default=bookkeeping,
                        action="store_true",
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
@@ -420,6 +400,18 @@ when uploading from stdin.''')
     parser_upload.add_argument('description', nargs='?', default=None,
         help='Description of the file to be uploaded. Use quotes \
               if your file contains spaces. (optional).')
+    parser_upload.add_argument('--uploadid', default=None,
+        help='''\
+The uploadId of a multipart upload that is not
+finished yet. If given, glacier-cmd will attempt
+to resume this upload using the given file, or by
+re-reading the data from stdin.''')
+    parser_upload.add_argument('--resume', action='store_true',
+        help='''\
+Attempt to resume an interrupted multi-part upload.
+Does not work in combination with --stdin, and
+requires bookkeeping to be enabled.
+(not implemented yet)''')
     parser_upload.set_defaults(func=upload)
 
     # glacier-cmd listmultiparts <vault>
@@ -510,9 +502,15 @@ when uploading from stdin.''')
         help='The job ID of the job to be described.')
     parser_describejob.set_defaults(func=describejob)
 
+    # glacier-cmd hash <filename>
+    parser_describejob = subparsers.add_parser('treehash',
+        help='Calculate the tree-hash (Amazon style sha256-hash) of a file.')
+    parser_describejob.add_argument('filename',
+        help='The filename to calculate the treehash of.')
+    parser_describejob.set_defaults(func=treehash)
 
     # TODO args.logtostdout becomes false when parsing the remaining_argv
-    # so here we bridge this. A bad hack but it works.
+    # so here we bridge this. An ugly hack but it works.
     logtostdout = args.logtostdout
 
     # Process the remaining arguments.
