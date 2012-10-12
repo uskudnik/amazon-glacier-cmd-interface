@@ -43,12 +43,8 @@ class GlacierException(Exception):
                  'BookkeepingError': 11,      # Bookkeeping not available.
                  'SdbCommunicationError': 12, # Problem reading/writing SimpleDB data.
                  'ResourceNotFoundException': 13, # Glacier can not find the requested resource.
-<<<<<<< HEAD
-                 'InvalidParameterValueException': 14} # Parameter not accepted.
-=======
-                 'DownloadError': 14 }        # Downloading an archive failed.
->>>>>>> development
-                 
+                 'InvalidParameterValueException': 14, # Parameter not accepted.
+                 'DownloadError': 15 }        # Downloading an archive failed.
                  
     def __init__(self, message, code=None, cause=None):
         """
