@@ -18,6 +18,9 @@ import traceback
 import glaciercorecalls
 import select
 import hashlib
+import fcntl
+import termios
+import struct
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -363,6 +366,39 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         
         return True
 
+    def _check_part_size(self, part_size, total_size):
+        """
+        Check the part size:
+        - check whether we have a part size, if not: use default.
+        - check whether part size is a power of two: if not,
+            increase until it is.
+        - check wehther part size is big enough for the archive
+            total size: if not, increase until it is.
+
+        Return part size to use.
+        """        
+        
+        if part_size < 0:
+            if total_size > 0:
+                part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+            else:
+                part_size = GlacierWriter.DEFAULT_PART_SIZE
+        else:
+            ps = self._next_power_of_2(part_size)
+            if not ps == part_size:
+                self.logger.warning('Part size in MB must be a power of 2, \
+e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_size, ps))
+
+            part_size = ps
+
+        # Check whether user specified value is big enough, and adjust if needed.
+        if total_size > part_size*1024*1024*self.MAX_PARTS:
+            part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+            self.logger.warning("Part size given is too small; \
+using %s MB parts to upload."% part_size)
+
+        return part_size
+
     def _next_power_of_2(self, v):
         """
         Returns the next power of 2, or the argument if it's
@@ -385,6 +421,12 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         v |= v >> 16
         return v + 1
 
+    def _bold(self, msg):
+        """
+        Uses ANSI codes to make text bold for printing on the tty.
+        """
+        return u'\033[1m%s\033[0m' % msg
+
     def _progress(self, msg):
         """
         A progress indicator. Prints the progress message if stdout
@@ -394,9 +436,20 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :type msg: str
         """
         if sys.stdout.isatty():
-            print msg,
-            sys.stdout.flush()
 
+            # Get the current screen width.
+            cols = struct.unpack('hh',  fcntl.ioctl(sys.stdout, termios.TIOCGWINSZ, '1234'))[1]
+
+            # Make sure the message fits on a single line, strip if not,
+            # and add spaces to fill the line if it's shorter (to erase
+            # old characters from longer lines)
+            msg = msg[:cols] if len(msg)>cols else msg
+            if len(msg)<cols:
+                for i in range(cols-len(msg)):
+                    msg += ' '
+
+            sys.stdout.write(msg + '\r')
+            sys.stdout.flush()
     def _size_fmt(self, num, decimals=1):
         """
         Formats byte sizes in human readable format. Anything bigger
@@ -750,7 +803,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
     @log_class_call("Uploading archive.",
                     "Upload of archive finished.")
     def upload(self, vault_name, file_name, description, region,
-               stdin, part_size, uploadid, resume):
+               stdin, alternative_name, part_size, uploadid, resume):
         """
         Uploads a file to Amazon Glacier.
         
@@ -770,11 +823,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :raises:
         """
 
+        # Switch off debug logging for boto, as otherwise it's
+        # filling up the log with the data sent!
+        if self.logger.getEffectiveLevel() == 10:
+            logging.getLogger('boto').setLevel(logging.INFO)
+
         # Do some sanity checking on the user values.
         self._check_vault_name(vault_name)
         self._check_region(region)
         if not description:
-            description = file_name if file_name else ''
+            description = file_name if file_name else 'No description.'
 
         if description:
             self._check_vault_description(description)
@@ -784,28 +842,37 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         if resume and stdin:
             raise InputException(
-                'You must provide the UploadId to resume upload of streams from stdin.\nUse glacier-cmd listmultiparts <vault> to find the UploadId.')
-        
-        # If filename is given, try to use this file.
+                'You must provide the UploadId to resume upload of streams from stdin.\nUse glacier-cmd listmultiparts <vault> to find the UploadId.',
+                code='CommandError')
+
+        # If file_name is given, try to use this file(s).
         # Otherwise try to read data from stdin.
         total_size = 0
         reader = None
         if not stdin:
+            if not file_name:
+                raise InputException(
+                    "No file name given for upload.",
+                    code='CommandError')
+            
             try:
                 reader = open(file_name, 'rb')
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
-                    "Could not access the file given.",
-                    cause=e)
+                    "Could not access file: %s."% file_name,
+                    cause=e,
+                    code='FileError')
+                
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
         else:
             raise InputException(
-                "There is nothing to upload.")
+                "There is nothing to upload.",
+                code='CommandError')
 
-        # Log the kind of upload we're giong to do.
+        # Log the kind of upload we're going to do.
         if uploadid:
             self.logger.info('Attempting resumption of upload of %s to %s.'% (file_name if file_name else 'data from stdin', vault_name))
         elif resume:
@@ -815,25 +882,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         # If user did not specify part_size, compute the optimal (i.e. lowest
         # value to stay within the self.MAX_PARTS (10,000) block limit).
-        if part_size < 0:
-            if total_size > 0:
-                part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
-            else:
-                part_size = GlacierWriter.DEFAULT_PART_SIZE
-        else:
-            ps = self._next_power_of_2(part_size)
-            if not ps == part_size:
-                self.logger.warning('Part size in MB must be a power of 2, \
-e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_size, ps))
-
-            part_size = ps
-
-        # Check whether user specified value is big enough, and adjust if needed.
-        if total_size > part_size*1024*1024*self.MAX_PARTS:
-            part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
-            self.logger.warning("Part size given is too small; \
-using %s MB parts to upload."% part_size)
-
+        part_size= self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
         
         # If we have an UploadId, check whether it is linked to a current
@@ -850,7 +899,8 @@ using %s MB parts to upload."% part_size)
                     break
             else:
                 raise InputException(
-                    'Can not resume upload of this data as no existing job with this uploadid could be found.')
+                    'Can not resume upload of this data as no existing job with this uploadid could be found.',
+                    code='IdError')
 
         # Initialise the writer task.
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
@@ -883,7 +933,8 @@ using %s MB parts to upload."% part_size)
                     if not start == current_position:
                         if stdin:
                             raise InputException(
-                                'Cannot verify non-sequential upload data from stdin.')
+                                'Cannot verify non-sequential upload data from stdin.',
+                                code='ResumeError')
                         reader.seek(start)
 
                     # Try to read the chunk of data, and take the hash if we
@@ -894,17 +945,19 @@ using %s MB parts to upload."% part_size)
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
-                            self.logger.debug('Part %s hash matches.')
+                            self.logger.debug('Part %s hash matches.'% part['RangeInBytes'])
                             writer.tree_hashes.append(data_hash)
                         else:
                             raise InputException(
                                 'Received data does not match uploaded data; please check your uploadid and try again.',
-                                cause='SHA256 hash mismatch.')
+                                cause='SHA256 hash mismatch.',
+                                code='ResumeError')
                         
                     else:
                         raise InputException(
                             'Received data does not match uploaded data; please check your uploadid and try again.',
-                            cause='No or not enough data to match.')
+                            cause='No or not enough data to match.',
+                            code='ResumeError')
 
                 # If a marker is present, this means there are more pages
                 # of parts available. If no marker, we have the last page.
@@ -914,12 +967,12 @@ using %s MB parts to upload."% part_size)
                     break
 
                 if total_size > 0:
-                    msg = '\rChecked %s of %s (%s%%).' \
+                    msg = 'Checked %s of %s (%s%%).' \
                           % (self._size_fmt(writer.uploaded_size),
                              self._size_fmt(total_size),
-                             int(100 * writer.uploaded_size/total_size))
+                             self._bold(str(int(100 * writer.uploaded_size/total_size))))
                 else:
-                    msg = '\rChecked %s.' \
+                    msg = 'Checked %s.' \
                           % (self._size_fmt(writer.uploaded_size))
                     
                 self._progress(msg)
@@ -928,12 +981,12 @@ using %s MB parts to upload."% part_size)
             # before resuming the upload.
             self.logger.info('Already uploaded: %s. Continuing from there.'% self._size_fmt(stop))
             if total_size > 0:
-                msg = '\rChecked %s of %s (%s%%). Check done; resuming upload.' \
+                msg = 'Checked %s of %s (%s%%). Check done; resuming upload.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(total_size),
-                         int(100 * writer.uploaded_size/total_size))
+                         self._bold(str(int(100 * writer.uploaded_size/total_size))))
             else:
-                msg = '\rChecked %s. Check done; resuming upload.' \
+                msg = 'Checked %s. Check done; resuming upload.' \
                       % (self._size_fmt(writer.uploaded_size))
 
             self._progress(msg)
@@ -958,16 +1011,16 @@ using %s MB parts to upload."% part_size)
                     time_left = "Unknown"
                     eta = "Unknown"
 
-                msg = '\rWrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+                msg = 'Wrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(total_size),
-                         int(100 * writer.uploaded_size/total_size),
+                         self._bold(str(int(100 * writer.uploaded_size/total_size))),
                          self._size_fmt(current_rate, 2),
                          self._size_fmt(overall_rate, 2),
                          eta)
 
             else:
-                msg = '\rWrote %s. Rate %s/s.' \
+                msg = 'Wrote %s. Rate %s/s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(overall_rate, 2))
 
@@ -978,16 +1031,23 @@ using %s MB parts to upload."% part_size)
         writer.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
-        msg = '\rWrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
+        msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
                                             self._size_fmt(overall_rate, 2))
         self._progress(msg)
         self.logger.info(msg)
 
         archive_id = writer.get_archive_id()
-        location = writer.get_location()
         sha256hash = writer.get_hash()
+        location = writer.get_location()
 
         if self.bookkeeping:
+            self.logger.info('Writing upload information into the bookkeeping database.')
+
+            # Use the alternative name as given by --name <name> if we have it.
+            file_name = alternative_name if alternative_name else file_name
+
+            # If still no name this is an stdin job, so set name accordingly.
+            file_name = file_name if file_name else 'Data from stdin.'
             file_attrs = {
                 'region': region,
                 'vault': vault_name,
@@ -999,10 +1059,10 @@ using %s MB parts to upload."% part_size)
                 'hash': sha256hash
             }
 
-            if file_name:
-                file_attrs['filename'] = file_name
-            elif stdin:
-                file_attrs['filename'] = description
+##            if file_name:
+##                file_attrs['filename'] = file_name
+##            elif stdin:
+##                file_attrs['filename'] = 'data from stdin'
 
             self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
 
@@ -1019,13 +1079,13 @@ using %s MB parts to upload."% part_size)
 
         If retrieval job is not yet initiated:
                 initiate a job,
-                return tuple ("initiated", job status, None, results)
+                return tuple ("initiated", job, None)
                 
         If retrieval job is already initiated:
-                return tuple ("running", job status, None, results).
+                return tuple ("running", job, None).
                 
         If the file is ready for download:
-                return tuple ("ready", job status, GlacierJob, results).
+                return tuple ("ready", job, jobId).
 
         :param vault: Vault name from where we want to retrieve the archive.
         :type vault: str
@@ -1052,7 +1112,7 @@ using %s MB parts to upload."% part_size)
             
         # No job found related to this archive, start a new job.
         job_data = {'ArchiveId': archive_id,
-                    'Type': archive-retrieval}
+                    'Type': 'archive-retrieval'}
         try:
             response = self.glacierconn.initiate_job(vault_name, job_data)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
@@ -1068,7 +1128,8 @@ using %s MB parts to upload."% part_size)
     @sdb_connect
     @log_class_call("Download an archive.",
                     "Download archive done.")
-    def download(self, vault_name, archive_id, out_file=None, overwrite=False):
+    def download(self, vault_name, archive_id, part_size,
+                 out_file_name=None, overwrite=False):
         """
         Download a file from Glacier, and store it in out_file.
         If no out_file is given, the file will be dumped on stdout.
@@ -1080,11 +1141,14 @@ using %s MB parts to upload."% part_size)
 
         # Check whether the requested file is available from Amazon Glacier.
         job_list = self.list_jobs(vault_name)
+        job_id = None
         for job in job_list:
             if job['ArchiveId'] == archive_id:
+                download_job = job
                 if not job['Completed']:
                     raise CommunicationException(
-                        "Archive retrieval request not completed yet. Please try again later.")
+                        "Archive retrieval request not completed yet. Please try again later.",
+                        code='NotReady')
                 self.logger.debug('Archive retrieval completed; archive is available for download now.')
                 break
             
@@ -1092,59 +1156,116 @@ using %s MB parts to upload."% part_size)
             raise InputException(
                 "Requested archive not available. Please make sure \
 your archive ID is correct, and start a retrieval job using \
-'getarchive' if necessary.")
+'getarchive' if necessary.",
+                code='IdError')
 
         # Check whether we can access the file the archive has to be written to.
-        if out_file:
-            if os.path.isfile(out_file) and not overwrite:
+        out_file = None
+        if out_file_name:
+            if os.path.isfile(out_file_name) and not overwrite:
                 raise InputException(
                     "File exists already, aborting. Use the overwrite flag to overwrite existing file.",
                     code="FileError")
             try:
-                out = open(out_file, 'w')
-                out.close()
+                out_file = open(out_file_name, 'w')
             except IOError as e:
                 raise InputException(
                     "Cannot access the ouput file.",
-                    cause=e)
+                    cause=e,
+                    code='FileError')
 
+        # Sanity checking done; start downloading the file, part by part.
+        total_size = download_job['ArchiveSizeInBytes']
+        part_size_in_bytes = self._check_part_size(part_size, total_size) * 1024 * 1024
+        start_bytes = downloaded_size = 0
+        hash_list = []
+        start_time = current_time = previous_time = time.time()
+
+        # Log our pending action.
         if out_file:
-            self.logger.debug('Starting download of archive to file %s.'% out_file)
-            ffile = open(out_file, "w")
-            try:
-                ffile.write(self.glacierconn.get_output(vault_name, job['JobId']))
-            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
-                raise ResponseException(
-                    'Failed to download archive %s.'% archive_id,
-                    cause=self._decode_error_message(e.body),
-                    code=e.code)
-            
-            ffile.close()
-            self.logger.debug('Download of archive finished.')
-
-            #TODO: tree-hash check.
-            return 'File download successful.'
-        
+            self.logger.debug('Starting download of archive to file %s.'% out_file_name)
         else:
-            self.logger.debug('Downloading archive and sending output to stdout.')
+            self.logger.debug('Starting download of archive to stdout.')
+
+        # Download the data, one part at a time.
+        while downloaded_size < total_size:
+
+            # Read a part of data.
+            from_bytes = downloaded_size
+            to_bytes = min(downloaded_size + part_size_in_bytes, total_size)
             try:
-                print self.glacierconn.get_output(vault_name, job['JobId']),
+                response = self.glacierconn.get_job_output(vault_name,
+                                                            download_job['JobId'],
+                                                            byte_range=(from_bytes, to_bytes-1))
+                data = response.read()
             except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                 raise ResponseException(
                     'Failed to download archive %s.'% archive_id,
                     cause=self._decode_error_message(e.body),
                     code=e.code)
+
+            hash_list.append(glaciercorecalls.chunk_hashes(data))
+            downloaded_size = to_bytes
+            if out_file:
+                try:
+                    out_file.write(response.read())
+                except IOError as e:
+                    raise InputException(
+                        "Cannot write data to the specified file.",
+                        cause=e,
+                        code='FileError')
+            else:
+                sys.stdout.write(response.read())
+                sys.stdout.flush()
+
+            # Calculate progress statistics.
+            current_time = time.time()
+            overall_rate = int((downloaded_size-start_bytes)/(current_time - start_time))
+            current_rate = int(part_size_in_bytes/(current_time - previous_time))
+
+            # Estimate finish time, based on overall transfer rate.
+            time_left = (total_size - downloaded_size)/overall_rate
+            eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+            msg = 'Read %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+                  % (self._size_fmt(downloaded_size),
+                     self._size_fmt(total_size),
+                     self._bold(str(int(100 * downloaded_size/total_size))),
+                     self._size_fmt(current_rate, 2),
+                     self._size_fmt(overall_rate, 2),
+                     eta)
+            self._progress(msg)
+            previous_time = current_time
+            self.logger.debug(msg)
+            
+        if out_file:
+            out_file.close()
+
+        if glaciercorecalls.tree_hash(hash_list) != download_job['SHA256TreeHash']:
+            raise CommunicationException(
+                "Downloaded data hash mismatch",
+                code="DownloadError",
+                cause=None)
+
+        self.logger.debug('Download of archive finished successfully.')
+        current_time = time.time()
+        overall_rate = int(downloaded_size/(current_time - start_time))
+        msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
+                                            self._size_fmt(overall_rate, 2))
+        self._progress(msg)
+        self.logger.info(msg)       
 
     @glacier_connect
     @sdb_connect
     @log_class_call("Searching for archive.",
                     "Search done.")
-    def search(self, vault=None, region=None, file_name=None, search_term=None, print_results=False):
+    def search(self, vault=None, region=None, file_name=None, search_term=None):
 
         # Sanity checking.
         if not self.bookkeeping:
-            raise Exception(
-                u"You must enable bookkeeping to be able to do searches.")
+            raise InputException(
+                "You must enable bookkeeping to be able to do searches.",
+                cause='Bookkeeping not enabled.',
+                code='BookkeepingError')
 
         if vault:
             self._check_vault_name(vault)
@@ -1237,7 +1358,7 @@ your archive ID is correct, and start a retrieval job using \
             except boto.exception.SDBResponseError as e:
                 raise CommunicationException(
                     "Cannot get archive info from Amazon SimpleDB.",
-                    code="SdbReadError",
+                    code="SdbCommunicationError",
                     cause=e)
             
             try:
@@ -1363,14 +1484,12 @@ your archive ID is correct, and start a retrieval job using \
             reader = open(file_name, 'rb')
         except IOError as e:
             raise InputException(
-                "Could not access the file given.",
-                cause=e)
+                "Could not access the file given: %s."% file_name,
+                cause=e,
+                code='FileError')
 
         hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
         return glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hashes))
-
-        
-    
 
     def __init__(self, aws_access_key, aws_secret_key, region,
                  bookkeeping=False, bookkeeping_domain_name=None,
