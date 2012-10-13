@@ -18,7 +18,6 @@ Contents:
    Development
    Scripting
    License
-   *
 
 Indices and tables
 ==================

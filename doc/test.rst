@@ -1,1 +1,0 @@
-.. program-output:: python -V

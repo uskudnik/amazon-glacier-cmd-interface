@@ -8,9 +8,9 @@ You also need to install git, with something like ``apt-get install git``, to in
 
 To install glacier-cmd from source, run the following command from the source directory::
 
-$ sud python setup.py install
+$ sudo python setup.py install
 
-Then you may run the script:
+Then you may run the script::
 
 $ glacier-cmd [args]
 

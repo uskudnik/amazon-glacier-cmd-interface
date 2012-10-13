@@ -5,83 +5,9 @@ Usage.
 
 ``$ glacier-cmd --help``
 
-This command gives you a quick overview of all supported command line options, with a short  explanation of what they do. ::
+.. program-output:: glacier-cmd --help
 
- $ glacier-cmd --help
- usage: glacier-cmd [-h] [-c FILE] [--logtostdout]
-                    [--aws-access-key AWS_ACCESS_KEY]
-                    [--aws-secret-key AWS_SECRET_KEY] [--region REGION]
-                    [--bookkeeping]
-                    [--bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME]
-                    [--logfile LOGFILE]
-                    [--loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}]
-                    [--output {print,csv,json}]
-                    
-
- {mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash}
-                   ...
-
- Command line interface for Amazon Glacier
-
- optional arguments:
-  -h, --help            show this help message and exit
-  -c FILE, --conf FILE  Name of the file to log messages to. (default:
-                        ~/.glacier-cmd)
-  --logtostdout         Send log messages to stdout instead of the config
-                        file. (default: False)
-
- Subcommands:
-   {mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash}
-                        For subcommand help, use: glacier-cmd <subcommand> -h
-    mkvault             Create a new vault.
-    lsvault             List available vaults.
-    describevault       Describe a vault.
-    rmvault             Remove a vault.
-    upload              Upload an archive to Amazon Glacier.
-    listmultiparts      List all active multipart uploads.
-    abortmultipart      Abort a multipart upload.
-    inventory           List inventory of a vault, if available. If not
-                        available, creates inventory retrieval job if none
-                        running already.
-    getarchive          Requests to make an archive available for download.
-    download            Download a file by archive id.
-    rmarchive           Remove archive from Amazon Glacier.
-    search              Search Amazon SimpleDB database for available archives
-                        (requires bookkeeping to be enabled).
-    listjobs            List active jobs in a vault.
-    describejob         Describe a job.
-    treehash            Calculate the tree-hash (Amazon style sha256-hash) of
-                        a file.
-
- aws:
-  --aws-access-key AWS_ACCESS_KEY
-                        Your aws access key (Required if you have not created
-                        a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
-                        (default: AKIAIP5VPUSCSJQ6BSSQ)
-  --aws-secret-key AWS_SECRET_KEY
-                        Your aws secret key (Required if you have not created
-                        a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
-                        (default: WDgq6ZZn7Y4Lkt5LxPuionw2pTLbonwdFZz1BGtS)
-
- glacier:
-  --region REGION       Region where you want to store your archives (Required
-                        if you have not created a ~/.glacier-cmd or /etc
-                        /glacier-cmd.conf config file) (default: us-east-1)
-  --bookkeeping         Should we keep book of all created archives. This
-                        requires a Amazon SimpleDB account and its bookkeeping
-                        domain name set (default: True)
-  --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
-                        Amazon SimpleDB domain name for bookkeeping. (default:
-                        squirrel)
-  --logfile LOGFILE     File to write log messages to. (default: /home/wouter
-                        /.glacier-cmd.log)
-  --loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}
-                        Set the lowest level of messages you want to log.
-                        (default: DEBUG)
-  --output {print,csv,json}
-                        Set how to return results: print to the screen, or as
-                        csv resp. json string. (default: print)
-
+This command gives you a quick overview of all supported command line options, with a short  explanation of what they do.
 
 Configuration.
 ---------------
@@ -147,17 +73,11 @@ Vault management including creating, listing and removing of vaults is provided 
 Creating a vault.
 ^^^^^^^^^^^^^^^^^
 
-``$ glacier-cmd mkvault <vault name>`` ::
+``$ glacier-cmd mkvault <vault name>`` 
 
- $ glacier-cmd mkvault -h
- usage: glacier-cmd mkvault [-h] vault
+.. program-output:: glacier-cmd mkvault -h
 
- positional arguments:
-   vault       The vault to be created.
-
-This command creates a vault. It must be preceded by the name of the vault you want to create. Note: vault names are case sensitive, and may only contain characters a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), and '.' (period). The vault name should be at least one, and no more than 255 characters in length.
-
-.. program-output:: glacier-cmd mkvault Test
+Create a vault. It must be preceded by the name of the vault you want to create. Note: vault names are case sensitive, and may only contain characters a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), and '.' (period). The vault name should be at least one, and no more than 255 characters in length.
 
 ::
 
@@ -175,17 +95,9 @@ Listing available vaults.
 
 ``$ glacier-cmd lsvault``
 
-This command gives an overview of the available vaults.
+.. program-output:: glacier-cmd lsvault -h
 
-.. program-output:: glacier-cmd lsvault
-
-::
-
- $ glacier-cmd lsvault -h
- usage: glacier-cmd lsvault [-h]
-
-
-::
+Give an overview of the available vaults. ::
 
  +-------------+---------------------------------------------------------------+--------------------------+-----------------+
  |     Size    |                              ARN                              |         Created          |    Vault name   |
@@ -197,15 +109,11 @@ This command gives an overview of the available vaults.
 Describing status of a vault.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``$ glacier-cmd decribevault <vault name>`` ::
+``$ glacier-cmd decribevault <vault name>``
 
- $ glacier-cmd describevault -h
- usage: glacier-cmd describevault [-h] vault
+.. program-output:: glacier-cmd describevault -h
 
- positional arguments:
-   vault       The vault to be described.
-
-This command produces a table containing an overview of the status of a vault, including the number of archives, the size, and when the vault was created. ::
+Produces a table containing an overview of the status of a vault, including the number of archives, the size, and when the vault was created. ::
 
     $ glacier-cmd describevault Test
     200 OK
@@ -218,17 +126,11 @@ This command produces a table containing an overview of the status of a vault, i
 Deleting a vault.
 ^^^^^^^^^^^^^^^^^
 
-``$ glacier-cmd rmvault <vault name>`` ::
+``$ glacier-cmd rmvault <vault name>`` 
 
- $ glacier-cmd rmvault -h
- usage: glacier-cmd rmvault [-h] vault
+.. program-output:: glacier-cmd rmvault -h
 
- positional arguments:
-   vault       The vault to be removed.
-
-This command deletes a vault. Only empty vaults can be deleted, if you have archives in a vault you must delete these archives first. An error will be shown if you try to delete a non-empty vault.
-
-.. program-output glacier-cmd rmvault Test
+Delete a vault. Only empty vaults can be deleted, if you have archives in a vault you must delete these archives first. An error will be shown if you try to delete a non-empty vault.
 
 ::
 
@@ -242,20 +144,11 @@ This command deletes a vault. Only empty vaults can be deleted, if you have arch
 Listing inventory of a vault.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``$ glacier-cmd inventory <vault name>`` ::
+``$ glacier-cmd inventory <vault name>``
 
- $ glacier-cmd inventory -h
- usage: glacier-cmd inventory [-h] [--refresh] vault
+.. program-output:: glacier-cmd inventory -h
 
- positional arguments:
-   vault       The vault to list the inventory of.
-
- optional arguments:
-   -h, --help  show this help message and exit
-   --refresh   Create an inventory retrieval job, even if inventory is
-               available or with another retrieval job running.
-
-This command lists the latest inventory of a vault.
+List the latest inventory of a vault.
 
 Glacier does not automatically take inventory of a vault, instead it does so only on request. If no inventory available, this command will initiate an inventory retrieval job, which takes about four hours to finish.
 
@@ -275,17 +168,16 @@ To force the start of a new inventory retrieval job, use the ``--refresh`` comma
 Jobs management.
 ----------------
 
-To get an overview of jobs, use ``$ glacier-cmd listjobs <vault name>`` ::
+Jobs are tasks that run on the Amazon Glacier servers. There are two types of jobs: inventory retrieval jobs and archive retrieval jobs.
 
- $ glacier-cmd listjobs -h
- usage: glacier-cmd listjobs [-h] vault
+Listing jobs.
+^^^^^^^^^^^^^
 
- positional arguments:
-   vault       The vault to list the jobs for.
+``$ glacier-cmd listjobs <vault name>``
 
-This command gives an overview of recent jobs such as inventory and archive retrieval jobs and their status.
+.. program-output:: glacier-cmd listjobs -h
 
-.. program-output:: glacier-cmd listjobs Test 
+Give an overview of current jobs and their status.
 
 ::
 
@@ -297,16 +189,14 @@ This command gives an overview of recent jobs such as inventory and archive retr
  | arn:aws:glacier:us-east-1:335522851586:vaults/Test | 7HS2YzOfydeiyM5NLUIhiLpah2HpurXfFg5_YMpsrqRoIWwpQtPuKGwTrjTFimAL_WZfPsur57wRX0jkKDUORY-0BbmI |                                                                    None                                                                    | InventoryRetrieval | 2012-10-11T01:57:08.135Z | Succeeded  |
  +----------------------------------------------------+----------------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------+--------------------+--------------------------+------------+
 
-To get more information on a specific job, use ``$ glacier-cmd describejob <vault> <jobid>`` ::
+Describing jobs.
+^^^^^^^^^^^^^^^^
 
- $ glacier-cmd describejob -h
- usage: glacier-cmd describejob [-h] vault jobid
+``$ glacier-cmd describejob <vault> <jobid>``
 
- positional arguments:
-   vault       The vault the job is listed for.
-   jobid       The job ID of the job to be described.
+.. program-output:: glacier-cmd describejob -h
 
-Example use and output::
+Provides more information on a specific job, such as type of job, when it was started, and the current status. ::
 
  $ glacier-cmd describejob Test 7HS2YzOfydeiyM5NLUIhiLpah2HpurXfFg5_YMpsrqRoIWwpQtPuKGwTrjTFimAL_WZfPsur57wRX0jkKDUORY-0BbmI
  +----------------------+----------------------------------------------------------------------------------------------+
@@ -334,71 +224,16 @@ Archive management.
 
 You may upload, retrieve, download and delete archives using glacier-cmd.
 
-Note that when deleting a file, it takes up to a day for Glacier to update your inventory and actually purge the file. 
+Note that when deleting a file, it takes up to a day for Glacier to update your inventory and actually delist the archive from your vault.
 
 When downloading a file, you first must request the file to be retrieved by Glacier before you can download it. This retrieval process takes around four hours, and the file will be available for download for 24 hours after which it is removed from the available queue.
 
 Uploading an archive.
 ^^^^^^^^^^^^^^^^^^^^^
 
-``$ glacier-cmd upload <vault name> /path/to/archive [path/to/anotherarchive]`` ::
+``$ glacier-cmd upload <vault name> /path/to/archive [path/to/anotherarchive]``
 
- $ glacier-cmd upload -h
- usage: glacier-cmd upload [-h] [--stdin] [--name NAME] [--partsize PARTSIZE]
-                           [--description DESCRIPTION] [--uploadid UPLOADID]
-                           [--resume] [--bacula]
-                           vault [filename [filename ...]]
-
- positional arguments:
-   vault                 The vault the archive is to be stored in.
-   filename              The name(s) of the local file(s) to be uploaded. Wildcards
-                        are accepted. Can not be used if --stdin is used.
-
- optional arguments:
-   -h, --help            show this help message and exit
-   --stdin               Read data from stdin, instead of local file. 
-                         Can not be used if <filename> is given.
-   --name NAME           Use the given name as the filename for bookkeeping 
-                         purposes. To be used in conjunction with --stdin or 
-                         when the file being uploaded is a temporary file.
-   --partsize PARTSIZE   Part size to use for upload (in MB). Must
-                         be a power of 2 in the range:
-                             1, 2, 4, 8, ..., 2,048, 4,096.
-                         Values that are not a power of 2 will be
-                         adjusted upwards to the next power of 2.
-                         
-                         Amazon accepts up to 10,000 parts per upload.
-                         
-                         Smaller parts result in more frequent progress
-                         updates, and less bandwidth wasted if a part
-                         needs to be re-transmitted. On the other hand,
-                         smaller parts limit the size of the archive that
-                         can be uploaded. Some examples:
-                         
-                         partsize  MaxArchiveSize
-                             1        1*1024*1024*10000 ~= 9.7 GB
-                             4        4*1024*1024*10000 ~= 39 GB
-                            16       16*1024*1024*10000 ~= 156 GB
-                           128      128*1024*1024*10000 ~= 1.2 TB
-                          4096     4096*1024*1024*10000 ~= 39 TB
-                         
-                         If not given, the smallest possible part size
-                         will be used when uploading a file, and 128 MB
-                         when uploading from stdin.
-   --description DESCRIPTION
-                         Description of the file to be uploaded. Use quotes
-                         if your file name contains spaces. (optional).
-   --uploadid UPLOADID   The uploadId of a multipart upload that is not
-                         finished yet. If given, glacier-cmd will attempt
-                         to resume this upload using the given file, or by
-                         re-reading the data from stdin.
-   --resume              Attempt to resume an interrupted multi-part upload.
-                         Does not work in combination with --stdin, and
-                         requires bookkeeping to be enabled.
-                         (not implemented yet)
-   --bacula              The (single!) file name will be parsed using Bacula's
-                         style of providing multiple names on the command line.
-                         E.g.: /path/to/backup/vol001|vol002|vol003
+.. command-output:: glacier-cmd upload -h
 
 You may add an arbitrary number of files on the command line, or use wildcards in the file names.
 
@@ -448,7 +283,7 @@ Resume an interrupted job with the specified uploadid. If this option is present
 
 Not implemented yet.
 
-Attempt to automatically resume an upload using information stored in the bookkeeping database. This option requires :doc:`bookkeeping` to be enabled.
+Attempt to automatically resume an upload using information stored in the bookkeeping database. This option requires :doc:`Bookkeeping` to be enabled.
 
 * ``--bacula``
 
@@ -460,18 +295,14 @@ Downloading an archive.
 
 This is a two-step process as first you have to instruct Glacier to retrieve an archive and make it available for download via ``getarchive``, and when that job is done it can be downloaded using ``download``.
 
+Retrieve the archive from storage.
+""""""""""""""""""""""""""""""""""
+
 * ``$ glacier-cmd getarchive <vault> <archive-ID>`` 
 
-::
+.. program-output:: glacier-cmd getarchive -h
 
- $ glacier-cmd getarchive -h
- usage: glacier-cmd getarchive [-h] vault archive
-
- positional arguments:
-   vault       The vault the archive is stored in.
-   archive     The archive id.
-
-This command will start a job retrieving the archive with given archive ID from the vault. If a job for the same archive is running already, or is finished, it will notify the user of the status of this job.
+Start a job retrieving the archive with given archive ID from the vault. This takes about four hours. If a job for the same archive is running already, or is finished, it will notify the user of the status of this job.
 
 Note: if the archive ID starts with a hyphen (-) then it must be preceded by the ``--`` command line switch. ::
 
@@ -494,26 +325,15 @@ Note: if the archive ID starts with a hyphen (-) then it must be preceded by the
  |  ArchiveSizeInBytes  |                                           35723460                                           |
  +----------------------+----------------------------------------------------------------------------------------------+
 
+
+Download the data.
+""""""""""""""""""
+
 * ``$ glacier-cmd download <vault> <archive-ID>`` 
 
-::
+.. program-output:: glacier-cmd download -h
 
- $ glacier-cmd download -h
- usage: glacier-cmd download [-h] [--outfile OUTFILE] [--overwrite]
-                             vault archive
-
- positional arguments:
-   vault              Specify the vault in which archive is located.
-   archive            The archive to be downloaded.
-
- optional arguments:
-   -h, --help         show this help message and exit
-   --outfile OUTFILE  The name of the local file to store the archive. If
-                      omitted, stdout will be used.
-   --overwrite        Overwrite an existing local file if one exists when
-                      downloading an archive.
-
-This will download an archive if it is available. If not available it will inform the user. The download is done as a single block, so no progress updates of the download can be given. It is also not possible to resume an interrupted download at this moment.
+Download an archive if it is available. If not available it will inform the user to start an archive retrieval job for it. The download is done as a single block, so no progress updates of the download can be given. It is also not possible to resume an interrupted download at this moment.
 
 Downloading options.
 """"""""""""""""""""
@@ -530,18 +350,11 @@ Deleting an archive.
 
 ``$ glacier-cmd rmarchive <vault> <archive-ID>`` ::
 
- $ glacier-cmd rmarchive -h
- usage: glacier-cmd rmarchive [-h] vault archive
+.. program-output:: glacier-cmd rmarchive -h
 
- positional arguments:
-   vault       The vault the archive is stored in.
-   archive     The archive id of the archive to be removed.
+Remove the archive with <archive-ID> from the vault <vault>.
 
-This command will remove the archive with <archive-ID> from the vault <vault>.
-
-Note: if the archive ID starts wiht a - (hyphen), you must precede it with a ``--`` switch, as otherwise it is recognised as command line option.
-
-Example use and output::
+Note: if the archive ID starts wiht a - (hyphen), you must precede it with a ``--`` switch, as otherwise it is recognised as command line option. ::
 
    $ glacier-cmd rmarchive Test -- -6AKuLSU3wxtSqq_GeeAss9zLvto8Xr1su4mqmvluTTv4HcXbFJJNy0yiTu9tG5vFjrBXvmQKXGwFJpNMghqYBerUKpsjq56mrzv1wUbe6DWuzl6Ntb8WSQHYo0kzw8rcLaVx5MFug
     204 No Content
@@ -557,43 +370,39 @@ Note: it takes up to a day for Glacier to update your vault inventory, so the ar
 Searching by file name or description.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To search through the bookkeeping database for available archives, use ``$ glacier-cmd search`` ::
+``$ glacier-cmd search``
 
- $ glacier-cmd search -h
- usage: glacier-cmd search [-h] [--filename FILENAME] [--searchterm SEARCHTERM]
-                           [vault]
+.. command-output:: glacier-cmd search -h
 
- positional arguments:
-   vault                 The vault to search in. Searching all if omitted.
-
- optional arguments:
-   -h, --help            show this help message and exit
-   --filename FILENAME   Search key for searching by (part of) file names.
-   --searchterm SEARCHTERM
-                         Search key for searching (part of) description fields.
-
-Bookkeeping must be enabled for this function to work.
+Search the bookkeeping database for stored archives. Bookkeeping must be enabled for this function to work.
 
 If no options are given, it prints a list of all archives that are stored in the default region. All searches are limited to one region, if no ``--region`` option is set, the default region will be used.
-``--filename <file name>`` searches for a (partial) match on file name.
-``--searchterm <search term>`` searches for a (partial) match on description.
-``<vault>`` limits the search to the given vault.
+
+* ``--filename <file name>`` 
+
+Searches for a (partial) match on file name.
+
+* ``--searchterm <search term>`` 
+
+Searches for a (partial) match on description.
+
+* ``<vault>`` 
+
+Limits the search to the given vault.
 
 Managing multipart jobs.
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Uploads are sent block by block, when an upload is in progress (or halted) a multipart job is present in that vault.
+Uploads are sent block by block, when an upload is in progress (or halted) a multipart job is present in that vault. After about 24 hours of no activity, these jobs are removed and any uploaded data is lost.
 
-To see the multipart uploads currently in progress, use
-``$ glacier-cmd listmultiparts <vault>`` ::
+List uploads in progress.
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
- $ glacier-cmd listmultiparts -h
- usage: glacier-cmd listmultiparts [-h] vault
+``$ glacier-cmd listmultiparts <vault>``
 
- positional arguments:
-   vault       The vault to check the active multipart uploads for.
+.. program-output:: glacier-cmd listmultiparts -h
 
-Example use and output::
+List the multipart uploads currently in progress, with or without current activity. ::
 
     $ glacier-cmd listmultiparts Test
     200 OK
@@ -604,36 +413,26 @@ Example use and output::
     |  fancyme.glacier   | 2012-09-20T04:29:21.485Z | D18RNXeq5ffV99PITXrHBvJOULDt15EJJl0eBD5GFD-pc76ptWCz0k9mrJy4W4oUu2fQ0ljWxiqDXIKGLZVIfFIexErC |     4194304     | arn:aws:glacier:us-east-1:771747372727:vaults/Test |
     +--------------------+--------------------------+----------------------------------------------------------------------------------------------+-----------------+----------------------------------------------------+
 
-To abort one of the multipart uploads, use 
-``$ glacier-cmd abortmultipart <vault> <uploadid>`` ::
 
- $ glacier-cmd abortmultipart -h
- usage: glacier-cmd abortmultipart [-h] vault uploadId
+Abort an upload.
+^^^^^^^^^^^^^^^^
 
- positional arguments:
-   vault       The vault the upload is for.
-   uploadId    The id of the upload to be aborted, try listmultiparts.
+``$ glacier-cmd abortmultipart <vault> <uploadid>`` 
 
-Example use and output::
+.. program-output:: glacier-cmd abortmultipart -h
 
-    ``$ glacier-cmd abortmultipart Test D18RNXeq5ffV99PITXrHBvJOULDt15EJJl0eBD5GFD-pc76ptWCz0k9mrJy4W4oUu2fQ0ljWxiqDXIKGLZVIfFIexErC``
-
-An interrupted job will remain available for resumption for about 24 hours from last activity. After that period the job will be deleted by Amazon Glacier.
+Abort a multipart upload that is in progress. After giving this command that multipart upload can not be resumed.
 
 Tree hashing.
 -------------
 
+``$glacier-cmd treehash <filename>``
+
+.. program-output:: glacier-cmd treehash -h
+
 Amazon uses a special way of taking an SHA256 hash from a file: they use a tree hash. This means the normal ``sha256hash`` command will give a different hash than Amazon for files larger than 1 MB.
 
-To calculate the tree hash from a local file, to compare with the hash Amazon provides, you may use ``$glacier-cmd treehash <filename>`` where filename may be a list of files, and may contain wildcards. ::
-
- $ glacier-cmd treehash -h
- usage: glacier-cmd treehash [-h] [filename [filename ...]]
-
- positional arguments:
-   filename    The filename to calculate the treehash of.
-
-Example use and output::
+To calculate the tree hash from a local file, to compare with the hash Amazon provides, you may use the ``treehash`` command where filename may be a list of files, and may contain wildcards. ::
 
  $ glacier-cmd treehash *.jpg
  +--------------+------------------------------------------------------------------+
