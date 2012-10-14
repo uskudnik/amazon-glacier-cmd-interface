@@ -13,8 +13,6 @@ Currently use of `virtualenv` is recommended, but we will migrate to buildout sh
 TODO:
 -----
 
-- Integrate with boto
-- Support for output status codes
 - Tests
 
 Changelog:
