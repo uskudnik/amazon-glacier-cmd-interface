@@ -685,6 +685,7 @@ using %s MB parts to upload."% part_size)
                     code=e.code)
             job_list += response.copy()['JobList']
             marker = response.copy()['Marker']
+            response.read()
             if limit and len(job_list) >= limit:
                 job_list = job_list[:limit]
                 break
@@ -809,6 +810,7 @@ using %s MB parts to upload."% part_size)
 
             uploads += response.copy()['UploadsList']
             marker = response.copy()['Marker']
+            response.read()
             if limit and len(uploads) >= limit:
                 uploads = uploads[:limit]
                 break
@@ -878,17 +880,19 @@ using %s MB parts to upload."% part_size)
             
             try:
                 f = open(file_name, 'rb')
-                mmapped_file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
+
+            self.logger.debug('Successfully opened %s for reading.'% file_name)
                 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
+            self.logger.debug('Connected to stdin for reading data to upload.')
         else:
             raise InputException(
                 "There is nothing to upload.",
@@ -906,7 +910,39 @@ using %s MB parts to upload."% part_size)
         # value to stay within the self.MAX_PARTS (10,000) block limit).
         part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
-        
+        self.logger.debug('Using a part size of %s MB for upload.'% part_size)
+
+        # If the key resume is True, we have to see whether we can find this
+        # file in the SimpleDB database. So search for a match on the file
+        # name, check for exact match file name and size, and whether there
+        # is an uploadid linked to it. Raise exceptions on the way in case
+        # of mismatches.
+        if resume:
+            items = self.search(vault=vault_name, file_name=file_name, uploads=True)
+            for item in items:
+                if item['filename'] == file_name:
+                    if item.has_key('upload_id'):
+                        if int(item['size']) == os.path.getsize(file_name):
+
+                            # We get it as unicode string which gives problems down
+                            # the line (in writer.write_part). Convert to normal
+                            # string solves this issue.
+                            uploadid = str(item['upload_id']) 
+                            break
+                        else:
+                            raise InputException(
+                                'Can not resume the upload of %s.'% file_name,
+                                code='FileError',
+                                cause='File size mismatch. This file: %s, expected: %s.'% (item['size'], os.path.getsize(file_name)))
+                    
+            else:
+                raise InputException(
+                    'Can not resume the upload of %s.'% file_name,
+                    code='CommandError',
+                    cause='No upload in progress for a file with this name.')
+
+            self.logger.debug('Found uploadid for resume request; attempting to resume this upload.')
+
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -920,9 +956,16 @@ using %s MB parts to upload."% part_size)
                     part_size_in_bytes = upload['PartSizeInBytes']
                     break
             else:
+                if resume:
+                    item = self.sdb_domain.get_item(uploadid)
+                    self.sdb_domain.delete_item(item)
+                    raise InputException(
+                        'Can not resume upload of this data as the original job has expired.',
+                        code='CommandError')
+                    
                 raise InputException(
                     'Can not resume upload of this data as no existing job with this uploadid could be found.',
-                    code='IdError')
+                    code='CommandError')
 
         # Initialise the writer task.
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
@@ -942,6 +985,7 @@ using %s MB parts to upload."% part_size)
                         code=e.code)
                 
                 list_parts_response = response.copy()
+                response.read()
                 current_position = 0
 
                 # Process the parts list.
@@ -952,27 +996,27 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                    print 'start: %s, current position: %s'% (start, current_position)
-                    if not start == current_position:
-                        if stdin:
-                            raise InputException(
-                                'Cannot verify non-sequential upload data from stdin.',
-                                code='ResumeError')
-                        if reader:
-                            reader.seek(start)
-
-                    if mmapped_file and stop > len(mmapped_file):
+                    if not start == current_position and stdin:
                         raise InputException(
-                            'File does not match uploaded data; please check your uploadid and try again.',
-                            cause='File is smaller than uploaded data.',
+                            'Cannot verify non-sequential upload data from stdin.',
                             code='ResumeError')
-
+                    
                     # Try to read the chunk of data, and take the hash if we
                     # have received anything.
                     # If no data or hash mismatch, stop checking raise an
                     # exception.
                     data = None
-                    data = reader.read(stop-start) if reader else mmapped_file[start:stop]
+                    if stdin:
+                        data = reader.read(stop-start)
+                    else:
+                        if stop > total_size:
+                            raise InputException(
+                                'File does not match uploaded data; please check your uploadid and try again.',
+                                cause='File is smaller than uploaded data.',
+                                code='ResumeError')
+                        
+                        data = mmap.mmap(f.fileno(), length=stop-start, offset=start, access=mmap.ACCESS_READ)
+
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
@@ -1027,19 +1071,54 @@ using %s MB parts to upload."% part_size)
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         start_bytes = writer.uploaded_size
+        first_part = self.bookkeeping
         while True:
             if reader:
                 part = reader.read(part_size_in_bytes)
             else:
-                if len(mmapped_file) > writer.uploaded_size+part_size_in_bytes:
-                    part = mmapped_file[writer.uploaded_size:writer.uploaded_size+part_size_in_bytes]
+                if total_size > writer.uploaded_size+part_size_in_bytes:
+                    part = mmap.mmap(f.fileno(),
+                                     length=part_size_in_bytes,
+                                     offset=writer.uploaded_size,
+                                     access=mmap.ACCESS_READ)
                 else:
-                    part = mmapped_file[writer.uploaded_size:]
+                    if writer.uploaded_size < total_size:
+                        part = mmap.mmap(f.fileno(),
+                                         length=writer.uploaded_size-total_size,
+                                         offset=writer.uploaded_size,
+                                         access=mmap.ACCESS_READ)
+                    else:
+                        part = None
                     
             if not part:
                 break
             
             writer.write(part)
+
+            # If this was the first part, and we have bookkeeping enabled,
+            # write the upload information in the SimpleDB database.
+            if first_part:
+                first_part = False
+                self.logger.info('Writing in-progress upload information into the bookkeeping database.')
+
+                # Use the alternative name as given by --name <name> if we have it.
+                file_name = alternative_name if alternative_name else file_name
+
+                # If still no name this is an stdin job, so set name accordingly.
+                file_name = file_name if file_name else 'Data from stdin.'
+                file_attrs = {
+                    'region': region,
+                    'vault': vault_name,
+                    'filename': file_name,
+                    'size': total_size,
+                    'upload_id': writer.uploadid,
+                    'location': None,
+                    'description': description,
+                    'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
+                    'hash': None
+                }
+                self.sdb_domain.put_attributes(writer.uploadid, file_attrs)
+
             current_time = time.time()
             overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
             if total_size > 0:
@@ -1092,26 +1171,55 @@ using %s MB parts to upload."% part_size)
 
             # If still no name this is an stdin job, so set name accordingly.
             file_name = file_name if file_name else 'Data from stdin.'
-            file_attrs = {
-                'region': region,
-                'vault': vault_name,
-                'filename': file_name,
-                'archive_id': archive_id,
-                'location': location,
-                'description': description,
-                'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
-                'hash': sha256hash
-            }
-
-##            if file_name:
-##                file_attrs['filename'] = file_name
-##            elif stdin:
-##                file_attrs['filename'] = 'data from stdin'
-
-            self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
+            item = self.sdb_domain.get_item(writer.uploadid)
+            if item:
+                self.sdb_domain.delete_item(item)
 
         return (archive_id, sha256hash)
 
+    @sdb_connect
+    def updatedb(self):
+        """
+        Updates the SimpleDB to use the archive id as item name instead
+        of the file name.
+        """
+        query = 'select * from `%s`'% self.bookkeeping_domain_name
+        items = self.sdb_domain.select(query)
+        old_items = new_items = {}
+        print 'Reading items from the database...'
+        for item in items:
+            try:
+                item_key = item['archive_id'] if item.has_key('archive_id') else item['upload_id']
+            except KeyError: 
+                print '''Deleting item. Doesn't seem to be from glacier-cmd.'''
+                self.sdb_domain.delete_item(item)
+                continue
+            
+            self.sdb_domain.delete_item(item)
+            new_item = {}
+            for key in item.keys():
+                new_item[key] = item[key]
+                              
+            new_items[item_key] = new_item
+            print 'Read %s items.\r'% len(new_items),
+            sys.stdout.flush()
+
+        data = {}
+        total_items = 0
+        print '\n'
+        for key in new_items.keys():
+
+            data[key] = new_items[key]
+            if len(data) == 25:
+                total_items += 25
+                self.sdb_domain.batch_put_attributes(data)
+                data = {}
+                print 'Updated %s items.\r'% total_items,
+                sys.stdout.flush()
+
+        if data:
+            self.sdb_domain.batch_put_attributes(data)
+            print 'Updated %s items.'% (total_items + len(data))
 
     @glacier_connect
     @log_class_call("Processing archive retrieval job.",
@@ -1302,7 +1410,7 @@ your archive ID is correct, and start a retrieval job using \
     @sdb_connect
     @log_class_call("Searching for archive.",
                     "Search done.")
-    def search(self, vault=None, region=None, file_name=None, search_term=None):
+    def search(self, vault=None, region=None, file_name=None, search_term=None, uploads=False):
 
         # Sanity checking.
         if not self.bookkeeping:
@@ -1316,17 +1424,6 @@ your archive ID is correct, and start a retrieval job using \
             
         if region:
             self._check_region(region)
-
-##        if file_name and ('"' in file_name or "'" in file_name):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% file_name)
-##                
-##
-##        if search_term and ('"' in search_term or "'" in search_term):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% search_term)
 
         self.logger.debug('Search terms: vault %s, region %s, file name %s, search term %s'%
                           (vault, region, file_name, search_term))
@@ -1357,8 +1454,8 @@ your archive ID is correct, and start a retrieval job using \
         # an archive_id attribute).
         try:
             for item in result:
-                self.logger.debug('Next search result:\n%s'% item)
-                if item.has_key('archive_id'):
+                if item.has_key('upload_id' if uploads else 'archive_id'):
+                    self.logger.debug('Next search result:\n%s'% item)
                     items.append(item)
         except boto.exception.SDBResponseError as e:
             raise ResponseException(

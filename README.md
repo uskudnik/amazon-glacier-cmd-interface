@@ -1,11 +1,15 @@
 Release notes
 =============
 
-**Glacier command line utility was renamed from `glacier` to `glacier-cmd`, because of inconsistencies with boto.**
+**15/10/2012: Bookkeeping database layout has changed a bit, the old format would cause problems if multiple files with the same name were uploaded to a vault. If you are upgrading this tool, run `glacier-cmd updatedb` once to update your bookkeeping database to the new layout. If you do not use bookkeeping, no need for this.**
+
+**WARNING: make sure this SimpleDB domain is only used for glacier-cmd bookkeeping data storage, as all items that are not recognised will be cleaned up in the process.**
+
+**Command line parameter description changed from positional argument to optional argument. This means from now on you must add `--description <description>` on the command line to give a description. This to allow for multiple file names and wild cards to be used in conjunction with the `upload` subcommand.**
 
 **Renamed configuration file from `.glacier` to `.glacier-cmd` to reflect new name of this utility.** 
 
-**Command line parameter description changed from positional argument to optional argument. This means from now on you must add `--description <description>` on the command line to give a description. This to allow for multiple file names and wild cards to be used in conjunction with the `upload` subcommand.**
+**Glacier command line utility was renamed from `glacier` to `glacier-cmd`, because of inconsistencies with boto.**
 
 **For everybody having problems with install, don't forget to install git.**
 
