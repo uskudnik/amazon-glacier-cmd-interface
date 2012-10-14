@@ -1129,7 +1129,7 @@ using %s MB parts to upload."% part_size)
     @log_class_call("Download an archive.",
                     "Download archive done.")
     def download(self, vault_name, archive_id, part_size,
-                 out_file_name=None, overwrite=False):
+                 resume=False, out_file_name=None, overwrite=False):
         """
         Download a file from Glacier, and store it in out_file.
         If no out_file is given, the file will be dumped on stdout.
@@ -1154,9 +1154,8 @@ using %s MB parts to upload."% part_size)
             
         else:
             raise InputException(
-                "Requested archive not available. Please make sure \
-your archive ID is correct, and start a retrieval job using \
-'getarchive' if necessary.",
+                '''Requested archive not available. Please make sure the archive ID
+is correct, and start a retrieval job using 'getarchive' if necessary.''',
                 code='IdError')
 
         # Check whether we can access the file the archive has to be written to.
@@ -1164,21 +1163,57 @@ your archive ID is correct, and start a retrieval job using \
         if out_file_name:
             if os.path.isfile(out_file_name) and not overwrite:
                 raise InputException(
-                    "File exists already, aborting. Use the overwrite flag to overwrite existing file.",
+                    '''\
+File exists already, aborting.
+Use the overwrite flag to overwrite existing file.''',
                     code="FileError")
             try:
                 out_file = open(out_file_name, 'w')
             except IOError as e:
                 raise InputException(
-                    "Cannot access the ouput file.",
+                    "Cannot access the ouput file for writing: %s."% out_file_name,
                     cause=e,
                     code='FileError')
+
+        elif resume:
+            raise InputException(
+                'Must provide outfile with existing data to resume download.',
+                code='CommandError')
 
         # Sanity checking done; start downloading the file, part by part.
         total_size = download_job['ArchiveSizeInBytes']
         part_size_in_bytes = self._check_part_size(part_size, total_size) * 1024 * 1024
         start_bytes = downloaded_size = 0
         hash_list = []
+
+        # If resumption is requested, try to compare the local data
+        # to the remote archive data, and if it compares continue the
+        # download where we were.
+        if resume:
+
+            # Close out_file to allow get_tree_hash access.
+            out_file.close()
+
+            # Get hash of the partially downloaded data.
+            local_hash = self.get_tree_hash(out_file_name)
+
+            # Ask Amazon for a hash on this data by opening a read
+            # connection; the hash of the data is in the response.
+            response = self.glacierconn.get_job_output(vault_name,
+                                                       download_job['JobId'],
+                                                       byte_range=(0, os.path.getsize(out_file_name)-1))
+            print response
+            import pdb; pdb.set_trace()
+
+            # close out_file and re-open it again for writing.
+            try:
+                out_file = open(out_file_name, 'w')
+            except IOError as e:
+                raise InputException(
+                    "Cannot access the ouput file for writing: %s."% out_file_name,
+                    cause=e,
+                    code='FileError')
+            
         start_time = current_time = previous_time = time.time()
 
         # Log our pending action.
@@ -1195,8 +1230,8 @@ your archive ID is correct, and start a retrieval job using \
             to_bytes = min(downloaded_size + part_size_in_bytes, total_size)
             try:
                 response = self.glacierconn.get_job_output(vault_name,
-                                                            download_job['JobId'],
-                                                            byte_range=(from_bytes, to_bytes-1))
+                                                           download_job['JobId'],
+                                                           byte_range=(from_bytes, to_bytes-1))
                 data = response.read()
             except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                 raise ResponseException(

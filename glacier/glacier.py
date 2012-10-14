@@ -254,7 +254,7 @@ def download(args):
     Download an archive.
     """
     glacier = default_glacier_wrapper(args)
-    response = glacier.download(args.vault, args.archive, args.partsize,
+    response = glacier.download(args.vault, args.archive, args.partsize, resume=args.resume,
                                 out_file_name=args.outfile, overwrite=args.overwrite)
     if args.outfile:
         output_msg(response, args.output, success=True)
@@ -692,6 +692,11 @@ partsize  MaxArchiveSize
 If not given, the smallest possible part size
 will be used depending on the size of the job
 at hand.''')
+    parser_download.add_argument('--resume', action='store_true',
+        help='''\
+Attempt to resume an interrupted download. You must provide --outfile
+<file name> that contains already downloaded data if using this option.''')
+
     parser_download.set_defaults(func=download)
 
     # glacier-cmd rmarchive <vault> <archive>
