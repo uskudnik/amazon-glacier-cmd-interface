@@ -882,9 +882,40 @@ using %s MB parts to upload."% part_size)
 
         # If user did not specify part_size, compute the optimal (i.e. lowest
         # value to stay within the self.MAX_PARTS (10,000) block limit).
-        part_size= self._check_part_size(part_size, total_size)
+        part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
-        
+
+        # If the key resume is True, we have to see whether we can find this
+        # file in the SimpleDB database. So search for a match on the file
+        # name, check for exact match file name and size, and whether there
+        # is an uploadid linked to it. Raise exceptions on the way in case
+        # of mismatches.
+        if resume:
+            items = self.search(vault=vault_name, file_name=file_name)
+            for item in items:
+                if item['filename'] == file_name:
+                    if item.has_key('upload_id'):
+                        if int(item['size']) == os.path.getsize(file_name):
+
+                            # We get it as unicode string which gives problems down
+                            # the line (in writer.write_part). Convert to normal
+                            # string solves this issue.
+                            uploadid = str(item['upload_id']) 
+                            break
+                        else:
+                            raise InputException(
+                                'Can not resume the upload of %s.'% file_name,
+                                code='FileError',
+                                cause='File size mismatch. This file: %s, expected: %s.'% (item['size'], os.path.getsize(file_name)))
+                    
+            else:
+                raise InputException(
+                    'Can not resume the upload of %s.'% file_name,
+                    code='CommandError',
+                    cause='No upload in progress for a file with this name.')
+
+            self.logger.debug('Found uploadid for resume request; attempting to resume this upload.')
+            
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -898,9 +929,16 @@ using %s MB parts to upload."% part_size)
                     part_size_in_bytes = upload['PartSizeInBytes']
                     break
             else:
+                if resume:
+                    item = self.sdb_domain.get_item(uploadid)
+                    self.sdb_domain.delete_item(item)
+                    raise InputException(
+                        'Can not resume upload of this data as the original job has expired.',
+                        code='CommandError')
+                    
                 raise InputException(
                     'Can not resume upload of this data as no existing job with this uploadid could be found.',
-                    code='IdError')
+                    code='CommandError')
 
         # Initialise the writer task.
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
@@ -994,8 +1032,34 @@ using %s MB parts to upload."% part_size)
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         start_bytes = writer.uploaded_size
+        first_part = self.bookkeeping
         for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
             writer.write(part)
+
+            # If this was the first part, and we have bookkeeping enabled,
+            # write the upload information in the SimpleDB database.
+            if first_part:
+                first_part = False
+                self.logger.info('Writing in-progress upload information into the bookkeeping database.')
+
+                # Use the alternative name as given by --name <name> if we have it.
+                file_name = alternative_name if alternative_name else file_name
+
+                # If still no name this is an stdin job, so set name accordingly.
+                file_name = file_name if file_name else 'Data from stdin.'
+                file_attrs = {
+                    'region': region,
+                    'vault': vault_name,
+                    'filename': file_name,
+                    'size': total_size,
+                    'upload_id': writer.uploadid,
+                    'location': None,
+                    'description': description,
+                    'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
+                    'hash': None
+                }
+                self.sdb_domain.put_attributes(writer.uploadid, file_attrs)
+
             current_time = time.time()
             overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
             if total_size > 0:
@@ -1048,26 +1112,32 @@ using %s MB parts to upload."% part_size)
 
             # If still no name this is an stdin job, so set name accordingly.
             file_name = file_name if file_name else 'Data from stdin.'
-            file_attrs = {
-                'region': region,
-                'vault': vault_name,
-                'filename': file_name,
-                'archive_id': archive_id,
-                'location': location,
-                'description': description,
-                'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
-                'hash': sha256hash
-            }
-
-##            if file_name:
-##                file_attrs['filename'] = file_name
-##            elif stdin:
-##                file_attrs['filename'] = 'data from stdin'
-
-            self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
+            item = self.sdb_domain.get_item(writer.uploadid)
+            if item:
+                self.sdb_domain.delete_item(item)
 
         return (archive_id, sha256hash)
 
+    @sdb_connect
+    def updatedb(self):
+        """
+        Updates the SimpleDB to use the archive id as item name instead
+        of the file name.
+        """
+        query = 'select * from `%s`'% self.bookkeeping_domain_name
+        items = self.sdb_domain.select(query)
+        for item in items:
+            data = {key:item[key] for key in item.keys()}
+            try:
+                item_key = data['archive_id'] if item.has_key('archive_id') else item['upload_id']
+            except KeyError: 
+                print '''Deleting item. Doesn't seem to be from glacier-cmd.'''
+                self.sdb_domain.delete_item(item)
+                continue
+            
+            self.sdb_domain.delete_item(item)
+            self.sdb_domain.put_attributes(item_key, data)
+            print 'Updated item %s.'% item_key
 
     @glacier_connect
     @log_class_call("Processing archive retrieval job.",
@@ -1273,17 +1343,6 @@ your archive ID is correct, and start a retrieval job using \
         if region:
             self._check_region(region)
 
-##        if file_name and ('"' in file_name or "'" in file_name):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% file_name)
-##                
-##
-##        if search_term and ('"' in search_term or "'" in search_term):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% search_term)
-
         self.logger.debug('Search terms: vault %s, region %s, file name %s, search term %s'%
                           (vault, region, file_name, search_term))
         search_params = []
@@ -1440,17 +1499,20 @@ your archive ID is correct, and start a retrieval job using \
                 response = self.glacierconn.get_job_output(vault_name, inventory_job['JobId'])
                 inventory = response.copy()
                 
-                # if bookkeeping is enabled update cache
-                if self.bookkeeping:
-                    self.logger.debug('Updating the bookkeeping with the latest inventory.')
-                    d = dtparse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
-                    try:
-                        self.sdb_domain.put_attributes("%s" % (d,), inventory)
-                    except boto.exception.SDBResponseError as e:
-                        raise CommunicationException(
-                            "Cannot update inventory cache, Amazon SimpleDB is not happy.",
-                            cause=e,
-                            code="SdbWriteError")
+##                # if bookkeeping is enabled update cache
+##                if self.bookkeeping:
+##                    self.logger.debug('Updating the bookkeeping with the latest inventory.')
+##                    d = dtparse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
+##                    try:
+##                        self.sdb_domain.put_attributes("%s" % (d,), inventory)
+##                    except boto.exception.SDBResponseError as e:
+##                        raise CommunicationException(
+##                            "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+##                            cause=e,
+##                            code="SdbWriteError")
+
+
+
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
