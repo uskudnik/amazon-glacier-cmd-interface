@@ -120,7 +120,7 @@ class GlacierWriter(object):
                     "x-amz-sha256-tree-hash": bytes_to_hex(part_tree_hash),
                     "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
-        
+
         self.connection.upload_part(self.vault_name,
                                     self.uploadid,
                                     hashlib.sha256(data).hexdigest(),

@@ -21,6 +21,7 @@ import hashlib
 import fcntl
 import termios
 import struct
+import mmap
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -849,6 +850,7 @@ using %s MB parts to upload."% part_size)
         # Otherwise try to read data from stdin.
         total_size = 0
         reader = None
+        mmapped_file = None
         if not stdin:
             if not file_name:
                 raise InputException(
@@ -856,7 +858,8 @@ using %s MB parts to upload."% part_size)
                     code='CommandError')
             
             try:
-                reader = open(file_name, 'rb')
+                f = open(file_name, 'rb')
+                mmapped_file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
@@ -882,7 +885,7 @@ using %s MB parts to upload."% part_size)
 
         # If user did not specify part_size, compute the optimal (i.e. lowest
         # value to stay within the self.MAX_PARTS (10,000) block limit).
-        part_size= self._check_part_size(part_size, total_size)
+        part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
         
         # If we have an UploadId, check whether it is linked to a current
@@ -930,18 +933,27 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
+                    print 'start: %s, current position: %s'% (start, current_position)
                     if not start == current_position:
                         if stdin:
                             raise InputException(
                                 'Cannot verify non-sequential upload data from stdin.',
                                 code='ResumeError')
-                        reader.seek(start)
+                        if reader:
+                            reader.seek(start)
+
+                    if mmapped_file and stop > len(mmapped_file):
+                        raise InputException(
+                            'File does not match uploaded data; please check your uploadid and try again.',
+                            cause='File is smaller than uploaded data.',
+                            code='ResumeError')
 
                     # Try to read the chunk of data, and take the hash if we
                     # have received anything.
                     # If no data or hash mismatch, stop checking raise an
                     # exception.
-                    data = reader.read(stop-start)
+                    data = None
+                    data = reader.read(stop-start) if reader else mmapped_file[start:stop]
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
@@ -958,6 +970,8 @@ using %s MB parts to upload."% part_size)
                             'Received data does not match uploaded data; please check your uploadid and try again.',
                             cause='No or not enough data to match.',
                             code='ResumeError')
+                    
+                    current_position += stop - start
 
                 # If a marker is present, this means there are more pages
                 # of parts available. If no marker, we have the last page.
@@ -994,7 +1008,18 @@ using %s MB parts to upload."% part_size)
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         start_bytes = writer.uploaded_size
-        for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
+        while True:
+            if reader:
+                part = reader.read(part_size_in_bytes)
+            else:
+                if len(mmapped_file) > writer.uploaded_size+part_size_in_bytes:
+                    part = mmapped_file[writer.uploaded_size:writer.uploaded_size+part_size_in_bytes]
+                else:
+                    part = mmapped_file[writer.uploaded_size:]
+                    
+            if not part:
+                break
+            
             writer.write(part)
             current_time = time.time()
             overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
