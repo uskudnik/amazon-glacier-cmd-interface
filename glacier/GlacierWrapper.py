@@ -9,7 +9,6 @@ import json
 import pytz
 import re
 import logging
-import boto
 import os.path
 import time
 import sys
@@ -21,6 +20,9 @@ import hashlib
 import fcntl
 import termios
 import struct
+
+import boto
+from boto import sns
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -228,7 +230,7 @@ Connecting to Amazon SimpleDB domain %s with
                     self.sdb_conn = boto.connect_sdb(aws_access_key_id=self.aws_access_key,
                                                      aws_secret_access_key=self.aws_secret_key)
                     domain_name = self.bookkeeping_domain_name
-                    self.sdb_domain = self.sdb_conn.get_domain(domain_name, validate=True)
+                    self.sdb_domain = self.sdb_conn.create_domain(domain_name)
                 except (boto.exception.AWSConnectionError, boto.exception.SDBResponseError) as e:
                     raise ConnectionException(
                         "Cannot connect to Amazon SimpleDB.",
@@ -238,6 +240,66 @@ Connecting to Amazon SimpleDB domain %s with
             return func(*args, **kwargs)
 
         return sdb_connect_wrap
+
+    def sns_connect(func):
+        """
+        Decorator which connects to Amazon SNS.
+
+        :param func: Function to wrap
+        :type func: function
+
+        :returns: wrapper function
+        :rtype: function
+        :raises: GlacierWrapper.ConnectionException
+        """
+        @wraps(func)
+        def sns_connect_wrap(*args, **kwargs):
+            self = args[0]
+            if not self.sns:
+                return func(*args, **kwargs)
+
+            if not hasattr(self, "sns_conn"):
+                try:
+                    self.sns_conn = boto.sns.connect_to_region(aws_access_key_id=self.aws_access_key,
+                                                               aws_secret_access_key=self.aws_secret_key,
+                                                               region_name=self.region)
+                except boto.exception.AWSConnectionError as e:
+                    raise ConnectionException(
+                            "Cannot connect to Amazon SNS.",
+                            cause=e.cause,
+                            code="SNSConnectionError")
+            return func(*args, **kwargs)
+        return sns_connect_wrap
+
+    def sns_enable(func):
+        """
+        Decorator to enable notifications on appropriate vaults.
+
+        :param func: Function to wrap
+        :type func: function
+
+        :returns: wrapper function
+        :rtype: function
+        :raises: GlacierWrapper.ConnectionException
+        """
+        @wraps(func)
+        def sns_enable_wrap(*args, **kwargs):
+            self = args[0]
+            if hasattr(self, "sns_conn"):
+                print args
+                print kwargs
+                # self.glacierconn.get_vault_notifications - just enable, either way we make one request (based on http://docs.amazonwebservices.com/sns/latest/api/API_CreateTopic.html)
+                config = {
+                    'SNSTopic': "aws-glacier-%s" % self.vault, #TODO format might be a problem; at the moment only 100 topics are allowed
+                    'Events': ['ArchiveRetrievalCompleted', 'InventoryRetrievalCompleted']
+                }
+                rez = self.glacierconn.set_vault_notifications(vault_name=self.vault, 
+                                                               notification_config=config)
+                print rez
+                raise Exception("asdasdasd")
+            return func(*args, **kwargs)
+
+        return sns_enable_wrap
 
     @log_class_call('Checking whether vault name is valid.',
                      'Vault name is valid.')
@@ -1372,6 +1434,8 @@ your archive ID is correct, and start a retrieval job using \
 
     @glacier_connect
     @sdb_connect
+    @sns_connect
+    @sns_enable
     @log_class_call("Requesting inventory overview.",
                     "Inventory response received.")
     def inventory(self, vault_name, refresh):
@@ -1492,6 +1556,7 @@ your archive ID is correct, and start a retrieval job using \
         return glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hashes))
 
     def __init__(self, aws_access_key, aws_secret_key, region,
+                 sns=False,
                  bookkeeping=False, bookkeeping_domain_name=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
@@ -1519,6 +1584,7 @@ your archive ID is correct, and start a retrieval job using \
         self.aws_secret_key = aws_secret_key
         self.bookkeeping = bookkeeping
         self.bookkeeping_domain_name = bookkeeping_domain_name
+        self.sns = sns
         self.region = region
 
         self.setuplogging(logfile, loglevel, logtostdout)

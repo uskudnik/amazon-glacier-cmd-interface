@@ -133,6 +133,7 @@ def default_glacier_wrapper(args):
                           args.region,
                           bookkeeping=args.bookkeeping,
                           bookkeeping_domain_name=args.bookkeeping_domain_name,
+                          sns=args.sns_enable,
                           logfile=args.logfile,
                           loglevel=args.loglevel,
                           logtostdout=args.logtostdout)
@@ -442,10 +443,15 @@ def main():
             glacier = dict(config.items("glacier"))
         except ConfigParser.NoSectionError:
             pass
+        try:
+            sns = dict(config.items("SNS"))
+        except ConfigParser.NoSectionError:
+            pass
 
     # Join config options with environments
     aws = dict(os.environ.items() + aws.items() )
     glacier = dict(os.environ.items() + glacier.items() )
+    sns = dict(os.environ.items() + sns.items() )
 
     # Helper functions
     filt_s= lambda x: x.lower().replace("_","-")
@@ -456,6 +462,8 @@ def main():
     a_default = lambda x: filt(aws, "aws").get(x)
     default = lambda x: filt(glacier).get(x)
 
+    default_sns = lambda x: filt(sns).get(x)
+
     # Main configuration parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -463,6 +471,7 @@ def main():
     subparsers = parser.add_subparsers(title='Subcommands',
         help=u"For subcommand help, use: glacier-cmd <subcommand> -h")
 
+    # Amazon Web Services settings
     group = parser.add_argument_group('aws')
     help_msg_config = u"(Required if you have not created a \
                         ~/.glacier-cmd or /etc/glacier-cmd.conf config file)"
@@ -474,6 +483,15 @@ def main():
                        required=a_required("aws-secret-key"),
                        default=a_default("aws-secret-key"),
                        help="Your aws secret key " + help_msg_config)
+    
+    # Short notification service settings
+    group = parser.add_argument_group('SNS')
+    group.add_argument('--sns-enable',
+                       required=False,
+                       action="store_true",
+                       default=default_sns("notifications"))
+
+    # Glacier settings
     group = parser.add_argument_group('glacier')
     group.add_argument('--region',
                        required=required("region"),
