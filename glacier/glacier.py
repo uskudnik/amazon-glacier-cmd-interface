@@ -279,42 +279,51 @@ def upload(args):
             args.filename += [os.path.join(dirname, fileset[i]) for i in range(1, len(fileset))]
 
     glacier = default_glacier_wrapper(args)
-    args.filename = args.filename if args.filename else [None]
-    for f in args.filename:
-        if f:
+    results = []
 
+    # If we have one more more file names, they appear in a list.
+    # Iterate over these file names; do path expansion and wildcard expansion
+    # just in case the shell didn't take care of that.
+    # If no file name given it's an empty list, and we expect the file to
+    # be read over stdin.
+    if args.filename:
+        for f in args.filename:
+    
             # In case the shell does not expand wildcards, if any, do this here.
             if f[0] == '~':
                 f = os.path.expanduser(f)
 
-            results = []
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
                     response = glacier.upload(args.vault, g, args.description, args.region, args.stdin,
                                               args.name, args.partsize, args.uploadid, args.resume)
-                    result = {"Uploaded file": g,
-                              "Created archive with ID": response[0],
-                              "Archive SHA256 tree hash": response[1]}
-                    
-                    print "Uploaded file: %s."% g
-                    print "Created archive with ID: %s"% response[0]
-                    print "Archive SHA256 tree hash: %s."% response[1]
+                    results.append({"Uploaded file": g,
+                                    "Created archive with ID": response[0],
+                                    "Archive SHA256 tree hash": response[1]})
             else:
                 raise InputException(
                     "File name given for upload can not be found: %s."% f,
                     code='CommandError')
-        else:
-
-            # No file name; using stdin.
-            response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
-                                      args.name, args.partsize, args.uploadid, args.resume)
-            result = {"Created archive with ID": response[0],
-                      "Archive SHA256 tree hash": response[1]}
             
-        results.append(result)
-        
-    output_table(results, args.output) if len(results) > 1 else output_headers(results[0], args.output)
+    elif args.stdin:
+
+        # No file name; using stdin.
+        response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
+                                  args.name, args.partsize, args.uploadid, args.resume)
+        results = [{"Created archive with ID": response[0],
+                    "Archive SHA256 tree hash": response[1]}]
+
+    else:
+        raise InputException(
+            '''No input given. Either give a file name or file names
+on the command line, or use the --stdin switch and pipe
+in the data over stdin.''',
+            cause='No file name and no stdin pipe.',
+            code='CommandError')
+            
+    output_table(results, args.output) if len(results) > 1 \
+                          else output_headers(results[0], args.output)
 
 @handle_errors
 def getarchive(args):
