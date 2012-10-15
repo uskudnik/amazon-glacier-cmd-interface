@@ -21,6 +21,7 @@ import hashlib
 import fcntl
 import termios
 import struct
+import mmap
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -1179,43 +1180,80 @@ is correct, and start a retrieval job using 'getarchive' if necessary.''',
                     cause='File not found.',
                     code='FileError')
 
-            if os.path.getsize(out_file_name) > 0:
+            out_file_size = os.path.getsize(out_file_name)
+            if out_file_size == job['ArchiveSizeInBytes']:
+
+                # It appears the archive has been downloaded completely
+                # already. Double check this.
+                file_hash = self.get_tree_hash(out_file_name)
+                if file_hash == job['SHA256TreeHash']:
+                    raise InputException (
+                        'Download of archive %s to local file %s is completed already.'% (archive_id, out_file_name),
+                        code='ResumeError')
+                
+                raise InputException(
+                        'Archive data does not match local data.',
+                        cause='SHA256 tree hash mismatch.',
+                        code='ResumeError')
+                
+            if out_file_size > 0:
                 self.logger.debug('Attempting to resume download of this archive to file %s.'% out_file_name)
                 self._progress('Comparing data with Glacier for download resumption.')
 
                 # Get tree hash and hash list of the partially downloaded data.
+                # Use mmap to reduce memory overhead while handling the local
+                # data.
                 try:
-                    reader = open(out_file_name, 'rb')
+                    f = open(out_file_name, 'rb')
+                    mmapped_out_file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
                 except IOError as e:
                     raise InputException(
                         "Could not read the output file %s for hash checking."% file_name,
                         cause=e,
                         code='FileError')
-                
-                hash_list = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
-                local_hash = glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hash_list))
 
                 # Ask Amazon for a hash on this data by opening a read
                 # connection; the hash of the data is in the response.
-
                 # Note: this must be done by normal block size;
                 # so 1,2,4,8 etc. MB of data at a time. Calculate
                 # biggest block that fits in the data, and work down from
                 # there until all data checked.
-                
-                response = self.glacierconn.get_job_output(vault_name,
-                                                           download_job['JobId'],
-                                                           byte_range=(0, os.path.getsize(out_file_name)-1))
-                
-                if response['TreeHash'] != local_hash:
-                    raise InputException(
-                        'Archive data does not match local data.',
-                        cause='SHA256 tree hash mismatch.',
-                        code='ResumeError')
+                MB = 1024*1024
+                check_part_size = 4096 * MB
+                checked_size = 0
+                while checked_size < out_file_size:
+
+                    # Make sure our check_part_size is smaller than the
+                    # amount of data left to check.
+                    while check_part_size > (out_file_size - checked_size):
+                        check_part_size = check_part_size / 2
+
+                    # Get chunk hashes and the tree hash of the part that
+                    # has to be checked, and store these hashes in the
+                    # hash_list of this download.
+                    start_part = checked_size/MB
+                    stop_part = start_part + check_part_size/MB
+                    check_hash_list = [hashlib.sha256(part).digest() for part in iter([mmapped_out_file[i*MB:(i+1)*MB] for i in range(start_part, stop_part)])]
+                    hash_list += check_hash_list
+                    local_hash = glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hash_list))
+
+                    # Get the hash of the data stored in Glacier, and check
+                    # whether it matches out local data.
+                    response = self.glacierconn.get_job_output(vault_name,
+                                                               download_job['JobId'],
+                                                               byte_range=(checked_size, checked_size+check_part_size-1))                    
+                    if response['TreeHash'] != local_hash:
+                        raise InputException(
+                            'Archive data does not match local data.',
+                            cause='SHA256 tree hash mismatch.',
+                            code='ResumeError')
+
+                    self.logger.debug('Tree-hash match on %s MB part, range %s-%s.'% (check_part_size/MB, checked_size, checked_size+check_part_size))
+                    checked_size += check_part_size
 
                 self.logger.debug('Hash check OK; continuing download resumption.')
 
-                # Try to open the file in write mode, for appending data.
+                # Try to open the out_file in write mode, for appending data.
                 try:
                     out_file = open(out_file_name, 'ab')
                 except IOError as e:
@@ -1223,19 +1261,24 @@ is correct, and start a retrieval job using 'getarchive' if necessary.''',
                         "Cannot access the ouput file for writing: %s."% out_file_name,
                         cause=e,
                         code='FileError')
+                
                 downloaded_size = os.path.getsize(out_file_name)
                 self.logger.debug('All checks passed; resuming download of data.')
                 self._progress('Resuming download now.')
 
             else:
                 out_file = open(out_file_name, 'wb')
-            
+
+        # If we have a file name, check whether it exists already, whether
+        # we may overwrite it, and finally whether we can actually write
+        # to this file.
         elif out_file_name:
             if os.path.isfile(out_file_name) and not overwrite:
                 raise InputException(
                     '''\
 File %s exists already, aborting.
-Use the overwrite flag to overwrite existing file.'''% out_file_name,
+Use the --resume flag to resume downloading to this file, \
+or the --overwrite flag to overwrite the existing file.'''% out_file_name,
                     code="FileError")
             try:
                 out_file = open(out_file_name, 'wb')
@@ -1248,7 +1291,7 @@ Use the overwrite flag to overwrite existing file.'''% out_file_name,
 
         # Sanity checking done; start downloading the file, part by part.
         total_size = download_job['ArchiveSizeInBytes']
-        part_size_in_bytes = self._check_part_size(part_size, total_size) * 1024 * 1024
+        part_size_in_bytes = self._check_part_size(part_size, total_size) * MB
         self.logger.debug('Using part size of %s bytes.'% part_size_in_bytes)
         start_bytes = downloaded_size
         start_time = current_time = previous_time = time.time()
@@ -1259,7 +1302,7 @@ Use the overwrite flag to overwrite existing file.'''% out_file_name,
         else:
             self.logger.debug('Starting download of archive to stdout.')
 
-        # Download the data, one part at a time.
+        # Start the actual download, one part at a time.
         while downloaded_size < total_size:
 
             # Read a part of data.
@@ -1276,18 +1319,27 @@ Use the overwrite flag to overwrite existing file.'''% out_file_name,
                     cause=self._decode_error_message(e.body),
                     code=e.code)
 
-            hash_list.append(glaciercorecalls.chunk_hashes(data))
+            # Get the chunk hashes for this part, add them to
+            # the hash_list, and compare the tree_hash of the
+            # downloaded data to what we expect to receive.
+            chunk_hashes = glaciercorecalls.chunk_hashes(data)
+            hash_list += chunk_hashes
+            if glaciercorecalls.tree_hash(chunk_hashes) != response['TreeHash']:
+                raise CommunicationException(
+                    'Hash check of downloaded data failed, aborting download of archive.',
+                    code='DownloadError')
+            
             downloaded_size = to_bytes
             if out_file:
                 try:
-                    out_file.write(response.read())
+                    out_file.write(data)
                 except IOError as e:
                     raise InputException(
                         "Cannot write data to the specified file.",
                         cause=e,
                         code='FileError')
             else:
-                sys.stdout.write(response.read())
+                sys.stdout.write(data)
                 sys.stdout.flush()
 
             # Calculate progress statistics.
@@ -1324,7 +1376,7 @@ Use the overwrite flag to overwrite existing file.'''% out_file_name,
         msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
                                             self._size_fmt(overall_rate, 2))
         self._progress(msg)
-        self.logger.info(msg)       
+        self.logger.info(msg)
 
     @glacier_connect
     @sdb_connect
