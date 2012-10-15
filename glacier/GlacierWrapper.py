@@ -1441,16 +1441,38 @@ your archive ID is correct, and start a retrieval job using \
                 inventory = response.copy()
                 
                 # if bookkeeping is enabled update cache
-                if self.bookkeeping:
+                if self.bookkeeping and len(inventory['ArchiveList']) > 0:
                     self.logger.debug('Updating the bookkeeping with the latest inventory.')
-                    d = dtparse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
-                    try:
-                        self.sdb_domain.put_attributes("%s" % (d,), inventory)
-                    except boto.exception.SDBResponseError as e:
-                        raise CommunicationException(
-                            "Cannot update inventory cache, Amazon SimpleDB is not happy.",
-                            cause=e,
-                            code="SdbWriteError")
+                    items = {}
+                    for item in inventory['ArchiveList']:
+                        items[item['ArchiveId']] = {
+                            'vault': vault_name,
+                            'archive_id': item['ArchiveId'],
+                            'description': item['ArchiveDescription'],
+                            'date':'%s' % dtparse(item['CreationDate']).replace(tzinfo=pytz.utc),
+                            'hash': item['SHA256TreeHash'],
+                            'size': item['Size']
+                            }
+                        if len(items) == 25:
+                            self.logger.debug('Writing batch of 25 inventory items to the bookkeeping db.')
+                            try:
+                                self.sdb_domain.batch_put_attributes(items)
+                            except boto.exception.SDBResponseError as e:
+                                raise CommunicationException(
+                                    "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                    cause=e,
+                                    code="SdbWriteError")
+                            items = {}
+
+                    if items:
+                        self.logger.debug('Writing final batch of %s inventory items to the bookkeeping db.'% len(items))
+                        try:
+                            self.sdb_domain.batch_put_attributes(items)
+                        except boto.exception.SDBResponseError as e:
+                            raise CommunicationException(
+                                "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                cause=e,
+                                code="SdbWriteError")
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
