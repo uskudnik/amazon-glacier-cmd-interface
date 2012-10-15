@@ -281,7 +281,7 @@ def upload(args):
     glacier = default_glacier_wrapper(args)
     results = []
 
-    # If we have one more more file names, they appear in a list.
+    # If we have one more file names, they appear in a list.
     # Iterate over these file names; do path expansion and wildcard expansion
     # just in case the shell didn't take care of that.
     # If no file name given it's an empty list, and we expect the file to
