@@ -550,12 +550,12 @@ def main():
         help='Upload an archive to Amazon Glacier.')
     parser_upload.add_argument('vault',
         help='The vault the archive is to be stored in.')
-    group = parser_upload.add_mutually_exclusive_group(required=True)
-    group.add_argument('filename', nargs='*', default=None,
+##    group = parser_upload.add_mutually_exclusive_group(required=True)
+    parser_upload.add_argument('filename', nargs='*', default=None,
         help='''\
 The name(s) of the local file(s) to be uploaded. Wildcards
 are accepted. Can not be used if --stdin is used.''')
-    group.add_argument('--stdin', action='store_true',
+    parser_upload.add_argument('--stdin', action='store_true',
         help='''\
 Read data from stdin, instead of local file. 
 Can not be used if <filename> is given.''')
