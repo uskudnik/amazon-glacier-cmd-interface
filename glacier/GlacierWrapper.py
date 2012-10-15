@@ -450,6 +450,7 @@ using %s MB parts to upload."% part_size)
 
             sys.stdout.write(msg + '\r')
             sys.stdout.flush()
+            
     def _size_fmt(self, num, decimals=1):
         """
         Formats byte sizes in human readable format. Anything bigger
@@ -553,6 +554,7 @@ using %s MB parts to upload."% part_size)
         return response.copy()
 
     @glacier_connect
+    @sdb_connect
     @log_class_call("Removing vault.",
                     "Vault removal complete.")
     def rmvault(self, vault_name):
@@ -579,9 +581,23 @@ using %s MB parts to upload."% part_size)
                 'Failed to remove vault with name %s.'% vault_name,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
+
+        # Check for orphaned entries in the bookkeeping database, and
+        # remove them.
+        if self.bookkeeping:
+            query = "select * from `%s` where vault='%s'" % (self.bookkeeping_domain_name, vault_name)
+            result = self.sdb_domain.select(query)
+            try:
+                for item in result:
+                    self.sdb_domain.delete_item(item)
+                    self.logger.debug('Deleted orphaned archive from the database: %s.'% item.name)
+            except boto.exception.SDBResponseError as e:
+                raise ResponseException(
+                        'SimpleDB did not respond correctly to our orphaned listings check.',
+                        cause=self._decode_error_message(e.body),
+                        code=e.code)
         
         return response.copy()
-
 
     @glacier_connect
     @log_class_call("Requesting vault description.",
@@ -1308,10 +1324,14 @@ your archive ID is correct, and start a retrieval job using \
         self.logger.debug('Query: "%s"'% query)
         result = self.sdb_domain.select(query)
         items = []
+
+        # Get the results; filter out incomplete uploads (those without
+        # an archive_id attribute).
         try:
             for item in result:
                 self.logger.debug('Next search result:\n%s'% item)
-                items.append(item)
+                if item.has_key('archive_id'):
+                    items.append(item)
         except boto.exception.SDBResponseError as e:
             raise ResponseException(
                     'SimpleDB did not like your query with parameters %s.'% search_params,
@@ -1344,25 +1364,11 @@ your archive ID is correct, and start a retrieval job using \
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
+        # Remove the listing from the bookkeeping database.
         if self.bookkeeping:
             try:
-                # TODO: can't find a method for counting right now
-                # TODO: proper message for when archive name is simply not
-                #       in the bookkeeping db (e.g. originally uploaded
-                #       with other tool).
-                #       (wvmarle: is this necessary? Archive is gone, who cares
-                #       whether it was in the db to begin with.)
-                query = ('select * from `%s` where archive_id="%s"' %
-                            (self.bookkeeping_domain_name, archive_id))
-                items = self.sdb_domain.select(query)
-            except boto.exception.SDBResponseError as e:
-                raise CommunicationException(
-                    "Cannot get archive info from Amazon SimpleDB.",
-                    code="SdbCommunicationError",
-                    cause=e)
-            
-            try:
-                for item in items:
+                item = self.sdb_domain.get_item(archive_id)
+                if item:
                     self.sdb_domain.delete_item(item)
             except boto.exception.SDBResponseError as e:
                 raise CommunicationException(
@@ -1439,18 +1445,66 @@ your archive ID is correct, and start a retrieval job using \
                 self.logger.debug('Fetching results of finished inventory retrieval.')
                 response = self.glacierconn.get_job_output(vault_name, inventory_job['JobId'])
                 inventory = response.copy()
+                archives = []
                 
-                # if bookkeeping is enabled update cache
-                if self.bookkeeping:
+                # If bookkeeping is enabled, update cache.
+                # Add all inventory information to the database, then check
+                # for any archives listed in the database for that vault and
+                # remove those.
+                if self.bookkeeping and len(inventory['ArchiveList']) > 0:
                     self.logger.debug('Updating the bookkeeping with the latest inventory.')
-                    d = dtparse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
+                    items = {}
+
+                    # Add items to the inventory, 25 at a time (maximum batch).
+                    for item in inventory['ArchiveList']:
+                        items[item['ArchiveId']] = {
+                            'vault': vault_name,
+                            'archive_id': item['ArchiveId'],
+                            'description': item['ArchiveDescription'],
+                            'date':'%s' % dtparse(item['CreationDate']).replace(tzinfo=pytz.utc),
+                            'hash': item['SHA256TreeHash'],
+                            'size': item['Size'],
+                            'region': self.region
+                            }
+                        archives.append(item['ArchiveId'])
+                        if len(items) == 25:
+                            self.logger.debug('Writing batch of 25 inventory items to the bookkeeping db.')
+                            try:
+                                self.sdb_domain.batch_put_attributes(items)
+                            except boto.exception.SDBResponseError as e:
+                                raise CommunicationException(
+                                    "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                    cause=e,
+                                    code="SdbWriteError")
+                            items = {}
+
+                    # Add the remaining batch of items, if any, to the
+                    # database.
+                    if items:
+                        self.logger.debug('Writing final batch of %s inventory items to the bookkeeping db.'% len(items))
+                        try:
+                            self.sdb_domain.batch_put_attributes(items)
+                        except boto.exception.SDBResponseError as e:
+                            raise CommunicationException(
+                                "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                cause=e,
+                                code="SdbWriteError")
+
+                    # Get the inventory from the database for this vault,
+                    # and delete any orphaned items.
+                    query = "select * from `%s` where vault='%s'" % (self.bookkeeping_domain_name, vault_name)
+                    result = self.sdb_domain.select(query)
                     try:
-                        self.sdb_domain.put_attributes("%s" % (d,), inventory)
+                        for item in result:
+                            if not item.name in archives:
+                                self.sdb_domain.delete_item(item)
+                                self.logger.debug('Deleted orphaned archive from the database: %s.'% item.name)
+                                
                     except boto.exception.SDBResponseError as e:
-                        raise CommunicationException(
-                            "Cannot update inventory cache, Amazon SimpleDB is not happy.",
-                            cause=e,
-                            code="SdbWriteError")
+                        raise ResponseException(
+                                'SimpleDB did not respond correctly to our inventory check.',
+                                cause=self._decode_error_message(e.body),
+                                code=e.code)
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
