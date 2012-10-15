@@ -1126,18 +1126,37 @@ using %s MB parts to upload."% part_size)
         """
         query = 'select * from `%s`'% self.bookkeeping_domain_name
         items = self.sdb_domain.select(query)
+        old_items = new_items = {}
+        print 'Reading items from the database...'
         for item in items:
-            data = {key:item[key] for key in item.keys()}
             try:
-                item_key = data['archive_id'] if item.has_key('archive_id') else item['upload_id']
+                item_key = item['archive_id'] if item.has_key('archive_id') else item['upload_id']
             except KeyError: 
                 print '''Deleting item. Doesn't seem to be from glacier-cmd.'''
                 self.sdb_domain.delete_item(item)
                 continue
             
             self.sdb_domain.delete_item(item)
-            self.sdb_domain.put_attributes(item_key, data)
-            print 'Updated item %s.'% item_key
+            new_items[item_key] = {key:item[key] for key in item.keys()}
+            print 'Read %s items.\r'% len(new_items),
+            sys.stdout.flush()
+
+        data = {}
+        total_items = 0
+        print '\n'
+        for key in new_items.keys():
+
+            data[key] = new_items[key]
+            if len(data) == 25:
+                total_items += 25
+                self.sdb_domain.batch_put_attributes(data)
+                data = {}
+                print 'Updated %s items.\r'% total_items,
+                sys.stdout.flush()
+
+        if data:
+            self.sdb_domain.batch_put_attributes(data)
+            print 'Updated %s items.'% (total_items + len(data))
 
     @glacier_connect
     @log_class_call("Processing archive retrieval job.",
