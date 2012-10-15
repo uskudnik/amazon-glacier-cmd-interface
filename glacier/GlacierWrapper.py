@@ -265,8 +265,11 @@ Connecting to Amazon SimpleDB domain %s with
                 cause='Vault name has to be at least 1 character long.',
                 code="VaultNameError")
 
+        # If the name starts with an illegal character, then result
+        # m is None. In that case the expression becomes '0 != len(name)'
+        # which of course is always True.
         m = re.match(self.VAULT_NAME_ALLOWED_CHARACTERS, name)
-        if m.end() != len(name):
+        if (m.end() if m else 0) != len(name):
             raise InputException(
                 u"""Allowed characters are a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), and '.' (period)""",
                 cause='Illegal characters in the vault name.',
@@ -336,7 +339,7 @@ or 0x20-0x7E hexadecimal.""",
                 code="IdError")
         
         m = re.match(self.ID_ALLOWED_CHARACTERS, amazon_id)
-        if m.end() != len(amazon_id):
+        if (m.end() if m else 0) != len(amazon_id):
             raise InputException(
                 u"""This %s contains invalid characters. \
 Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_type,
