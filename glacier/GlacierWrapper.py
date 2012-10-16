@@ -878,17 +878,18 @@ using %s MB parts to upload."% part_size)
             
             try:
                 f = open(file_name, 'rb')
-                mmapped_file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
+            self.logger.debug('Successfully opened %s for reading.'% filename)
                 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
+            self.logger.debug('Connected to stdin for reading data to upload.')
         else:
             raise InputException(
                 "There is nothing to upload.",
@@ -906,6 +907,7 @@ using %s MB parts to upload."% part_size)
         # value to stay within the self.MAX_PARTS (10,000) block limit).
         part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
+        self.logger.debug('Using a part size of %s MB for upload.'% part_size)
         
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
@@ -952,27 +954,27 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                    print 'start: %s, current position: %s'% (start, current_position)
-                    if not start == current_position:
-                        if stdin:
-                            raise InputException(
-                                'Cannot verify non-sequential upload data from stdin.',
-                                code='ResumeError')
-                        if reader:
-                            reader.seek(start)
-
-                    if mmapped_file and stop > len(mmapped_file):
+                    if not start == current_position and stdin:
                         raise InputException(
-                            'File does not match uploaded data; please check your uploadid and try again.',
-                            cause='File is smaller than uploaded data.',
+                            'Cannot verify non-sequential upload data from stdin.',
                             code='ResumeError')
-
+                    
                     # Try to read the chunk of data, and take the hash if we
                     # have received anything.
                     # If no data or hash mismatch, stop checking raise an
                     # exception.
                     data = None
-                    data = reader.read(stop-start) if reader else mmapped_file[start:stop]
+                    if stdin:
+                        data = reader.read(stop-start)
+                    else:
+                        if stop > total_size:
+                            raise InputException(
+                                'File does not match uploaded data; please check your uploadid and try again.',
+                                cause='File is smaller than uploaded data.',
+                                code='ResumeError')
+                        
+                        data = mmap.mmap(f.fileno(), length=stop-start, offset=start, access=mmap.ACCESS_READ)
+
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
@@ -1031,10 +1033,16 @@ using %s MB parts to upload."% part_size)
             if reader:
                 part = reader.read(part_size_in_bytes)
             else:
-                if len(mmapped_file) > writer.uploaded_size+part_size_in_bytes:
-                    part = mmapped_file[writer.uploaded_size:writer.uploaded_size+part_size_in_bytes]
+                if total_size > writer.uploaded_size+part_size_in_bytes:
+                    part = mmap.mmap(f.fileno(),
+                                     length=part_size_in_bytes,
+                                     offset=writer.uploaded_size,
+                                     access=mmap.ACCESS_READ)
                 else:
-                    part = mmapped_file[writer.uploaded_size:]
+                    part = mmap.mmap(f.fileno(),
+                                     length=0,
+                                     offset=writer.uploaded_size,
+                                     access=mmap.ACCESS_READ)
                     
             if not part:
                 break
