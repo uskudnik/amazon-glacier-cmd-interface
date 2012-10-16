@@ -1137,7 +1137,11 @@ using %s MB parts to upload."% part_size)
                 continue
             
             self.sdb_domain.delete_item(item)
-            new_items[item_key] = {key:item[key] for key in item.keys()}
+            new_item = {}
+            for key in item.keys():
+                new_item[key] = item[key]
+                              
+            new_items[item_key] = new_item
             print 'Read %s items.\r'% len(new_items),
             sys.stdout.flush()
 
