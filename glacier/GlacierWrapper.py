@@ -884,7 +884,7 @@ using %s MB parts to upload."% part_size)
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
-            self.logger.debug('Successfully opened %s for reading.'% filename)
+            self.logger.debug('Successfully opened %s for reading.'% file_name)
                 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
@@ -915,7 +915,7 @@ using %s MB parts to upload."% part_size)
         # is an uploadid linked to it. Raise exceptions on the way in case
         # of mismatches.
         if resume:
-            items = self.search(vault=vault_name, file_name=file_name)
+            items = self.search(vault=vault_name, file_name=file_name, uploads=True)
             for item in items:
                 if item['filename'] == file_name:
                     if item.has_key('upload_id'):
@@ -1079,10 +1079,13 @@ using %s MB parts to upload."% part_size)
                                      offset=writer.uploaded_size,
                                      access=mmap.ACCESS_READ)
                 else:
-                    part = mmap.mmap(f.fileno(),
-                                     length=0,
-                                     offset=writer.uploaded_size,
-                                     access=mmap.ACCESS_READ)
+                    if writer.uploaded_size < total_size:
+                        part = mmap.mmap(f.fileno(),
+                                         length=0,
+                                         offset=writer.uploaded_size,
+                                         access=mmap.ACCESS_READ)
+                    else:
+                        part = None
                     
             if not part:
                 break
@@ -1404,7 +1407,7 @@ your archive ID is correct, and start a retrieval job using \
     @sdb_connect
     @log_class_call("Searching for archive.",
                     "Search done.")
-    def search(self, vault=None, region=None, file_name=None, search_term=None):
+    def search(self, vault=None, region=None, file_name=None, search_term=None, uploads=False):
 
         # Sanity checking.
         if not self.bookkeeping:
@@ -1448,8 +1451,8 @@ your archive ID is correct, and start a retrieval job using \
         # an archive_id attribute).
         try:
             for item in result:
-                self.logger.debug('Next search result:\n%s'% item)
-                if item.has_key('archive_id'):
+                if item.has_key('upload_id' if uploads else 'archive_id'):
+                    self.logger.debug('Next search result:\n%s'% item)
                     items.append(item)
         except boto.exception.SDBResponseError as e:
             raise ResponseException(
@@ -1566,22 +1569,6 @@ your archive ID is correct, and start a retrieval job using \
                 inventory = response.copy()
                 archives = []
                 
-<<<<<<< HEAD
-##                # if bookkeeping is enabled update cache
-##                if self.bookkeeping:
-##                    self.logger.debug('Updating the bookkeeping with the latest inventory.')
-##                    d = dtparse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
-##                    try:
-##                        self.sdb_domain.put_attributes("%s" % (d,), inventory)
-##                    except boto.exception.SDBResponseError as e:
-##                        raise CommunicationException(
-##                            "Cannot update inventory cache, Amazon SimpleDB is not happy.",
-##                            cause=e,
-##                            code="SdbWriteError")
-
-
-
-=======
                 # If bookkeeping is enabled, update cache.
                 # Add all inventory information to the database, then check
                 # for any archives listed in the database for that vault and
@@ -1640,7 +1627,6 @@ your archive ID is correct, and start a retrieval job using \
                                 'SimpleDB did not respond correctly to our inventory check.',
                                 cause=self._decode_error_message(e.body),
                                 code=e.code)
->>>>>>> mmap
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
