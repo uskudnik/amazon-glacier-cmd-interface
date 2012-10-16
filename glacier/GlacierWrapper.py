@@ -286,17 +286,17 @@ Connecting to Amazon SimpleDB domain %s with
         def sns_enable_wrap(*args, **kwargs):
             self = args[0]
             if hasattr(self, "sns_conn"):
-                print args
-                print kwargs
+                vault_name = args[1]
+
+                self.topic = self.sns_conn.create_topic("aws-glacier-%s" % vault_name)
                 # self.glacierconn.get_vault_notifications - just enable, either way we make one request (based on http://docs.amazonwebservices.com/sns/latest/api/API_CreateTopic.html)
+#                "aws-glacier-%s" % vault_name, #TODO format might be a problem; at the moment only 100 topics are allowed
                 config = {
-                    'SNSTopic': "aws-glacier-%s" % self.vault, #TODO format might be a problem; at the moment only 100 topics are allowed
+                    'SNSTopic': self.topic[u'CreateTopicResponse']['CreateTopicResult']['TopicArn'],
                     'Events': ['ArchiveRetrievalCompleted', 'InventoryRetrievalCompleted']
                 }
-                rez = self.glacierconn.set_vault_notifications(vault_name=self.vault, 
-                                                               notification_config=config)
-                print rez
-                raise Exception("asdasdasd")
+                self.glacierconn.set_vault_notifications(vault_name=vault_name, 
+                                                         notification_config=config)
             return func(*args, **kwargs)
 
         return sns_enable_wrap
@@ -1554,6 +1554,36 @@ your archive ID is correct, and start a retrieval job using \
 
         hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
         return glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hashes))
+
+    @glacier_connect
+    @sns_connect
+    def sns_subscribe(self, vault_names, protocol, endpoint):
+        all_topics = self.sns_conn.get_all_topics()['ListTopicsResponse']['ListTopicsResult']['Topics']
+
+        if vault_names:
+            topic_arns = []
+            for vault in vault_names:
+                for t in all_topics:
+                    topic_arn = t["TopicArn"]
+                    if vault in topic_arn:
+                        topic_arns += [topic_arn]
+        else:
+            topic_arns = [t["TopicArn"] for t in all_topics]
+
+        if len(topic_arns):
+            try:
+                results = []
+                for arn in topic_arns:
+                    result = self.sns_conn.subscribe(arn, protocol, endpoint)['SubscribeResponse']
+                    results += [{'SubscribeResult': result['SubscribeResult']['SubscriptionArn'],
+                                'RequestId': result['ResponseMetadata']['RequestId']}]
+                return results
+            except boto.exception.BotoServerError as e:
+                raise ResponseException("Failed to subscribe to notifications for vault %s." % vault_name,
+                    cause=self._decode_error_message(e.body),
+                    code=e.code)
+        else:
+            raise Exception("No vaults matching that name found.")
 
     def __init__(self, aws_access_key, aws_secret_key, region,
                  sns=False,

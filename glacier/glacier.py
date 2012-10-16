@@ -411,6 +411,21 @@ def treehash(args):
 
     output_table(hash_results, args.output)
 
+def startserver(args):
+    pass
+
+def snssetup(args):
+    """
+    Subscribe to notifications by method specified by user.
+    """
+    protocol = args.protocol
+    endpoint = args.endpoint
+    vault_names = args.vault
+
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_subscribe(vault_names, protocol, endpoint)
+    output_table(response, args.output)
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
@@ -483,7 +498,7 @@ def main():
                        required=a_required("aws-secret-key"),
                        default=a_default("aws-secret-key"),
                        help="Your aws secret key " + help_msg_config)
-    
+
     # Short notification service settings
     group = parser.add_argument_group('SNS')
     group.add_argument('--sns-enable',
@@ -551,6 +566,23 @@ def main():
     parser_rmvault.add_argument('vault',
         help='The vault to be removed.')
     parser_rmvault.set_defaults(func=rmvault)
+
+    # glacier-cmd snssetup <protocol> <endpoint> [<vault>, [<vault>, ...]]
+    parser_snssetup = subparsers.add_parser('snssetup', 
+        help="Specify protocol with which you would like to receive notifications.")
+    parser_snssetup.add_argument("protocol",
+        help="Protocol to use for SNS notifications. Options: HTTP(S), email or SMS.")
+    parser_snssetup.add_argument("endpoint",
+        help="Either valid HTTP(S) address, email address or phone number.")
+    parser_snssetup.add_argument("vault", nargs="*",
+        help="By default you subscribe to notifications from all vaults, \
+        specify if you would like to limit to one or more.")
+    parser_snssetup.set_defaults(func=snssetup)
+
+    # glacier-cmd enableauto
+    parser_server = subparsers.add_parser('startserver')
+    parser_server.add_argument("--port")
+    parser_server.set_defaults(func=startserver)
     
     # glacier-cmd upload <vault> <filename> [--description <description>] [--name <store file name>] [--partsize <part size>]
     # glacier-cmd upload <vault> --stdin [--description <description>] [--name <store file name>] [--partsize <part size>]
