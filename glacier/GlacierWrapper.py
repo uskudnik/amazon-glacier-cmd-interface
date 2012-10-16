@@ -21,6 +21,7 @@ import hashlib
 import fcntl
 import termios
 import struct
+import mmap
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -265,8 +266,11 @@ Connecting to Amazon SimpleDB domain %s with
                 cause='Vault name has to be at least 1 character long.',
                 code="VaultNameError")
 
+        # If the name starts with an illegal character, then result
+        # m is None. In that case the expression becomes '0 != len(name)'
+        # which of course is always True.
         m = re.match(self.VAULT_NAME_ALLOWED_CHARACTERS, name)
-        if m.end() != len(name):
+        if (m.end() if m else 0) != len(name):
             raise InputException(
                 u"""Allowed characters are a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), and '.' (period)""",
                 cause='Illegal characters in the vault name.',
@@ -336,7 +340,7 @@ or 0x20-0x7E hexadecimal.""",
                 code="IdError")
         
         m = re.match(self.ID_ALLOWED_CHARACTERS, amazon_id)
-        if m.end() != len(amazon_id):
+        if (m.end() if m else 0) != len(amazon_id):
             raise InputException(
                 u"""This %s contains invalid characters. \
 Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_type,
@@ -450,6 +454,7 @@ using %s MB parts to upload."% part_size)
 
             sys.stdout.write(msg + '\r')
             sys.stdout.flush()
+            
     def _size_fmt(self, num, decimals=1):
         """
         Formats byte sizes in human readable format. Anything bigger
@@ -553,6 +558,7 @@ using %s MB parts to upload."% part_size)
         return response.copy()
 
     @glacier_connect
+    @sdb_connect
     @log_class_call("Removing vault.",
                     "Vault removal complete.")
     def rmvault(self, vault_name):
@@ -579,9 +585,23 @@ using %s MB parts to upload."% part_size)
                 'Failed to remove vault with name %s.'% vault_name,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
+
+        # Check for orphaned entries in the bookkeeping database, and
+        # remove them.
+        if self.bookkeeping:
+            query = "select * from `%s` where vault='%s'" % (self.bookkeeping_domain_name, vault_name)
+            result = self.sdb_domain.select(query)
+            try:
+                for item in result:
+                    self.sdb_domain.delete_item(item)
+                    self.logger.debug('Deleted orphaned archive from the database: %s.'% item.name)
+            except boto.exception.SDBResponseError as e:
+                raise ResponseException(
+                        'SimpleDB did not respond correctly to our orphaned listings check.',
+                        cause=self._decode_error_message(e.body),
+                        code=e.code)
         
         return response.copy()
-
 
     @glacier_connect
     @log_class_call("Requesting vault description.",
@@ -849,6 +869,7 @@ using %s MB parts to upload."% part_size)
         # Otherwise try to read data from stdin.
         total_size = 0
         reader = None
+        mmapped_file = None
         if not stdin:
             if not file_name:
                 raise InputException(
@@ -856,17 +877,19 @@ using %s MB parts to upload."% part_size)
                     code='CommandError')
             
             try:
-                reader = open(file_name, 'rb')
+                f = open(file_name, 'rb')
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
+            self.logger.debug('Successfully opened %s for reading.'% filename)
                 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
+            self.logger.debug('Connected to stdin for reading data to upload.')
         else:
             raise InputException(
                 "There is nothing to upload.",
@@ -884,6 +907,7 @@ using %s MB parts to upload."% part_size)
         # value to stay within the self.MAX_PARTS (10,000) block limit).
         part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
+        self.logger.debug('Using a part size of %s MB for upload.'% part_size)
 
         # If the key resume is True, we have to see whether we can find this
         # file in the SimpleDB database. So search for a match on the file
@@ -915,7 +939,7 @@ using %s MB parts to upload."% part_size)
                     cause='No upload in progress for a file with this name.')
 
             self.logger.debug('Found uploadid for resume request; attempting to resume this upload.')
-            
+
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -968,18 +992,27 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                    if not start == current_position:
-                        if stdin:
-                            raise InputException(
-                                'Cannot verify non-sequential upload data from stdin.',
-                                code='ResumeError')
-                        reader.seek(start)
-
+                    if not start == current_position and stdin:
+                        raise InputException(
+                            'Cannot verify non-sequential upload data from stdin.',
+                            code='ResumeError')
+                    
                     # Try to read the chunk of data, and take the hash if we
                     # have received anything.
                     # If no data or hash mismatch, stop checking raise an
                     # exception.
-                    data = reader.read(stop-start)
+                    data = None
+                    if stdin:
+                        data = reader.read(stop-start)
+                    else:
+                        if stop > total_size:
+                            raise InputException(
+                                'File does not match uploaded data; please check your uploadid and try again.',
+                                cause='File is smaller than uploaded data.',
+                                code='ResumeError')
+                        
+                        data = mmap.mmap(f.fileno(), length=stop-start, offset=start, access=mmap.ACCESS_READ)
+
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
@@ -996,6 +1029,8 @@ using %s MB parts to upload."% part_size)
                             'Received data does not match uploaded data; please check your uploadid and try again.',
                             cause='No or not enough data to match.',
                             code='ResumeError')
+                    
+                    current_position += stop - start
 
                 # If a marker is present, this means there are more pages
                 # of parts available. If no marker, we have the last page.
@@ -1033,7 +1068,25 @@ using %s MB parts to upload."% part_size)
         start_time = current_time = previous_time = time.time()
         start_bytes = writer.uploaded_size
         first_part = self.bookkeeping
-        for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
+##        for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
+        while True:
+            if reader:
+                part = reader.read(part_size_in_bytes)
+            else:
+                if total_size > writer.uploaded_size+part_size_in_bytes:
+                    part = mmap.mmap(f.fileno(),
+                                     length=part_size_in_bytes,
+                                     offset=writer.uploaded_size,
+                                     access=mmap.ACCESS_READ)
+                else:
+                    part = mmap.mmap(f.fileno(),
+                                     length=0,
+                                     offset=writer.uploaded_size,
+                                     access=mmap.ACCESS_READ)
+                    
+            if not part:
+                break
+            
             writer.write(part)
 
             # If this was the first part, and we have bookkeeping enabled,
@@ -1390,10 +1443,14 @@ your archive ID is correct, and start a retrieval job using \
         self.logger.debug('Query: "%s"'% query)
         result = self.sdb_domain.select(query)
         items = []
+
+        # Get the results; filter out incomplete uploads (those without
+        # an archive_id attribute).
         try:
             for item in result:
                 self.logger.debug('Next search result:\n%s'% item)
-                items.append(item)
+                if item.has_key('archive_id'):
+                    items.append(item)
         except boto.exception.SDBResponseError as e:
             raise ResponseException(
                     'SimpleDB did not like your query with parameters %s.'% search_params,
@@ -1426,25 +1483,11 @@ your archive ID is correct, and start a retrieval job using \
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
+        # Remove the listing from the bookkeeping database.
         if self.bookkeeping:
             try:
-                # TODO: can't find a method for counting right now
-                # TODO: proper message for when archive name is simply not
-                #       in the bookkeeping db (e.g. originally uploaded
-                #       with other tool).
-                #       (wvmarle: is this necessary? Archive is gone, who cares
-                #       whether it was in the db to begin with.)
-                query = ('select * from `%s` where archive_id="%s"' %
-                            (self.bookkeeping_domain_name, archive_id))
-                items = self.sdb_domain.select(query)
-            except boto.exception.SDBResponseError as e:
-                raise CommunicationException(
-                    "Cannot get archive info from Amazon SimpleDB.",
-                    code="SdbCommunicationError",
-                    cause=e)
-            
-            try:
-                for item in items:
+                item = self.sdb_domain.get_item(archive_id)
+                if item:
                     self.sdb_domain.delete_item(item)
             except boto.exception.SDBResponseError as e:
                 raise CommunicationException(
@@ -1521,7 +1564,9 @@ your archive ID is correct, and start a retrieval job using \
                 self.logger.debug('Fetching results of finished inventory retrieval.')
                 response = self.glacierconn.get_job_output(vault_name, inventory_job['JobId'])
                 inventory = response.copy()
+                archives = []
                 
+<<<<<<< HEAD
 ##                # if bookkeeping is enabled update cache
 ##                if self.bookkeeping:
 ##                    self.logger.debug('Updating the bookkeeping with the latest inventory.')
@@ -1536,6 +1581,66 @@ your archive ID is correct, and start a retrieval job using \
 
 
 
+=======
+                # If bookkeeping is enabled, update cache.
+                # Add all inventory information to the database, then check
+                # for any archives listed in the database for that vault and
+                # remove those.
+                if self.bookkeeping and len(inventory['ArchiveList']) > 0:
+                    self.logger.debug('Updating the bookkeeping with the latest inventory.')
+                    items = {}
+
+                    # Add items to the inventory, 25 at a time (maximum batch).
+                    for item in inventory['ArchiveList']:
+                        items[item['ArchiveId']] = {
+                            'vault': vault_name,
+                            'archive_id': item['ArchiveId'],
+                            'description': item['ArchiveDescription'],
+                            'date':'%s' % dtparse(item['CreationDate']).replace(tzinfo=pytz.utc),
+                            'hash': item['SHA256TreeHash'],
+                            'size': item['Size'],
+                            'region': self.region
+                            }
+                        archives.append(item['ArchiveId'])
+                        if len(items) == 25:
+                            self.logger.debug('Writing batch of 25 inventory items to the bookkeeping db.')
+                            try:
+                                self.sdb_domain.batch_put_attributes(items)
+                            except boto.exception.SDBResponseError as e:
+                                raise CommunicationException(
+                                    "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                    cause=e,
+                                    code="SdbWriteError")
+                            items = {}
+
+                    # Add the remaining batch of items, if any, to the
+                    # database.
+                    if items:
+                        self.logger.debug('Writing final batch of %s inventory items to the bookkeeping db.'% len(items))
+                        try:
+                            self.sdb_domain.batch_put_attributes(items)
+                        except boto.exception.SDBResponseError as e:
+                            raise CommunicationException(
+                                "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                cause=e,
+                                code="SdbWriteError")
+
+                    # Get the inventory from the database for this vault,
+                    # and delete any orphaned items.
+                    query = "select * from `%s` where vault='%s'" % (self.bookkeeping_domain_name, vault_name)
+                    result = self.sdb_domain.select(query)
+                    try:
+                        for item in result:
+                            if not item.name in archives:
+                                self.sdb_domain.delete_item(item)
+                                self.logger.debug('Deleted orphaned archive from the database: %s.'% item.name)
+                                
+                    except boto.exception.SDBResponseError as e:
+                        raise ResponseException(
+                                'SimpleDB did not respond correctly to our inventory check.',
+                                cause=self._decode_error_message(e.body),
+                                code=e.code)
+>>>>>>> mmap
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
