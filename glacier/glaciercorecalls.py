@@ -91,6 +91,7 @@ class GlacierWriter(object):
                                                                  self.part_size,
                                                                  description)
             self.uploadid = response['UploadId']
+            response.read()
 
         self.uploaded_size = 0
         self.tree_hashes = []
@@ -130,12 +131,12 @@ class GlacierWriter(object):
         delay = 2
         while True:
             try:
-                self.connection.upload_part(self.vault_name,
-                                            self.uploadid,
-                                            hashlib.sha256(data).hexdigest(),
-                                            bytes_to_hex(part_tree_hash),
-                                            (self.uploaded_size, self.uploaded_size+len(data)-1),
-                                            data)
+                response = self.connection.upload_part(self.vault_name,
+                                                       self.uploadid,
+                                                       hashlib.sha256(data).hexdigest(),
+                                                       bytes_to_hex(part_tree_hash),
+                                                       (self.uploaded_size, self.uploaded_size+len(data)-1),
+                                                       data)
                 break
             
             except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
@@ -159,6 +160,7 @@ class GlacierWriter(object):
                 retries += 1
                 delay = delay * 4
 
+        response.read()
         self.uploaded_size += len(data)
 
     def close(self):
@@ -171,6 +173,7 @@ class GlacierWriter(object):
                                                              self.uploadid,
                                                              bytes_to_hex(tree_hash(self.tree_hashes)),
                                                              self.uploaded_size)
+        response.read()
         self.archive_id = response['ArchiveId']
         self.location = response['Location']
         self.hash_sha256 = bytes_to_hex(tree_hash(self.tree_hashes))

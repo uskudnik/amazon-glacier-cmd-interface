@@ -309,7 +309,7 @@ def upload(args):
     elif args.stdin:
 
         # No file name; using stdin.
-        response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
+        response = glacier.upload(args.vault, None, args.description, args.region, args.stdin,
                                   args.name, args.partsize, args.uploadid, args.resume)
         results = [{"Created archive with ID": response[0],
                     "Archive SHA256 tree hash": response[1]}]
