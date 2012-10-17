@@ -685,6 +685,7 @@ using %s MB parts to upload."% part_size)
                     code=e.code)
             job_list += response.copy()['JobList']
             marker = response.copy()['Marker']
+            response.read()
             if limit and len(job_list) >= limit:
                 job_list = job_list[:limit]
                 break
@@ -809,6 +810,7 @@ using %s MB parts to upload."% part_size)
 
             uploads += response.copy()['UploadsList']
             marker = response.copy()['Marker']
+            response.read()
             if limit and len(uploads) >= limit:
                 uploads = uploads[:limit]
                 break
@@ -942,6 +944,7 @@ using %s MB parts to upload."% part_size)
                         code=e.code)
                 
                 list_parts_response = response.copy()
+                response.read()
                 current_position = 0
 
                 # Process the parts list.
