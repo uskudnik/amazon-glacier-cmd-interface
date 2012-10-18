@@ -216,6 +216,14 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
 
             # TODO: give SimpleDB its own class? Or move the few calls
             # we need to glaciercorecalls?
+
+            if not self.bookkeeping_domain_name:
+                raise InputException(
+                    '''\
+Bookkeeping enabled but no Amazon SimpleDB domain given.
+Provide a domain in either the config file or via the
+command line, or disable bookkeeping.''',
+                    code="SdbConnectionError")
             
             if not hasattr(self, 'sdb_conn'):
                 try:
