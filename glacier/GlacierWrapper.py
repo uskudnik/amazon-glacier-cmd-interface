@@ -1100,7 +1100,8 @@ using %s MB parts to upload."% part_size)
                 'location': location,
                 'description': description,
                 'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
-                'hash': sha256hash
+                'hash': sha256hash,
+                'size': writer.uploaded_size
             }
 
 ##            if file_name:

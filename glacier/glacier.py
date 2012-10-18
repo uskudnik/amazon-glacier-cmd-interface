@@ -70,7 +70,7 @@ def output_table(results, output, keys=None, sort_key=None):
         headers = [keys[k] for k in keys.keys()] if keys else results[0].keys()
         table = PrettyTable(headers)
         for line in results:
-            table.add_row([line[k] for k in (keys.keys() if keys else headers)])
+            table.add_row([line[k] if k in line else '' for k in (keys.keys() if keys else headers)])
 
         if sort_key:
             table.sortby = keys[sort_key] if keys else sort_key
