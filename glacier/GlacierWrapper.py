@@ -853,6 +853,7 @@ using %s MB parts to upload."% part_size)
         # Do some sanity checking on the user values.
         self._check_vault_name(vault_name)
         self._check_region(region)
+        self._progress('Starting upload of %s.'% file_name)
         if not description:
             description = file_name if file_name else 'No description.'
 
@@ -948,6 +949,7 @@ using %s MB parts to upload."% part_size)
         # try to resume uploading.
         upload = None
         if uploadid:
+            self._progress('Checking existing data for upload resumption.')
             uploads = self.listmultiparts(vault_name)
             for upload in uploads:
                 if uploadid == upload['MultipartUploadId']:
@@ -1015,7 +1017,10 @@ using %s MB parts to upload."% part_size)
                                 cause='File is smaller than uploaded data.',
                                 code='ResumeError')
                         
-                        data = mmap.mmap(f.fileno(), length=stop-start, offset=start, access=mmap.ACCESS_READ)
+                        data = mmap.mmap(f.fileno(),
+                                         length=stop-start,
+                                         offset=start,
+                                         access=mmap.ACCESS_READ)
 
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
@@ -1084,7 +1089,7 @@ using %s MB parts to upload."% part_size)
                 else:
                     if writer.uploaded_size < total_size:
                         part = mmap.mmap(f.fileno(),
-                                         length=writer.uploaded_size-total_size,
+                                         length=total_size-writer.uploaded_size,
                                          offset=writer.uploaded_size,
                                          access=mmap.ACCESS_READ)
                     else:
@@ -1153,7 +1158,7 @@ using %s MB parts to upload."% part_size)
 
         writer.close()
         current_time = time.time()
-        overall_rate = int(writer.uploaded_size/(current_time - start_time))
+        overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
         msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
                                             self._size_fmt(overall_rate, 2))
         self._progress(msg)
