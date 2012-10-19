@@ -1015,7 +1015,10 @@ using %s MB parts to upload."% part_size)
                                 cause='File is smaller than uploaded data.',
                                 code='ResumeError')
                         
-                        data = mmap.mmap(f.fileno(), length=stop-start, offset=start, access=mmap.ACCESS_READ)
+                        data = mmap.mmap(f.fileno(),
+                                         length=stop-start,
+                                         offset=start,
+                                         access=mmap.ACCESS_READ)
 
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
@@ -1084,7 +1087,7 @@ using %s MB parts to upload."% part_size)
                 else:
                     if writer.uploaded_size < total_size:
                         part = mmap.mmap(f.fileno(),
-                                         length=writer.uploaded_size-total_size,
+                                         length=total_size-writer.uploaded_size,
                                          offset=writer.uploaded_size,
                                          access=mmap.ACCESS_READ)
                     else:
