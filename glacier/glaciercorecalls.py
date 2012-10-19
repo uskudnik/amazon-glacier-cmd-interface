@@ -81,7 +81,7 @@ class GlacierWriter(object):
         self.part_size = part_size_in_bytes
         self.vault_name = vault_name
         self.connection = connection
-##        self.location = None
+        self.location = None
         self.logger = logger
 
         if uploadid:
@@ -91,6 +91,7 @@ class GlacierWriter(object):
                                                                  self.part_size,
                                                                  description)
             self.uploadid = response['UploadId']
+            response.read()
 
         self.uploaded_size = 0
         self.tree_hashes = []
@@ -120,51 +121,47 @@ class GlacierWriter(object):
                     "x-amz-sha256-tree-hash": bytes_to_hex(part_tree_hash),
                     "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
+        
+        # Catch time-outs: if time-out received, wait a bit and
+        # try again.
+        # Uses exponential wait: 2 sec, 8 sec, 32 sec, 128 sec, 256 sec.
+        # If still failure after five times retrying, give up and raise
+        # an exception.
+        retries = 0
+        delay = 2
+        while True:
+            try:
+                response = self.connection.upload_part(self.vault_name,
+                                                       self.uploadid,
+                                                       hashlib.sha256(data).hexdigest(),
+                                                       bytes_to_hex(part_tree_hash),
+                                                       (self.uploaded_size, self.uploaded_size+len(data)-1),
+                                                       data)
+                break
+            
+            except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+                if e.code != 408:
+                    raise ResponseException(
+                        "Error while uploading data to Amazon Glacier.",
+                        cause=e,
+                        code=e.code)
+                
+                if retries >= 5:
+                    raise ResonseException(
+                        "Timeout while uploading data to Amazon Glacier. Retried five times; giving up.",
+                        cause=e,
+                        code=e.code)
+                        
+                if self.logger:
+                    logger.warning(e.message)
+                    logger.warning('sleeping %s seconds before retrying.'% delay)
+                    
+                response.read()
+                time.sleep(delay)
+                retries += 1
+                delay = delay * 4
 
-        self.connection.upload_part(self.vault_name,
-                                    self.uploadid,
-                                    hashlib.sha256(data).hexdigest(),
-                                    bytes_to_hex(part_tree_hash),
-                                    (self.uploaded_size, self.uploaded_size+len(data)-1),
-                                    data)
-
-##        retries = 0
-##        while True:
-##            response = self.connection.make_request(
-##                "PUT",
-##                self.upload_url,
-##                headers,
-##                data)
-##
-##            # Success.
-##            if response.status == 204:
-##                break
-##
-##            # Time-out recieved: sleep for 5 minutes and try again.
-##            # Do not try more than five times; after that it's over.
-##            elif response.status == 408:
-##                if retries >= 5:
-##                    resp = json.loads(response.read())
-##                    raise ResonseException(
-##                        resp['message'],
-##                        cause='Timeout',
-##                        code=resp['code'])
-##                        
-##                if self.logger:
-##                    logger.warning(resp['message'])
-##                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
-##                    
-##                retries += 1
-##                time.sleep(300)
-##
-##            else:
-##                raise ResponseException(
-##                    "Multipart upload part expected response status 204 (got %s):\n%s"\
-##                        % (response.status, response.read()),
-##                    cause=resp['message'],
-##                    code=resp['code'])
-
-##        response.read()
+        response.read()
         self.uploaded_size += len(data)
 
     def close(self):
@@ -177,6 +174,7 @@ class GlacierWriter(object):
                                                              self.uploadid,
                                                              bytes_to_hex(tree_hash(self.tree_hashes)),
                                                              self.uploaded_size)
+        response.read()
         self.archive_id = response['ArchiveId']
         self.location = response['Location']
         self.hash_sha256 = bytes_to_hex(tree_hash(self.tree_hashes))

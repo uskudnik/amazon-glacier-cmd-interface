@@ -254,7 +254,7 @@ def download(args):
     Download an archive.
     """
     glacier = default_glacier_wrapper(args)
-    response = glacier.download(args.vault, args.archive, args.partsize,
+    response = glacier.download(args.vault, args.archive, args.partsize, resume=args.resume,
                                 out_file_name=args.outfile, overwrite=args.overwrite)
     if args.outfile:
         output_msg(response, args.output, success=True)
@@ -418,6 +418,11 @@ def treehash(args):
                 code='CommandError')
 
     output_table(hash_results, args.output)
+
+@handle_errors
+def updatedb(args):
+    glacier = default_glacier_wrapper(args)
+    glacier.updatedb()
 
 def main():
     program_description = u"""
@@ -604,8 +609,7 @@ re-reading the data from stdin.''')
         help='''\
 Attempt to resume an interrupted multi-part upload.
 Does not work in combination with --stdin, and
-requires bookkeeping to be enabled.
-(not implemented yet)''')
+requires bookkeeping to be enabled.''')
     parser_upload.add_argument('--bacula', action='store_true',
         help='''\
 The (single!) file name will be parsed using Bacula's
@@ -692,6 +696,11 @@ partsize  MaxArchiveSize
 If not given, the smallest possible part size
 will be used depending on the size of the job
 at hand.''')
+    parser_download.add_argument('--resume', action='store_true',
+        help='''\
+Attempt to resume an interrupted download. You must provide --outfile
+<file name> that contains already downloaded data if using this option.''')
+
     parser_download.set_defaults(func=download)
 
     # glacier-cmd rmarchive <vault> <archive>
@@ -737,6 +746,13 @@ at hand.''')
     parser_describejob.add_argument('filename', nargs='*',
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
+
+    # glacier-cmd hash <filename>
+    parser_describejob = subparsers.add_parser('updatedb',
+        help='Update the db to match change in item key. You need to run \
+              this once if you have bookkeeping data from before mid Oct 2012.')
+    parser_describejob.set_defaults(func=updatedb)
+    
 
     # TODO args.logtostdout becomes false when parsing the remaining_argv
     # so here we bridge this. An ugly hack but it works.

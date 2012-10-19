@@ -685,6 +685,7 @@ using %s MB parts to upload."% part_size)
                     code=e.code)
             job_list += response.copy()['JobList']
             marker = response.copy()['Marker']
+            response.read()
             if limit and len(job_list) >= limit:
                 job_list = job_list[:limit]
                 break
@@ -809,6 +810,7 @@ using %s MB parts to upload."% part_size)
 
             uploads += response.copy()['UploadsList']
             marker = response.copy()['Marker']
+            response.read()
             if limit and len(uploads) >= limit:
                 uploads = uploads[:limit]
                 break
@@ -878,17 +880,19 @@ using %s MB parts to upload."% part_size)
             
             try:
                 f = open(file_name, 'rb')
-                mmapped_file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
+
+            self.logger.debug('Successfully opened %s for reading.'% file_name)
                 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
+            self.logger.debug('Connected to stdin for reading data to upload.')
         else:
             raise InputException(
                 "There is nothing to upload.",
@@ -906,7 +910,39 @@ using %s MB parts to upload."% part_size)
         # value to stay within the self.MAX_PARTS (10,000) block limit).
         part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
-        
+        self.logger.debug('Using a part size of %s MB for upload.'% part_size)
+
+        # If the key resume is True, we have to see whether we can find this
+        # file in the SimpleDB database. So search for a match on the file
+        # name, check for exact match file name and size, and whether there
+        # is an uploadid linked to it. Raise exceptions on the way in case
+        # of mismatches.
+        if resume:
+            items = self.search(vault=vault_name, file_name=file_name, uploads=True)
+            for item in items:
+                if item['filename'] == file_name:
+                    if item.has_key('upload_id'):
+                        if int(item['size']) == os.path.getsize(file_name):
+
+                            # We get it as unicode string which gives problems down
+                            # the line (in writer.write_part). Convert to normal
+                            # string solves this issue.
+                            uploadid = str(item['upload_id']) 
+                            break
+                        else:
+                            raise InputException(
+                                'Can not resume the upload of %s.'% file_name,
+                                code='FileError',
+                                cause='File size mismatch. This file: %s, expected: %s.'% (item['size'], os.path.getsize(file_name)))
+                    
+            else:
+                raise InputException(
+                    'Can not resume the upload of %s.'% file_name,
+                    code='CommandError',
+                    cause='No upload in progress for a file with this name.')
+
+            self.logger.debug('Found uploadid for resume request; attempting to resume this upload.')
+
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -920,9 +956,16 @@ using %s MB parts to upload."% part_size)
                     part_size_in_bytes = upload['PartSizeInBytes']
                     break
             else:
+                if resume:
+                    item = self.sdb_domain.get_item(uploadid)
+                    self.sdb_domain.delete_item(item)
+                    raise InputException(
+                        'Can not resume upload of this data as the original job has expired.',
+                        code='CommandError')
+                    
                 raise InputException(
                     'Can not resume upload of this data as no existing job with this uploadid could be found.',
-                    code='IdError')
+                    code='CommandError')
 
         # Initialise the writer task.
         writer = GlacierWriter(self.glacierconn, vault_name, description=description,
@@ -942,6 +985,7 @@ using %s MB parts to upload."% part_size)
                         code=e.code)
                 
                 list_parts_response = response.copy()
+                response.read()
                 current_position = 0
 
                 # Process the parts list.
@@ -952,27 +996,30 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                    print 'start: %s, current position: %s'% (start, current_position)
-                    if not start == current_position:
-                        if stdin:
-                            raise InputException(
-                                'Cannot verify non-sequential upload data from stdin.',
-                                code='ResumeError')
-                        if reader:
-                            reader.seek(start)
-
-                    if mmapped_file and stop > len(mmapped_file):
+                    if not start == current_position and stdin:
                         raise InputException(
-                            'File does not match uploaded data; please check your uploadid and try again.',
-                            cause='File is smaller than uploaded data.',
+                            'Cannot verify non-sequential upload data from stdin.',
                             code='ResumeError')
-
+                    
                     # Try to read the chunk of data, and take the hash if we
                     # have received anything.
                     # If no data or hash mismatch, stop checking raise an
                     # exception.
                     data = None
-                    data = reader.read(stop-start) if reader else mmapped_file[start:stop]
+                    if stdin:
+                        data = reader.read(stop-start)
+                    else:
+                        if stop > total_size:
+                            raise InputException(
+                                'File does not match uploaded data; please check your uploadid and try again.',
+                                cause='File is smaller than uploaded data.',
+                                code='ResumeError')
+                        
+                        data = mmap.mmap(f.fileno(),
+                                         length=stop-start,
+                                         offset=start,
+                                         access=mmap.ACCESS_READ)
+
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
@@ -1027,19 +1074,54 @@ using %s MB parts to upload."% part_size)
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         start_bytes = writer.uploaded_size
+        first_part = self.bookkeeping
         while True:
             if reader:
                 part = reader.read(part_size_in_bytes)
             else:
-                if len(mmapped_file) > writer.uploaded_size+part_size_in_bytes:
-                    part = mmapped_file[writer.uploaded_size:writer.uploaded_size+part_size_in_bytes]
+                if total_size > writer.uploaded_size+part_size_in_bytes:
+                    part = mmap.mmap(f.fileno(),
+                                     length=part_size_in_bytes,
+                                     offset=writer.uploaded_size,
+                                     access=mmap.ACCESS_READ)
                 else:
-                    part = mmapped_file[writer.uploaded_size:]
+                    if writer.uploaded_size < total_size:
+                        part = mmap.mmap(f.fileno(),
+                                         length=total_size-writer.uploaded_size,
+                                         offset=writer.uploaded_size,
+                                         access=mmap.ACCESS_READ)
+                    else:
+                        part = None
                     
             if not part:
                 break
             
             writer.write(part)
+
+            # If this was the first part, and we have bookkeeping enabled,
+            # write the upload information in the SimpleDB database.
+            if first_part:
+                first_part = False
+                self.logger.info('Writing in-progress upload information into the bookkeeping database.')
+
+                # Use the alternative name as given by --name <name> if we have it.
+                file_name = alternative_name if alternative_name else file_name
+
+                # If still no name this is an stdin job, so set name accordingly.
+                file_name = file_name if file_name else 'Data from stdin.'
+                file_attrs = {
+                    'region': region,
+                    'vault': vault_name,
+                    'filename': file_name,
+                    'size': total_size,
+                    'upload_id': writer.uploadid,
+                    'location': None,
+                    'description': description,
+                    'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
+                    'hash': None
+                }
+                self.sdb_domain.put_attributes(writer.uploadid, file_attrs)
+
             current_time = time.time()
             overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
             if total_size > 0:
@@ -1092,26 +1174,55 @@ using %s MB parts to upload."% part_size)
 
             # If still no name this is an stdin job, so set name accordingly.
             file_name = file_name if file_name else 'Data from stdin.'
-            file_attrs = {
-                'region': region,
-                'vault': vault_name,
-                'filename': file_name,
-                'archive_id': archive_id,
-                'location': location,
-                'description': description,
-                'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
-                'hash': sha256hash
-            }
-
-##            if file_name:
-##                file_attrs['filename'] = file_name
-##            elif stdin:
-##                file_attrs['filename'] = 'data from stdin'
-
-            self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
+            item = self.sdb_domain.get_item(writer.uploadid)
+            if item:
+                self.sdb_domain.delete_item(item)
 
         return (archive_id, sha256hash)
 
+    @sdb_connect
+    def updatedb(self):
+        """
+        Updates the SimpleDB to use the archive id as item name instead
+        of the file name.
+        """
+        query = 'select * from `%s`'% self.bookkeeping_domain_name
+        items = self.sdb_domain.select(query)
+        old_items = new_items = {}
+        print 'Reading items from the database...'
+        for item in items:
+            try:
+                item_key = item['archive_id'] if item.has_key('archive_id') else item['upload_id']
+            except KeyError: 
+                print '''Deleting item. Doesn't seem to be from glacier-cmd.'''
+                self.sdb_domain.delete_item(item)
+                continue
+            
+            self.sdb_domain.delete_item(item)
+            new_item = {}
+            for key in item.keys():
+                new_item[key] = item[key]
+                              
+            new_items[item_key] = new_item
+            print 'Read %s items.\r'% len(new_items),
+            sys.stdout.flush()
+
+        data = {}
+        total_items = 0
+        print '\n'
+        for key in new_items.keys():
+
+            data[key] = new_items[key]
+            if len(data) == 25:
+                total_items += 25
+                self.sdb_domain.batch_put_attributes(data)
+                data = {}
+                print 'Updated %s items.\r'% total_items,
+                sys.stdout.flush()
+
+        if data:
+            self.sdb_domain.batch_put_attributes(data)
+            print 'Updated %s items.'% (total_items + len(data))
 
     @glacier_connect
     @log_class_call("Processing archive retrieval job.",
@@ -1173,7 +1284,7 @@ using %s MB parts to upload."% part_size)
     @log_class_call("Download an archive.",
                     "Download archive done.")
     def download(self, vault_name, archive_id, part_size,
-                 out_file_name=None, overwrite=False):
+                 resume=False, out_file_name=None, overwrite=False):
         """
         Download a file from Glacier, and store it in out_file.
         If no out_file is given, the file will be dumped on stdout.
@@ -1198,31 +1309,145 @@ using %s MB parts to upload."% part_size)
             
         else:
             raise InputException(
-                "Requested archive not available. Please make sure \
-your archive ID is correct, and start a retrieval job using \
-'getarchive' if necessary.",
+                '''Requested archive not available. Please make sure the archive ID
+is correct, and start a retrieval job using 'getarchive' if necessary.''',
                 code='IdError')
 
-        # Check whether we can access the file the archive has to be written to.
+        # Check whether we can access the file the archive has to be
+        # written to, and if we have an existing file whether to resume
+        # writing to it.
+        # If resumption is requested, try to compare the local data
+        # to the remote archive data, and if it compares continue the
+        # download where we were.
         out_file = None
-        if out_file_name:
+        hash_list = []
+        downloaded_size = 0
+        if resume:
+            if not out_file_name:
+                raise InputException(
+                    'Must provide outfile with existing data to resume download.',
+                    code='CommandError')
+
+            if not os.path.isfile(out_file_name):
+                raise InputException(
+                    "Cannot access the ouput file for resumption of downloading: %s."% out_file_name,
+                    cause='File not found.',
+                    code='FileError')
+
+            out_file_size = os.path.getsize(out_file_name)
+            if out_file_size == job['ArchiveSizeInBytes']:
+
+                # It appears the archive has been downloaded completely
+                # already. Double check this.
+                file_hash = self.get_tree_hash(out_file_name)
+                if file_hash == job['SHA256TreeHash']:
+                    raise InputException (
+                        'Download of archive %s to local file %s is completed already.'% (archive_id, out_file_name),
+                        code='ResumeError')
+                
+                raise InputException(
+                        'Archive data does not match local data.',
+                        cause='SHA256 tree hash mismatch.',
+                        code='ResumeError')
+                
+            if out_file_size > 0:
+                self.logger.debug('Attempting to resume download of this archive to file %s.'% out_file_name)
+                self._progress('Comparing data with Glacier for download resumption.')
+
+                # Get tree hash and hash list of the partially downloaded data.
+                # Use mmap to reduce memory overhead while handling the local
+                # data.
+                try:
+                    f = open(out_file_name, 'rb')
+                    mmapped_out_file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                except IOError as e:
+                    raise InputException(
+                        "Could not read the output file %s for hash checking."% file_name,
+                        cause=e,
+                        code='FileError')
+
+                # Ask Amazon for a hash on this data by opening a read
+                # connection; the hash of the data is in the response.
+                # Note: this must be done by normal block size;
+                # so 1,2,4,8 etc. MB of data at a time. Calculate
+                # biggest block that fits in the data, and work down from
+                # there until all data checked.
+                MB = 1024*1024
+                check_part_size = 4096 * MB
+                checked_size = 0
+                while checked_size < out_file_size:
+
+                    # Make sure our check_part_size is smaller than the
+                    # amount of data left to check.
+                    while check_part_size > (out_file_size - checked_size):
+                        check_part_size = check_part_size / 2
+
+                    # Get chunk hashes and the tree hash of the part that
+                    # has to be checked, and store these hashes in the
+                    # hash_list of this download.
+                    start_part = checked_size/MB
+                    stop_part = start_part + check_part_size/MB
+                    check_hash_list = [hashlib.sha256(part).digest() for part in iter([mmapped_out_file[i*MB:(i+1)*MB] for i in range(start_part, stop_part)])]
+                    hash_list += check_hash_list
+                    local_hash = glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hash_list))
+
+                    # Get the hash of the data stored in Glacier, and check
+                    # whether it matches out local data.
+                    response = self.glacierconn.get_job_output(vault_name,
+                                                               download_job['JobId'],
+                                                               byte_range=(checked_size, checked_size+check_part_size-1))                    
+                    if response['TreeHash'] != local_hash:
+                        raise InputException(
+                            'Archive data does not match local data.',
+                            cause='SHA256 tree hash mismatch.',
+                            code='ResumeError')
+
+                    self.logger.debug('Tree-hash match on %s MB part, range %s-%s.'% (check_part_size/MB, checked_size, checked_size+check_part_size))
+                    checked_size += check_part_size
+
+                self.logger.debug('Hash check OK; continuing download resumption.')
+
+                # Try to open the out_file in write mode, for appending data.
+                try:
+                    out_file = open(out_file_name, 'ab')
+                except IOError as e:
+                    raise InputException(
+                        "Cannot access the ouput file for writing: %s."% out_file_name,
+                        cause=e,
+                        code='FileError')
+                
+                downloaded_size = os.path.getsize(out_file_name)
+                self.logger.debug('All checks passed; resuming download of data.')
+                self._progress('Resuming download now.')
+
+            else:
+                out_file = open(out_file_name, 'wb')
+
+        # If we have a file name, check whether it exists already, whether
+        # we may overwrite it, and finally whether we can actually write
+        # to this file.
+        elif out_file_name:
             if os.path.isfile(out_file_name) and not overwrite:
                 raise InputException(
-                    "File exists already, aborting. Use the overwrite flag to overwrite existing file.",
+                    '''\
+File %s exists already, aborting.
+Use the --resume flag to resume downloading to this file, \
+or the --overwrite flag to overwrite the existing file.'''% out_file_name,
                     code="FileError")
             try:
-                out_file = open(out_file_name, 'w')
+                out_file = open(out_file_name, 'wb')
             except IOError as e:
                 raise InputException(
-                    "Cannot access the ouput file.",
+                    "Cannot access the ouput file for writing: %s."% out_file_name,
                     cause=e,
                     code='FileError')
+            self.logger.debug('Downloading archive, writing data to file %s.'% out_file_name)
 
         # Sanity checking done; start downloading the file, part by part.
         total_size = download_job['ArchiveSizeInBytes']
-        part_size_in_bytes = self._check_part_size(part_size, total_size) * 1024 * 1024
-        start_bytes = downloaded_size = 0
-        hash_list = []
+        part_size_in_bytes = self._check_part_size(part_size, total_size) * MB
+        self.logger.debug('Using part size of %s bytes.'% part_size_in_bytes)
+        start_bytes = downloaded_size
         start_time = current_time = previous_time = time.time()
 
         # Log our pending action.
@@ -1231,7 +1456,7 @@ your archive ID is correct, and start a retrieval job using \
         else:
             self.logger.debug('Starting download of archive to stdout.')
 
-        # Download the data, one part at a time.
+        # Start the actual download, one part at a time.
         while downloaded_size < total_size:
 
             # Read a part of data.
@@ -1239,8 +1464,8 @@ your archive ID is correct, and start a retrieval job using \
             to_bytes = min(downloaded_size + part_size_in_bytes, total_size)
             try:
                 response = self.glacierconn.get_job_output(vault_name,
-                                                            download_job['JobId'],
-                                                            byte_range=(from_bytes, to_bytes-1))
+                                                           download_job['JobId'],
+                                                           byte_range=(from_bytes, to_bytes-1))
                 data = response.read()
             except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                 raise ResponseException(
@@ -1248,18 +1473,27 @@ your archive ID is correct, and start a retrieval job using \
                     cause=self._decode_error_message(e.body),
                     code=e.code)
 
-            hash_list.append(glaciercorecalls.chunk_hashes(data))
+            # Get the chunk hashes for this part, add them to
+            # the hash_list, and compare the tree_hash of the
+            # downloaded data to what we expect to receive.
+            chunk_hashes = glaciercorecalls.chunk_hashes(data)
+            hash_list += chunk_hashes
+            if glaciercorecalls.tree_hash(chunk_hashes) != response['TreeHash']:
+                raise CommunicationException(
+                    'Hash check of downloaded data failed, aborting download of archive.',
+                    code='DownloadError')
+            
             downloaded_size = to_bytes
             if out_file:
                 try:
-                    out_file.write(response.read())
+                    out_file.write(data)
                 except IOError as e:
                     raise InputException(
                         "Cannot write data to the specified file.",
                         cause=e,
                         code='FileError')
             else:
-                sys.stdout.write(response.read())
+                sys.stdout.write(data)
                 sys.stdout.flush()
 
             # Calculate progress statistics.
@@ -1296,13 +1530,13 @@ your archive ID is correct, and start a retrieval job using \
         msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
                                             self._size_fmt(overall_rate, 2))
         self._progress(msg)
-        self.logger.info(msg)       
+        self.logger.info(msg)
 
     @glacier_connect
     @sdb_connect
     @log_class_call("Searching for archive.",
                     "Search done.")
-    def search(self, vault=None, region=None, file_name=None, search_term=None):
+    def search(self, vault=None, region=None, file_name=None, search_term=None, uploads=False):
 
         # Sanity checking.
         if not self.bookkeeping:
@@ -1316,17 +1550,6 @@ your archive ID is correct, and start a retrieval job using \
             
         if region:
             self._check_region(region)
-
-##        if file_name and ('"' in file_name or "'" in file_name):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% file_name)
-##                
-##
-##        if search_term and ('"' in search_term or "'" in search_term):
-##            raise InputException(
-##                'Quotes like \' and \" are not allowed in search terms.',
-##                cause='Invalid search term %s: contains quotes.'% search_term)
 
         self.logger.debug('Search terms: vault %s, region %s, file name %s, search term %s'%
                           (vault, region, file_name, search_term))
@@ -1357,8 +1580,8 @@ your archive ID is correct, and start a retrieval job using \
         # an archive_id attribute).
         try:
             for item in result:
-                self.logger.debug('Next search result:\n%s'% item)
-                if item.has_key('archive_id'):
+                if item.has_key('upload_id' if uploads else 'archive_id'):
+                    self.logger.debug('Next search result:\n%s'% item)
                     items.append(item)
         except boto.exception.SDBResponseError as e:
             raise ResponseException(
@@ -1568,6 +1791,10 @@ your archive ID is correct, and start a retrieval job using \
             raise InputException(
                 "Could not access the file given: %s."% file_name,
                 cause=e,
+                code='FileError')
+        if os.path.getsize(file_name) == 0:
+            raise InputException(
+                "Can not caclulate the hash of an empty file: %s."% file_name,
                 code='FileError')
 
         hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
