@@ -489,10 +489,10 @@ def main():
                        default=default("region"),
                        help="Region where you want to store \
                              your archives " + help_msg_config)
-    bookkeeping = default("bookkeeping") and True
+    bookkeeping = True if default('bookkeeping') == 'True' else False
     group.add_argument('--bookkeeping',
                        required=False,
-                       default=bookkeeping,
+                       default=default("bookkeeping"),
                        action="store_true",
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
@@ -746,7 +746,7 @@ at hand.''')
     args = parser.parse_args(remaining_argv)
     
     args.logtostdout = logtostdout
-
+    
     # Run the subcommand.
     args.func(args)
 
