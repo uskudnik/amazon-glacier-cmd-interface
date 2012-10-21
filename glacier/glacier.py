@@ -419,6 +419,11 @@ def treehash(args):
 
     output_table(hash_results, args.output)
 
+@handle_errors
+def updatedb(args):
+    glacier = default_glacier_wrapper(args)
+    glacier.updatedb()
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
@@ -604,8 +609,7 @@ re-reading the data from stdin.''')
         help='''\
 Attempt to resume an interrupted multi-part upload.
 Does not work in combination with --stdin, and
-requires bookkeeping to be enabled.
-(not implemented yet)''')
+requires bookkeeping to be enabled.''')
     parser_upload.add_argument('--bacula', action='store_true',
         help='''\
 The (single!) file name will be parsed using Bacula's
@@ -737,6 +741,13 @@ at hand.''')
     parser_describejob.add_argument('filename', nargs='*',
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
+
+    # glacier-cmd hash <filename>
+    parser_describejob = subparsers.add_parser('updatedb',
+        help='Update the db to match change in item key. You need to run \
+              this once if you have bookkeeping data from before mid Oct 2012.')
+    parser_describejob.set_defaults(func=updatedb)
+    
 
     # TODO args.logtostdout becomes false when parsing the remaining_argv
     # so here we bridge this. An ugly hack but it works.
