@@ -424,6 +424,44 @@ def updatedb(args):
     glacier = default_glacier_wrapper(args)
     glacier.updatedb()
 
+@handle_errors
+def backupdb(args):
+    """
+    Create a copy of the current bookkeeping db, and put it on Glacier.
+    """
+
+    # If args.outfile: save to that file. --outfile <file_name>
+
+    # if args.zip: compresse data before saving to file. --compress
+
+    # if args.stdout: dump to stdout (json code, never compressed). --stdout
+
+    # if no special requests:
+    #   check for vault 'glacier-cmd_bookkeeping', create if necessary.
+
+    #   compress data to zip file; upload this file to glacier with
+    #   description glacier-cmd_bookkeeping_yyyy_mm_dd_hh_ss
+
+
+@handle_errors
+def restoredb(args):
+    """
+    Restore database from glacier.
+    """
+
+    # If args.infile: use it. --infile <file_name>
+
+    # If args.zip: infile is zipped, otherwise plain json. --zip
+    # can we check for this? Try to unzip, see what happens?
+
+    # If nothing given, restore from Glacier:
+    #   Check whether we have a vault glacier-cmd_bookkeeping.
+    #   Check inventory of vault glacier-cmd_bookkeeping;
+    #   notify user of progress.
+    #   Check which is latest backup archive; retrieve it; notify
+    #   user of progress.
+    #   When available, download it and return the data into the database.
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
