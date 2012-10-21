@@ -411,10 +411,7 @@ def treehash(args):
 
     output_table(hash_results, args.output)
 
-def startserver(args):
-    pass
-
-def snssetup(args):
+def snssubscribe(args):
     """
     Subscribe to notifications by method specified by user.
     """
@@ -425,6 +422,30 @@ def snssetup(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.sns_subscribe(vault_names, protocol, endpoint)
     output_table(response, args.output)
+
+def snslist(args):
+    """
+    List subscriptions
+    """
+    protocol = args.protocol
+    endpoint = args.endpoint
+    vault = args.vault
+
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_list(vault, protocol, endpoint)
+    output_table(response, args.output)
+
+def snsunsubscribe(args):
+    """
+    Unsubscribe from notifications for specified protocol, endpoint and vault
+    """
+    protocol = args.protocol
+    endpoint = args.endpoint
+    vault = args.vault
+
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_unsubscribe(vault, protocol, endpoint)
+    output_table(response, args.output)    
 
 def main():
     program_description = u"""
@@ -567,23 +588,6 @@ def main():
         help='The vault to be removed.')
     parser_rmvault.set_defaults(func=rmvault)
 
-    # glacier-cmd snssetup <protocol> <endpoint> [<vault>, [<vault>, ...]]
-    parser_snssetup = subparsers.add_parser('snssetup', 
-        help="Specify protocol with which you would like to receive notifications.")
-    parser_snssetup.add_argument("protocol",
-        help="Protocol to use for SNS notifications. Options: HTTP(S), email or SMS.")
-    parser_snssetup.add_argument("endpoint",
-        help="Either valid HTTP(S) address, email address or phone number.")
-    parser_snssetup.add_argument("vault", nargs="*",
-        help="By default you subscribe to notifications from all vaults, \
-        specify if you would like to limit to one or more.")
-    parser_snssetup.set_defaults(func=snssetup)
-
-    # glacier-cmd enableauto
-    parser_server = subparsers.add_parser('startserver')
-    parser_server.add_argument("--port")
-    parser_server.set_defaults(func=startserver)
-    
     # glacier-cmd upload <vault> <filename> [--description <description>] [--name <store file name>] [--partsize <part size>]
     # glacier-cmd upload <vault> --stdin [--description <description>] [--name <store file name>] [--partsize <part size>]
     parser_upload = subparsers.add_parser('upload',
@@ -778,6 +782,45 @@ at hand.''')
     parser_describejob.add_argument('filename', nargs='*',
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
+
+    # SNS related commands are located in their own subparser 
+    parser_sns = subparsers.add_parser('sns', 
+        help="Subcommands related to SNS")
+    sns_subparsers = parser_sns.add_subparsers(title="Subcommands related to SNS")
+
+    # glacier-cmd sns subscribe protocol endpoint [<vault> [vault ...]]
+    sns_parser_subscribe = sns_subparsers.add_parser('subscribe')
+    sns_parser_subscribe.add_argument("protocol",
+        help="Protocol to use for SNS notifications. Options: HTTP(S), email or SMS.")
+    sns_parser_subscribe.add_argument("endpoint",
+        help="Either valid HTTP(S) address, email address or phone number.")
+    sns_parser_subscribe.add_argument("vault", nargs="*",
+        help="By default you subscribe to notifications from all vaults, \
+        specify if you would like to limit to one or more.")
+    sns_parser_subscribe.set_defaults(func=snssubscribe)
+
+    # glacier-cmd sns list [--protocol <protocol>] [--endpoint <endpoint>] [--vault <vault>]
+    sns_parser_list = sns_subparsers.add_parser('list')
+    sns_parser_list.add_argument("--protocol",
+        help="Show only subscriptions on a specified protocol.")
+    sns_parser_list.add_argument("--endpoint",
+        help="Show only subscriptions to a specified endpoint.")
+    sns_parser_list.add_argument("--vault",
+        help="Show only subscriptions for a specified vault.")
+    sns_parser_list.set_defaults(func=snslist)
+
+    # glacier-cmd sns unsubscribe vault [--protocol <protocol>] [--endpoint <endpoint>]
+    sns_parser_unsubscribe = sns_subparsers.add_parser('unsubscribe')
+    sns_parser_unsubscribe.add_argument("--protocol")
+    sns_parser_unsubscribe.add_argument("--endpoint")
+    sns_parser_unsubscribe.add_argument("vault")
+    sns_parser_unsubscribe.set_defaults(func=snsunsubscribe)
+    
+    # glacier-cmd enableauto
+    # parser_server = subparsers.add_parser('startserver')
+    # parser_server.add_argument("--port")
+    # parser_server.set_defaults(func=startserver)
+
 
     # TODO args.logtostdout becomes false when parsing the remaining_argv
     # so here we bridge this. An ugly hack but it works.

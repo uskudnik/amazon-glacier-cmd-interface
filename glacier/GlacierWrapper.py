@@ -1585,6 +1585,50 @@ your archive ID is correct, and start a retrieval job using \
         else:
             raise Exception("No vaults matching that name found.")
 
+    @glacier_connect
+    @sns_connect
+    def sns_list(self, vault, protocol, endpoint, return_subscription_arn=False):
+        subscriptions = self.sns_conn.get_all_subscriptions()['ListSubscriptionsResponse']['ListSubscriptionsResult']['Subscriptions']
+        results = []
+        try:
+            import collections
+            result = collections.OrderedDict()
+        except AttributeError:
+            result = dict()
+
+        for sub in subscriptions:
+            subvault = sub['TopicArn'].split(":")[-1].split("-")[-1]
+            subprotocol = sub['Protocol']
+            subendpoint = sub['Endpoint']
+                        
+            if vault and subvault != vault:
+                continue
+            if protocol and subprotocol != protocol:
+                continue
+            if endpoint and subendpoint != endpoint:
+                continue
+
+            result['Account #'] = sub['Owner']
+            result['Vault'] = subvault
+            result['Protocol'] = subprotocol
+            result['Endpoint'] =  subendpoint
+            
+            if return_subscription_arn:
+                result['SubscriptionArn'] = sub['SubscriptionArn']
+
+            results += [result]
+        return results
+
+    @glacier_connect
+    @sns_connect
+    def sns_unsubscribe(self, vault, protocol, endpoint):
+        matching_subs = self.sns_list(vault, protocol, endpoint, return_subscription_arn=True)
+
+        for res in matching_subs:
+            self.sns_conn.unsubscribe(res['SubscriptionArn'])
+
+        return matching_subs
+
     def __init__(self, aws_access_key, aws_secret_key, region,
                  sns=False,
                  bookkeeping=False, bookkeeping_domain_name=None,
