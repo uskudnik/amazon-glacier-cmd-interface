@@ -21,6 +21,7 @@ import math
 import json
 import sys
 import time
+import mmap
 
 import boto.glacier.layer1
 
@@ -67,6 +68,53 @@ def tree_hash(fo):
 def bytes_to_hex(str):
     return ''.join( [ "%02x" % ord( x ) for x in str] ).strip()
 
+def upload_part_process(q, conn, aws_access_key, aws_secret_key, region,
+                        file_name, vault_name, description,
+                        part_size_in_bytes, uploadid, logger):
+    """
+    Starts the upload process of a chunk of data.
+    """
+    f = open(file_name, 'rb')
+    try:
+        logger.debug("""\
+Connecting to Amazon Glacier for worker process with
+    aws_access_key %s
+    aws_secret_key %s
+    region %s""",
+                     aws_access_key,
+                     aws_secret_key,
+                     region)
+        glacierconn = GlacierConnection(aws_access_key,
+                                        aws_secret_key,
+                                        region_name=region)
+    except boto.exception.AWSConnectionError as e:
+        raise ConnectionException(
+            "Cannot connect to Amazon Glacier.",
+            cause=e.cause,
+            code="GlacierConnectionError")
+    writer = GlacierWriter(glacierconn, vault_name, description=description,
+                           part_size_in_bytes=part_size_in_bytes,
+                           uploadid=uploadid, logger=logger)
+    while True:
+        item = q.get()
+        if item is None: # detect sentinel
+            q.task_done()
+            break
+
+        start, stop, part_nr = item
+        part = mmap.mmap(fileno=f.fileno(),
+                         length=stop-start,
+                         offset=start,
+                         access=mmap.ACCESS_READ)
+        logger.debug('Got to work on range %s-%s'% (start, stop))
+        writer.write(part, start=start)
+        conn.send( (writer.part_tree_hash,
+                    part_nr,
+                    stop-start) )
+        q.task_done()
+    
+    conn.close()
+    
 class GlacierWriter(object):
     """
     Presents a file-like object for writing to a Amazon Glacier
@@ -96,10 +144,8 @@ class GlacierWriter(object):
         self.uploaded_size = 0
         self.tree_hashes = []
         self.closed = False
-##        self.upload_url = response.getheader("location")
 
-    def write(self, data):
-        
+    def write(self, data, start=None):
         if self.closed:
             raise CommunicationError(
                 "Tried to write to a GlacierWriter that is already closed.",
@@ -110,17 +156,12 @@ class GlacierWriter(object):
                 'Block of data provided must be equal to or smaller than the set block size.',
                 code='InternalError')
         
-        part_tree_hash = tree_hash(chunk_hashes(data))
-        self.tree_hashes.append(part_tree_hash)
-        headers = {
-                   "x-amz-glacier-version": "2012-06-01",
-                    "Content-Range": "bytes %d-%d/*" % (self.uploaded_size,
-                                                       (self.uploaded_size+len(data))-1),
-                    "Content-Length": str(len(data)),
-                    "Content-Type": "application/octet-stream",
-                    "x-amz-sha256-tree-hash": bytes_to_hex(part_tree_hash),
-                    "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
-                  }
+        self.part_tree_hash = tree_hash(chunk_hashes(data))
+        self.tree_hashes.append(self.part_tree_hash)
+        start = start if start else self.uploaded_size
+        stop = start+len(data)-1
+        if self.logger:
+            self.logger.debug('Starting upload of part %s-%s.'% (start, stop))
         
         # Catch time-outs: if time-out received, wait a bit and
         # try again.
@@ -134,8 +175,8 @@ class GlacierWriter(object):
                 response = self.connection.upload_part(self.vault_name,
                                                        self.uploadid,
                                                        hashlib.sha256(data).hexdigest(),
-                                                       bytes_to_hex(part_tree_hash),
-                                                       (self.uploaded_size, self.uploaded_size+len(data)-1),
+                                                       bytes_to_hex(self.part_tree_hash),
+                                                       (start, stop),
                                                        data)
                 break
             
@@ -162,6 +203,8 @@ class GlacierWriter(object):
 
         response.read()
         self.uploaded_size += len(data)
+        if self.logger:
+            self.logger.debug('Finished uploading part %s-%s.'% (start, stop))
 
     def close(self):
         
@@ -169,15 +212,24 @@ class GlacierWriter(object):
             return
             
         # Complete the multiplart glacier upload
-        response = self.connection.complete_multipart_upload(self.vault_name,
-                                                             self.uploadid,
-                                                             bytes_to_hex(tree_hash(self.tree_hashes)),
-                                                             self.uploaded_size)
+        try:
+            response = self.connection.complete_multipart_upload(self.vault_name,
+                                                                 self.uploadid,
+                                                                 bytes_to_hex(tree_hash(self.tree_hashes)),
+                                                                 self.uploaded_size)
+        except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
+            raise ResponseException(
+                "Error while closing a multipart upload to Amazon Glacier.",
+                cause=e,
+                code=e.code)
+            
         response.read()
         self.archive_id = response['ArchiveId']
         self.location = response['Location']
         self.hash_sha256 = bytes_to_hex(tree_hash(self.tree_hashes))
         self.closed = True
+        if self.logger:
+            self.logger.debug('Closed multipart upload.')
 
     def get_archive_id(self):
         self.close()

@@ -296,8 +296,10 @@ def upload(args):
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
-                    response = glacier.upload(args.vault, g, args.description, args.region, args.stdin,
-                                              args.name, args.partsize, args.uploadid, args.resume)
+                    response = glacier.upload(
+                        args.vault, g, args.description, args.region,
+                        args.stdin, args.name, args.partsize, args.uploadid,
+                        args.resume, args.sessions)
                     results.append({"Uploaded file": g,
                                     "Created archive with ID": response[0],
                                     "Archive SHA256 tree hash": response[1]})
@@ -309,8 +311,9 @@ def upload(args):
     elif args.stdin:
 
         # No file name; using stdin.
-        response = glacier.upload(args.vault, None, args.description, args.region, args.stdin,
-                                  args.name, args.partsize, args.uploadid, args.resume)
+        response = glacier.upload(
+            args.vault, None, args.description, args.region, args.stdin,
+            args.name, args.partsize, args.uploadid, args.resume, args.sessions)
         results = [{"Created archive with ID": response[0],
                     "Archive SHA256 tree hash": response[1]}]
 
@@ -653,6 +656,10 @@ requires bookkeeping to be enabled.''')
 The (single!) file name will be parsed using Bacula's
 style of providing multiple names on the command line.
 E.g.: /path/to/backup/vol001|vol002|vol003''')
+    parser_upload.add_argument('--sessions', default=1,
+        help='''\
+The number of parallel upload sessions to use when uploading
+data to Amazon Glacier.''')
     parser_upload.set_defaults(func=upload)
 
     # glacier-cmd listmultiparts <vault>
@@ -785,14 +792,13 @@ Attempt to resume an interrupted download. You must provide --outfile
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
 
-    # glacier-cmd hash <filename>
+    # glacier-cmd updatedb
     parser_describejob = subparsers.add_parser('updatedb',
         help='Update the db to match change in item key. You need to run \
               this once if you have bookkeeping data from before mid Oct 2012.')
     parser_describejob.set_defaults(func=updatedb)
-    
 
-    # TODO args.logtostdout becomes false when parsing the remaining_argv
+    # FIXME args.logtostdout becomes false when parsing the remaining_argv
     # so here we bridge this. An ugly hack but it works.
     logtostdout = args.logtostdout
 

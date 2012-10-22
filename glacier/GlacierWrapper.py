@@ -22,15 +22,21 @@ import fcntl
 import termios
 import struct
 import mmap
+import multiprocessing
+import math
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
 from datetime import datetime
 from pprint import pformat
-
 from glaciercorecalls import GlacierConnection, GlacierWriter
-
 from glacierexception import *
+
+
+def _call_back(data):
+    global counter
+    counter += 1
+    print 'counter: %s, data: %s'% (counter, data)
 
 class log_class_call(object):
     """
@@ -773,7 +779,7 @@ using %s MB parts to upload."% part_size)
         self._check_vault_name(vault_name)
         self._check_id(upload_id, "UploadId")
         try:
-            response = self.glacierconn.abort_multipart_upload(vault_name, upload_id)
+            response = self.glacierconn.abort_multipart(vault_name, upload_id)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
                 'Failed to abort multipart upload with id %s.'% upload_id,
@@ -833,7 +839,7 @@ using %s MB parts to upload."% part_size)
     @log_class_call("Uploading archive.",
                     "Upload of archive finished.")
     def upload(self, vault_name, file_name, description, region,
-               stdin, alternative_name, part_size, uploadid, resume):
+               stdin, alternative_name, part_size, uploadid, resume, sessions):
         """
         Uploads a file to Amazon Glacier.
         
@@ -879,7 +885,6 @@ using %s MB parts to upload."% part_size)
         # Otherwise try to read data from stdin.
         total_size = 0
         reader = None
-        mmapped_file = None
         if not stdin:
             if not file_name:
                 raise InputException(
@@ -894,6 +899,7 @@ using %s MB parts to upload."% part_size)
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
+
             self.logger.debug('Successfully opened %s for reading.'% file_name)
                 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
@@ -919,21 +925,23 @@ using %s MB parts to upload."% part_size)
         part_size_in_bytes = part_size * 1024 * 1024
         self.logger.debug('Using a part size of %s MB for upload.'% part_size)
 
-        # If the key resume is True, we have to see whether we can find this
+        # If the key resume is True, we have to check whether we can find this
         # file in the SimpleDB database. So search for a match on the file
         # name, check for exact match file name and size, and whether there
         # is an uploadid linked to it. Raise exceptions on the way in case
         # of mismatches.
         if resume:
-            items = self.search(vault=vault_name, file_name=file_name, uploads=True)
+            items = self.search(vault=vault_name,
+                                file_name=file_name,
+                                uploads=True)
             for item in items:
                 if item['filename'] == file_name:
                     if item.has_key('upload_id'):
                         if int(item['size']) == os.path.getsize(file_name):
 
-                            # We get it as unicode string which gives problems down
-                            # the line (in writer.write_part). Convert to normal
-                            # string solves this issue.
+                            # We get it as unicode string which gives problems
+                            # down the line (in writer.write_part). Converting
+                            # to normal string solves this issue.
                             uploadid = str(item['upload_id']) 
                             break
                         else:
@@ -954,6 +962,9 @@ using %s MB parts to upload."% part_size)
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
         upload = None
+        
+        # If we have an upload id, try to find a matching active session,
+        # if any.
         if uploadid:
             uploads = self.listmultiparts(vault_name)
             for upload in uploads:
@@ -975,9 +986,23 @@ using %s MB parts to upload."% part_size)
                     code='CommandError')
 
         # Initialise the writer task.
-        writer = GlacierWriter(self.glacierconn, vault_name, description=description,
-                               part_size_in_bytes=part_size_in_bytes, uploadid=uploadid, logger=self.logger)
+        writer = GlacierWriter(self.glacierconn, vault_name,
+                               description=description,
+                               part_size_in_bytes=part_size_in_bytes,
+                               uploadid=uploadid, logger=self.logger)
+        
+        # The parts_map contains a list marking parts that have been uploaded
+        # successfully with their list SHA chunk hashes, and those that still
+        # need uploading as None. This list is later used to determine which
+        # parts need uploading, and to calculate the final tree hash.
+        # Stdin jobs are purely sequential and we don't have the size so it's
+        # not applicable in that case.
+        if total_size:
+            parts_map = [None for i in range(int(math.ceil(float(total_size)/part_size_in_bytes)))]
+        else:
+            parts_map = None
 
+        # We have an existing upload job; try to resume this.
         if upload:
             marker = None
             while True:
@@ -993,7 +1018,7 @@ using %s MB parts to upload."% part_size)
                 
                 list_parts_response = response.copy()
                 response.read()
-                current_position = 0
+                start = stop = uploaded_size = 0
 
                 # Process the parts list.
                 # For each part of data, take the matching data range from
@@ -1003,18 +1028,19 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                    if not start == current_position and stdin:
+                    if not start == uploaded_size and stdin:
                         raise InputException(
                             'Cannot verify non-sequential upload data from stdin.',
                             code='ResumeError')
                     
-                    # Try to read the chunk of data, and take the hash if we
-                    # have received anything.
-                    # If no data or hash mismatch, stop checking raise an
+                    # Try to read the chunk of data, take the hash if we have
+                    # received anything, and compare this to the hash received
+                    # from Glacier.
+                    # If no data or hash mismatch, stop checking and raise an
                     # exception.
                     data = None
                     if stdin:
-                        data = reader.read(stop-start)
+                        data = reader.read(stop-start+1)
                     else:
                         if stop > total_size:
                             raise InputException(
@@ -1022,13 +1048,21 @@ using %s MB parts to upload."% part_size)
                                 cause='File is smaller than uploaded data.',
                                 code='ResumeError')
                         
-                        data = mmap.mmap(f.fileno(), length=stop-start, offset=start, access=mmap.ACCESS_READ)
+                        data = mmap.mmap(f.fileno(),
+                                         length=stop-start+1,
+                                         offset=start,
+                                         access=mmap.ACCESS_READ)
 
                     if data:
-                        data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
+                        data_hash = glaciercorecalls.tree_hash(
+                            glaciercorecalls.chunk_hashes(data)
+                            )
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
                             self.logger.debug('Part %s hash matches.'% part['RangeInBytes'])
                             writer.tree_hashes.append(data_hash)
+                            if parts_map:
+                                parts_map[start/part_size_in_bytes] = data_hash
+                                
                         else:
                             raise InputException(
                                 'Received data does not match uploaded data; please check your uploadid and try again.',
@@ -1041,12 +1075,12 @@ using %s MB parts to upload."% part_size)
                             cause='No or not enough data to match.',
                             code='ResumeError')
                     
-                    current_position += stop - start
+                    uploaded_size += stop - start + 1
 
                 # If a marker is present, this means there are more pages
                 # of parts available. If no marker, we have the last page.
                 marker = list_parts_response['Marker']
-                writer.uploaded_size = stop
+                writer.uploaded_size = uploaded_size
                 if not marker:
                     break
 
@@ -1075,89 +1109,139 @@ using %s MB parts to upload."% part_size)
 
             self._progress(msg)
                 
-        # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         start_bytes = writer.uploaded_size
-        first_part = self.bookkeeping
-##        for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
-        while True:
-            if reader:
+
+        # Store the upload session in the bookkeeping database for future
+        # resumption.
+        if self.bookkeeping:
+            self.logger.info('Writing in-progress upload information into the bookkeeping database.')
+
+            # Use the alternative name as given by --name <name> if we have it.
+            file_name = alternative_name if alternative_name else file_name
+
+            # If still no name this is an stdin job, so set name accordingly.
+            file_name = file_name if file_name else 'Data from stdin.'
+
+            # Set all the info we have for this upload, and store it in the
+            # bookkeeping db.
+            file_attrs = {
+                'region': region,
+                'vault': vault_name,
+                'filename': file_name,
+                'size': total_size,
+                'upload_id': writer.uploadid,
+                'location': None,
+                'description': description,
+                'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
+                'hash': None
+            }
+            self.sdb_domain.put_attributes(writer.uploadid, file_attrs)
+
+        # As upload from file allows for multiple sessions to run in parallel,
+        # while stdin jobs are sequential, the upload code for the two types
+        # is split up.
+        # First up: upload from stdin. Read the file from stdin one part at a
+        # time, store this part in memory, and write it out to Glacier.
+        if reader:
+            while True:
                 part = reader.read(part_size_in_bytes)
-            else:
-                if total_size > writer.uploaded_size+part_size_in_bytes:
-                    part = mmap.mmap(f.fileno(),
-                                     length=part_size_in_bytes,
-                                     offset=writer.uploaded_size,
-                                     access=mmap.ACCESS_READ)
-                else:
-                    if writer.uploaded_size < total_size:
-                        part = mmap.mmap(f.fileno(),
-                                         length=0,
-                                         offset=writer.uploaded_size,
-                                         access=mmap.ACCESS_READ)
-                    else:
-                        part = None
-                    
-            if not part:
-                break
-            
-            writer.write(part)
-
-            # If this was the first part, and we have bookkeeping enabled,
-            # write the upload information in the SimpleDB database.
-            if first_part:
-                first_part = False
-                self.logger.info('Writing in-progress upload information into the bookkeeping database.')
-
-                # Use the alternative name as given by --name <name> if we have it.
-                file_name = alternative_name if alternative_name else file_name
-
-                # If still no name this is an stdin job, so set name accordingly.
-                file_name = file_name if file_name else 'Data from stdin.'
-                file_attrs = {
-                    'region': region,
-                    'vault': vault_name,
-                    'filename': file_name,
-                    'size': total_size,
-                    'upload_id': writer.uploadid,
-                    'location': None,
-                    'description': description,
-                    'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
-                    'hash': None
-                }
-                self.sdb_domain.put_attributes(writer.uploadid, file_attrs)
-
-            current_time = time.time()
-            overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
-            if total_size > 0:
+                if not part:
+                    break
                 
-                # Calculate transfer rates in bytes per second.
-                current_rate = int(part_size_in_bytes/(current_time - previous_time))
+                writer.write(part)
 
-                # Estimate finish time, based on overall transfer rate.
-                if overall_rate > 0:
-                    time_left = (total_size - writer.uploaded_size)/overall_rate
-                    eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
-                else:
-                    time_left = "Unknown"
-                    eta = "Unknown"
-
-                msg = 'Wrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
-                      % (self._size_fmt(writer.uploaded_size),
-                         self._size_fmt(total_size),
-                         self._bold(str(int(100 * writer.uploaded_size/total_size))),
-                         self._size_fmt(current_rate, 2),
-                         self._size_fmt(overall_rate, 2),
-                         eta)
-
-            else:
+                # Log the progress.
+                current_time = time.time()
+                overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
                 msg = 'Wrote %s. Rate %s/s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(overall_rate, 2))
+                self._progress(msg)
+                previous_time = current_time
+                self.logger.debug(msg)
 
-            self._progress(msg)
-            previous_time = current_time
-            self.logger.debug(msg)
+        # Second method: upload from file.
+        # Iterate over the parts_map, uploading all the parts where the
+        # parts_map[parts_nr] is False.
+        # The byte ranges of the respective parts are put in a work queue,
+        # the worker processes will one by one upload these parts in parallel.
+        # This is not guaranteed to happen in order.
+        else:
+            try:
+                sessions = int(sessions)
+                if sessions < 1:
+                    raise ValueError
+                
+            except ValueError:
+                raise InputException(
+                    'Number of sessions must be a postive integer, larger than 0.',
+                    code='CommandError',
+                    cause='Invalid number of sessions: %s.'% sessions)
+            
+            f.close()
+            q = multiprocessing.JoinableQueue()
+            parent_conn, child_conn = multiprocessing.Pipe()
+            procs = []
+            uploaded_size = start_bytes
+
+            # Create the upload processes.
+            for i in range(sessions):
+                p = multiprocessing.Process(
+                    target=glaciercorecalls.upload_part_process,
+                    args=(q, child_conn, self.aws_access_key,
+                          self.aws_secret_key, self.region, file_name,
+                          vault_name, description, part_size_in_bytes,
+                          writer.uploadid, self.logger))
+                p.start()
+                procs.append(p)
+
+            for part_nr in range(len(parts_map)):
+                if parts_map[part_nr]:
+                    continue
+
+                start = part_nr * part_size_in_bytes
+                stop = (start + part_size_in_bytes) if (start + part_size_in_bytes) < total_size else total_size
+                q.put((start, stop, part_nr))
+
+            for i in range(sessions):
+                q.put(None) # send termination sentinel, one for each process
+
+            while q.qsize() > 0: # wait for processing to finish
+                time.sleep(1)   # manage timeouts and status updates etc.
+                update = False
+                while parent_conn.poll():
+                    part_tree_hash, part_nr, size = parent_conn.recv()
+                    parts_map[part_nr] = part_tree_hash
+                    uploaded_size += size
+                    update = True
+
+                if update:
+                    
+                    # Calculate transfer rates in bytes per second.
+                    current_time = time.time()
+                    overall_rate = int((uploaded_size-start_bytes)/(current_time - start_time))
+
+                    # Estimate finish time, based on overall transfer rate.
+                    if overall_rate > 0:
+                        time_left = (total_size - uploaded_size)/overall_rate
+                        eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+                    else:
+                        time_left = "Unknown"
+                        eta = "Unknown"
+
+                    msg = 'Wrote %s of %s (%s%%). Average rate %s/s, eta %s.' \
+                          % (self._size_fmt(uploaded_size),
+                             self._size_fmt(total_size),
+                             self._bold(str(int(100 * uploaded_size/total_size))),
+                             self._size_fmt(overall_rate, 2),
+                             eta)
+                    self._progress(msg)
+                    previous_time = current_time
+                    self.logger.debug(msg)
+
+            writer.tree_hashes = parts_map
+            writer.uploaded_size = uploaded_size
 
         writer.close()
         current_time = time.time()
@@ -1190,11 +1274,6 @@ using %s MB parts to upload."% part_size)
                 'hash': sha256hash,
                 'size': writer.uploaded_size
             }
-
-##            if file_name:
-##                file_attrs['filename'] = file_name
-##            elif stdin:
-##                file_attrs['filename'] = 'data from stdin'
 
             self.sdb_domain.put_attributes(file_attrs['filename'], file_attrs)
             item = self.sdb_domain.get_item(writer.uploadid)
@@ -1418,7 +1497,7 @@ is correct, and start a retrieval job using 'getarchive' if necessary.''',
                     # whether it matches out local data.
                     response = self.glacierconn.get_job_output(vault_name,
                                                                download_job['JobId'],
-                                                               byte_range=(checked_size, checked_size+check_part_size-1))                    
+                                                               byte_range=(checked_size, checked_size+check_part_size-1))
                     if response['TreeHash'] != local_hash:
                         raise InputException(
                             'Archive data does not match local data.',
@@ -1857,6 +1936,11 @@ or the --overwrite flag to overwrite the existing file.'''% out_file_name,
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self._check_region(region)
+
+
+        global counter
+        counter = 0
+
 
         self.logger.debug("""\
 Creating GlacierWrapper instance with
