@@ -279,16 +279,26 @@ Set a description of your archive. This may be up to 1024 characters long, and w
 
 Resume an interrupted job with the specified uploadid. If this option is present, ``glacier-cmd`` will check wether this uploadid exists, and if so check the hashes of the already uploaded parts to the local file. If all parts match, the upload will be resumed. If there is any problem, an error message will be shown.
 
+The uploadid of an upload can be found using the ``--listmultiparts`` command as described above.
+
 * ``--resume``
 
-Not implemented yet.
-
 Attempt to automatically resume an upload using information stored in the bookkeeping database. This option requires :doc:`Bookkeeping` to be enabled.
+
+This checks first if the file name and file size match the information in the database, then whether there is a multipart job active for this upload, and finally whether the already uploaded data matches the local data.
+
+This option only works for uploads of local files; in case of resumption of stdin jobs you must use the ``--uploadid`` option as described above.
 
 * ``--bacula``
 
 The file name is a bacula-style list of multiple files. This is useful if this script is used in conjunction with the Bacula backup software. Bacula separates files with the `|` character; see :doc:`Scripting` for more details.
 The file list should look like ``/path/to/backups/vol001|vol002|vol003``, with the path given by the user script.
+
+* ``--sessions``
+
+Number of parallel upload sessions to use. Default is 1. This may be used to speed up uploads of archives to Glacier.
+
+The script has no upper limit on number of sessions, you may experiment a bit to find out what your system can handle and what gives you the best results. Note that with multiple sessions the upload rate indicated is inaccurate at the beginning, and becomes progressively more accurate over time.
 
 Downloading an archive.
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -344,6 +354,10 @@ The name of the file to write the downloaded data to. If omitted, stdout is used
 * ``--overwrite`` 
 
 Overwrite a local file with the same name. If not given, an error will be shown if `<outfile>` exists already.
+
+* ``--resume``
+
+Attempt to resume an aborted download session. This requires the ``--outfile`` option to be given with the name of the file containing the partially downloaded archive. When invoked, the remote data will be compared to the already downloaded data, and if it matches the download will continue.
 
 Deleting an archive.
 ^^^^^^^^^^^^^^^^^^^^
@@ -444,4 +458,14 @@ To calculate the tree hash from a local file, to compare with the hash Amazon pr
  | P1050068.jpg | 05278217d88dab5a7d1f7bcbe8b698f2d5cc284e1eb687d97f5185e8026a089d |
  +--------------+------------------------------------------------------------------+
 
+
+Update database.
+----------------
+``$glacier-cmd updatedb``
+
+.. program-output:: glacier-cmd updatedb -h
+
+This anyone upgrading from a pre-late-oct-2012 version has to run once. That time changes were made to the bookkeeping database, and this command converts your current database to the new format.
+
+Running it more than once has no effect, and this command is subject to removal from future versions.
 
