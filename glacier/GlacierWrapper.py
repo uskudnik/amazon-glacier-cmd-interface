@@ -1005,11 +1005,15 @@ using %s MB parts to upload."% part_size)
         # We have an existing upload job; try to resume this.
         if upload:
             marker = None
+            start = stop = uploaded_size = 0
             while True:
 
                 # Fetch a list of already uploaded parts and their SHA hashes.
                 try:
-                    response = self.glacierconn.list_parts(vault_name, uploadid, marker=marker)
+                    response = self.glacierconn.list_parts(
+                        vault_name,
+                        uploadid,
+                        marker=marker)
                 except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                     raise ResponseException(
                         'Failed to get a list already uploaded parts for interrupted upload %s.'% uploadid,
@@ -1018,7 +1022,6 @@ using %s MB parts to upload."% part_size)
                 
                 list_parts_response = response.copy()
                 response.read()
-                start = stop = uploaded_size = 0
 
                 # Process the parts list.
                 # For each part of data, take the matching data range from
