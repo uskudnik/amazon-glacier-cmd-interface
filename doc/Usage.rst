@@ -9,8 +9,10 @@ Usage.
 
 This command gives you a quick overview of all supported command line options, with a short  explanation of what they do.
 
+.. configuration:
+
 Configuration.
----------------
+--------------
 
 Program settings may be passed in via a config file, via the command line or via environment variables. The default config files are ``/etc/glacier.cfg`` and ``~/.glacier``, alternative config files can be indicated using the ``-c`` command line option. Having a config file itself is optional even.
 The content of the config file should look like this::
@@ -40,6 +42,11 @@ The environment variables for the options are::
 
 All these variable names can also be used as command line options to pass in the information.
 
+.. regions:
+
+Regions
+^^^^^^^
+
 Currently available regions are::
 
    us-east-1 (US - Virginia)
@@ -47,6 +54,9 @@ Currently available regions are::
    us-west-2 (US - Oregon)
    eu-west-1 (EU - Ireland)
    ap-northeast-1 (Asia-Pacific - Tokyo)
+
+Logging
+^^^^^^^
 
 Available log levels::
 
@@ -57,6 +67,9 @@ Available log levels::
    -1, DEBUG
 
 The recommended loglevels are ``INFO`` and ``WARNING``. Do not set it to ``DEBUG`` unless you need it as it is really noisy.
+
+Output
+^^^^^^
 
 Available options for ``output`` are::
 
