@@ -26,7 +26,8 @@ import sys, os
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 #extensions = []
-extensions = ['sphinxcontrib.programoutput']
+extensions = ['sphinxcontrib.programoutput', 'sphinx.ext.autodoc',
+              'sphinx.ext.intersphinx']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -241,3 +242,8 @@ texinfo_documents = [
 
 # How to display URL addresses: 'footnote', 'no', or 'inline'.
 #texinfo_show_urls = 'footnote'
+
+intersphinx_mapping = {
+    'python': ('http://python.readthedocs.org/en/latest/', None),
+    'boto': ('http://boto.readthedocs.org/en/latest/', None),
+}
