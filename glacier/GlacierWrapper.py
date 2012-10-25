@@ -94,7 +94,8 @@ class GlacierWrapper(object):
     ID_ALLOWED_CHARACTERS = "[a-zA-Z\-\_0-9]+"
     MAX_VAULT_NAME_LENGTH = 255
     MAX_VAULT_DESCRIPTION_LENGTH = 1024
-    MAX_PARTS = 10000
+##    MAX_PARTS = 10000
+    MAX_PART = 1000
     AVAILABLE_REGIONS = ('us-east-1', 'us-west-2', 'us-west-1',
                          'eu-west-1', 'ap-northeast-1')
     AVAILABLE_REGIONS_MESSAGE = """Invalid region. Available regions for Amazon Glacier are:
