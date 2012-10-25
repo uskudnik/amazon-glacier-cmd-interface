@@ -465,8 +465,6 @@ def restoredb(args):
     #   user of progress.
     #   When available, download it and return the data into the database.
 
->>>>>>> 494e58a... fix
-
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier

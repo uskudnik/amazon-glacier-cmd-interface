@@ -97,7 +97,8 @@ class GlacierWrapper(object):
     ID_ALLOWED_CHARACTERS = "[a-zA-Z\-\_0-9]+"
     MAX_VAULT_NAME_LENGTH = 255
     MAX_VAULT_DESCRIPTION_LENGTH = 1024
-    MAX_PARTS = 10000
+##    MAX_PARTS = 10000
+    MAX_PART = 1000
     AVAILABLE_REGIONS = ('us-east-1', 'us-west-2', 'us-west-1',
                          'eu-west-1', 'ap-northeast-1')
     AVAILABLE_REGIONS_MESSAGE = """Invalid region. Available regions for Amazon Glacier are:
@@ -959,6 +960,7 @@ using %s MB parts to upload."% part_size)
         # value to stay within the self.MAX_PARTS (10,000) block limit).
         part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
+        self.logger.debug('Using a part size of %s MB for upload.'% part_size)
 
         # If the key resume is True, we have to check whether we can find this
         # file in the SimpleDB database. So search for a match on the file
@@ -992,9 +994,7 @@ using %s MB parts to upload."% part_size)
                     cause='No upload in progress for a file with this name.')
 
             self.logger.debug('Found uploadid for resume request; attempting to resume this upload.')
-            
-        self.logger.debug('Using a part size of %s MB for upload.'% part_size)
-        
+
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -1042,11 +1042,15 @@ using %s MB parts to upload."% part_size)
         # We have an existing upload job; try to resume this.
         if upload:
             marker = None
+            start = stop = uploaded_size = 0
             while True:
 
                 # Fetch a list of already uploaded parts and their SHA hashes.
                 try:
-                    response = self.glacierconn.list_parts(vault_name, uploadid, marker=marker)
+                    response = self.glacierconn.list_parts(
+                        vault_name,
+                        uploadid,
+                        marker=marker)
                 except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                     raise ResponseException(
                         'Failed to get a list already uploaded parts for interrupted upload %s.'% uploadid,
@@ -1055,7 +1059,6 @@ using %s MB parts to upload."% part_size)
 
                 list_parts_response = response.copy()
                 response.read()
-                start = stop = uploaded_size = 0
 
                 # Process the parts list.
                 # For each part of data, take the matching data range from
