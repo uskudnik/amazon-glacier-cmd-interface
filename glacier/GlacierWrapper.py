@@ -810,7 +810,7 @@ using %s MB parts to upload."% part_size)
         self._check_vault_name(vault_name)
         self._check_id(upload_id, "UploadId")
         try:
-            response = self.glacierconn.abort_multipart(vault_name, upload_id)
+            response = self.glacierconn.abort_multipart_upload(vault_name, upload_id)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
                 'Failed to abort multipart upload with id %s.'% upload_id,
