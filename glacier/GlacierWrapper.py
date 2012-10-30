@@ -97,8 +97,7 @@ class GlacierWrapper(object):
     ID_ALLOWED_CHARACTERS = "[a-zA-Z\-\_0-9]+"
     MAX_VAULT_NAME_LENGTH = 255
     MAX_VAULT_DESCRIPTION_LENGTH = 1024
-##    MAX_PARTS = 10000
-    MAX_PARTS = 1000
+    MAX_PARTS = 10000
     AVAILABLE_REGIONS = ('us-east-1', 'us-west-2', 'us-west-1',
                          'eu-west-1', 'ap-northeast-1')
     AVAILABLE_REGIONS_MESSAGE = """Invalid region. Available regions for Amazon Glacier are:
@@ -1225,6 +1224,18 @@ using %s MB parts to upload."% part_size)
             procs = []
             uploaded_size = start_bytes
 
+            # Put items in the queue; must do this before starting the
+            # processes as otherwise they will quit instantly for not having
+            # anything in the queue to work on.
+            for part_nr in range(len(parts_map)):
+                if parts_map[part_nr]:
+                    continue
+
+                start = part_nr * part_size_in_bytes
+                stop = (start + part_size_in_bytes) if (start + part_size_in_bytes) < total_size else total_size
+                q.put((start, stop, part_nr))
+
+
             # Create the upload processes.
             for i in range(sessions):
                 p = multiprocessing.Process(
@@ -1236,49 +1247,55 @@ using %s MB parts to upload."% part_size)
                 p.start()
                 procs.append(p)
 
-            for part_nr in range(len(parts_map)):
-                if parts_map[part_nr]:
-                    continue
+            # wait for all processes to finish: when a process is finished
+            # (or crashed) it's not alive any more.
+            while True:
+                while len([p for p in procs if p.is_alive()]): 
+                    time.sleep(1)
+                    update = False
+                    while parent_conn.poll():
+                        part_tree_hash, part_nr, size = parent_conn.recv()
+                        parts_map[part_nr] = part_tree_hash
+                        uploaded_size += size
+                        update = True
 
-                start = part_nr * part_size_in_bytes
-                stop = (start + part_size_in_bytes) if (start + part_size_in_bytes) < total_size else total_size
-                q.put((start, stop, part_nr))
+                    if update:
+                        
+                        # Calculate transfer rates in bytes per second.
+                        current_time = time.time()
+                        overall_rate = int((uploaded_size-start_bytes)/(current_time - start_time))
 
-            for i in range(sessions):
-                q.put(None) # send termination sentinel, one for each process
+                        # Estimate finish time, based on overall transfer rate.
+                        if overall_rate > 0:
+                            time_left = (total_size - uploaded_size)/overall_rate
+                            eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+                        else:
+                            time_left = "Unknown"
+                            eta = "Unknown"
 
-            while q.qsize() > 0: # wait for processing to finish
-                time.sleep(1)   # manage timeouts and status updates etc.
-                update = False
-                while parent_conn.poll():
-                    part_tree_hash, part_nr, size = parent_conn.recv()
-                    parts_map[part_nr] = part_tree_hash
-                    uploaded_size += size
-                    update = True
+                        msg = 'Wrote %s of %s (%s%%). Average rate %s/s, eta %s.' \
+                              % (self._size_fmt(uploaded_size),
+                                 self._size_fmt(total_size),
+                                 self._bold(str(int(100 * uploaded_size/total_size))),
+                                 self._size_fmt(overall_rate, 2),
+                                 eta)
+                        self._progress(msg)
+                        previous_time = current_time
+                        self.logger.debug(msg)
 
-                if update:
-                    
-                    # Calculate transfer rates in bytes per second.
-                    current_time = time.time()
-                    overall_rate = int((uploaded_size-start_bytes)/(current_time - start_time))
+                if q.empty():
+                    break
 
-                    # Estimate finish time, based on overall transfer rate.
-                    if overall_rate > 0:
-                        time_left = (total_size - uploaded_size)/overall_rate
-                        eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
-                    else:
-                        time_left = "Unknown"
-                        eta = "Unknown"
-
-                    msg = 'Wrote %s of %s (%s%%). Average rate %s/s, eta %s.' \
-                          % (self._size_fmt(uploaded_size),
-                             self._size_fmt(total_size),
-                             self._bold(str(int(100 * uploaded_size/total_size))),
-                             self._size_fmt(overall_rate, 2),
-                             eta)
-                    self._progress(msg)
-                    previous_time = current_time
-                    self.logger.debug(msg)
+                # All processes crash; create new process to finish up the
+                # work.
+                p = multiprocessing.Process(
+                    target=glaciercorecalls.upload_part_process,
+                    args=(q, child_conn, self.aws_access_key,
+                          self.aws_secret_key, self.region, file_name,
+                          vault_name, description, part_size_in_bytes,
+                          writer.uploadid, self.logger))
+                p.start()
+                procs.append(p)
 
             writer.tree_hashes = parts_map
             writer.uploaded_size = uploaded_size

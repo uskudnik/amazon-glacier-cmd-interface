@@ -22,6 +22,7 @@ import json
 import sys
 import time
 import mmap
+import Queue
 
 import boto.glacier.layer1
 
@@ -96,22 +97,27 @@ Connecting to Amazon Glacier for worker process with
                            part_size_in_bytes=part_size_in_bytes,
                            uploadid=uploadid, logger=logger)
     while True:
-        item = q.get()
-        if item is None: # detect sentinel
-            q.task_done()
+        try:
+            item = q.get(False)
+        except Queue.Empty:
             break
-
+        
         start, stop, part_nr = item
         part = mmap.mmap(fileno=f.fileno(),
                          length=stop-start,
                          offset=start,
                          access=mmap.ACCESS_READ)
         logger.debug('Got to work on range %s-%s'% (start, stop))
-        writer.write(part, start=start)
-        conn.send( (writer.part_tree_hash,
-                    part_nr,
-                    stop-start) )
-        q.task_done()
+        try:
+            writer.write(part, start=start)
+            conn.send( (writer.part_tree_hash,
+                        part_nr,
+                        stop-start) )
+            q.task_done()
+        except:
+            q.put(item)
+            conn.close()
+            raise
     
     conn.close()
     
