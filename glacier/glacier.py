@@ -254,7 +254,7 @@ def download(args):
     Download an archive.
     """
     glacier = default_glacier_wrapper(args)
-    response = glacier.download(args.vault, args.archive, args.partsize,
+    response = glacier.download(args.vault, args.archive, args.partsize, resume=args.resume,
                                 out_file_name=args.outfile, overwrite=args.overwrite)
     if args.outfile:
         output_msg(response, args.output, success=True)
@@ -296,8 +296,10 @@ def upload(args):
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
-                    response = glacier.upload(args.vault, g, args.description, args.region, args.stdin,
-                                              args.name, args.partsize, args.uploadid, args.resume)
+                    response = glacier.upload(
+                        args.vault, g, args.description, args.region,
+                        args.stdin, args.name, args.partsize, args.uploadid,
+                        args.resume, args.sessions)
                     results.append({"Uploaded file": g,
                                     "Created archive with ID": response[0],
                                     "Archive SHA256 tree hash": response[1]})
@@ -309,8 +311,9 @@ def upload(args):
     elif args.stdin:
 
         # No file name; using stdin.
-        response = glacier.upload(args.vault, None, args.description, args.region, args.stdin,
-                                  args.name, args.partsize, args.uploadid, args.resume)
+        response = glacier.upload(
+            args.vault, None, args.description, args.region, args.stdin,
+            args.name, args.partsize, args.uploadid, args.resume, args.sessions)
         results = [{"Created archive with ID": response[0],
                     "Archive SHA256 tree hash": response[1]}]
 
@@ -418,6 +421,49 @@ def treehash(args):
                 code='CommandError')
 
     output_table(hash_results, args.output)
+
+@handle_errors
+def updatedb(args):
+    glacier = default_glacier_wrapper(args)
+    glacier.updatedb()
+
+@handle_errors
+def backupdb(args):
+    """
+    Create a copy of the current bookkeeping db, and put it on Glacier.
+    """
+
+    # If args.outfile: save to that file. --outfile <file_name>
+
+    # if args.zip: compresse data before saving to file. --compress
+
+    # if args.stdout: dump to stdout (json code, never compressed). --stdout
+
+    # if no special requests:
+    #   check for vault 'glacier-cmd_bookkeeping', create if necessary.
+
+    #   compress data to zip file; upload this file to glacier with
+    #   description glacier-cmd_bookkeeping_yyyy_mm_dd_hh_ss
+
+
+@handle_errors
+def restoredb(args):
+    """
+    Restore database from glacier.
+    """
+
+    # If args.infile: use it. --infile <file_name>
+
+    # If args.zip: infile is zipped, otherwise plain json. --zip
+    # can we check for this? Try to unzip, see what happens?
+
+    # If nothing given, restore from Glacier:
+    #   Check whether we have a vault glacier-cmd_bookkeeping.
+    #   Check inventory of vault glacier-cmd_bookkeeping;
+    #   notify user of progress.
+    #   Check which is latest backup archive; retrieve it; notify
+    #   user of progress.
+    #   When available, download it and return the data into the database.
 
 def main():
     program_description = u"""
@@ -604,13 +650,16 @@ re-reading the data from stdin.''')
         help='''\
 Attempt to resume an interrupted multi-part upload.
 Does not work in combination with --stdin, and
-requires bookkeeping to be enabled.
-(not implemented yet)''')
+requires bookkeeping to be enabled.''')
     parser_upload.add_argument('--bacula', action='store_true',
         help='''\
 The (single!) file name will be parsed using Bacula's
 style of providing multiple names on the command line.
 E.g.: /path/to/backup/vol001|vol002|vol003''')
+    parser_upload.add_argument('--sessions', default=1,
+        help='''\
+The number of parallel upload sessions to use when uploading
+data to Amazon Glacier.''')
     parser_upload.set_defaults(func=upload)
 
     # glacier-cmd listmultiparts <vault>
@@ -692,6 +741,11 @@ partsize  MaxArchiveSize
 If not given, the smallest possible part size
 will be used depending on the size of the job
 at hand.''')
+    parser_download.add_argument('--resume', action='store_true',
+        help='''\
+Attempt to resume an interrupted download. You must provide --outfile
+<file name> that contains already downloaded data if using this option.''')
+
     parser_download.set_defaults(func=download)
 
     # glacier-cmd rmarchive <vault> <archive>
@@ -738,7 +792,13 @@ at hand.''')
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
 
-    # TODO args.logtostdout becomes false when parsing the remaining_argv
+    # glacier-cmd updatedb
+    parser_describejob = subparsers.add_parser('updatedb',
+        help='Update the db to match change in item key. You need to run \
+              this once if you have bookkeeping data from before mid Oct 2012.')
+    parser_describejob.set_defaults(func=updatedb)
+
+    # FIXME args.logtostdout becomes false when parsing the remaining_argv
     # so here we bridge this. An ugly hack but it works.
     logtostdout = args.logtostdout
 
