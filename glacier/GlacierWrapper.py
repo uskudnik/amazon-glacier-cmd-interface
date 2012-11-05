@@ -9,7 +9,7 @@ import json
 import pytz
 import re
 import logging
-import boto
+import boto.sdb
 import os.path
 import time
 import sys
@@ -244,7 +244,8 @@ Connecting to Amazon SimpleDB domain %s with
                                       self.bookkeeping_domain_name,
                                       self.aws_access_key,
                                       self.aws_secret_key)
-                    self.sdb_conn = boto.connect_sdb(aws_access_key_id=self.aws_access_key,
+                    self.sdb_conn = boto.sdb.connect_to_region(self.region,
+                                                     aws_access_key_id=self.aws_access_key,
                                                      aws_secret_access_key=self.aws_secret_key)
                     domain_name = self.bookkeeping_domain_name
                     self.sdb_domain = self.sdb_conn.get_domain(domain_name, validate=True)
