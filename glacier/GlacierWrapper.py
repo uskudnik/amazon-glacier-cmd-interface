@@ -21,7 +21,6 @@ import hashlib
 import fcntl
 import termios
 import struct
-import mmap
 
 from functools import wraps
 from dateutil.parser import parse as dtparse
@@ -80,6 +79,23 @@ class log_class_call(object):
 
         return wrapper
 
+
+class mmap(object):
+    """
+    Not really a mmap, just a simple read-only substitute that
+    does not require having a lot of RAM to upload large files.
+    """
+    def __init__(self, file):
+        self.file = file
+        self.size = os.fstat(self.file.fileno()).st_size
+    
+    def __getitem__(self, key):
+        self.file.seek(key.start)
+        if key.stop is None:
+            stop = self.size
+        else:
+            stop = key.stop
+        return self.file.read(stop - key.start)
 
 class GlacierWrapper(object):
     """
@@ -922,7 +938,7 @@ using %s MB parts to upload."% part_size)
 
             try:
                 f = open(file_name, 'rb')
-                mmapped_file = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+                mmapped_file = mmap(f)
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
@@ -1005,7 +1021,7 @@ using %s MB parts to upload."% part_size)
                         if reader:
                             reader.seek(start)
 
-                    if mmapped_file and stop > len(mmapped_file):
+                    if mmapped_file and stop > mmapped_file.size:
                         raise InputException(
                             'File does not match uploaded data; please check your uploadid and try again.',
                             cause='File is smaller than uploaded data.',
@@ -1075,7 +1091,7 @@ using %s MB parts to upload."% part_size)
             if reader:
                 part = reader.read(part_size_in_bytes)
             else:
-                if len(mmapped_file) > writer.uploaded_size+part_size_in_bytes:
+                if mmapped_file.size > writer.uploaded_size+part_size_in_bytes:
                     part = mmapped_file[writer.uploaded_size:writer.uploaded_size+part_size_in_bytes]
                 else:
                     part = mmapped_file[writer.uploaded_size:]
@@ -1117,6 +1133,7 @@ using %s MB parts to upload."% part_size)
             self.logger.debug(msg)
 
         writer.close()
+        f.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
         msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
