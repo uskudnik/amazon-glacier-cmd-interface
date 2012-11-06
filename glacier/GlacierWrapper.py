@@ -5,6 +5,7 @@
    :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB support and other features.
 """
 
+import math
 import json
 import pytz
 import re
@@ -402,10 +403,15 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
 
         Return part size to use.
         """
+        def _part_size_for_total_size(total_size):
+            return self._next_power_of_2(
+                int(math.ceil(
+                        float(total_size) / (1024 * 1024 * self.MAX_PARTS)
+                )))
 
         if part_size < 0:
             if total_size > 0:
-                part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+                part_size = _part_size_for_total_size(total_size)
             else:
                 part_size = GlacierWriter.DEFAULT_PART_SIZE
         else:
@@ -418,7 +424,7 @@ e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_siz
 
         # Check whether user specified value is big enough, and adjust if needed.
         if total_size > part_size*1024*1024*self.MAX_PARTS:
-            part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+            part_size = _part_size_for_total_size(total_size)
             self.logger.warning("Part size given is too small; \
 using %s MB parts to upload."% part_size)
 
