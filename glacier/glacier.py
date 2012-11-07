@@ -134,6 +134,7 @@ def default_glacier_wrapper(args):
                           bookkeeping=args.bookkeeping,
                           bookkeeping_domain_name=args.bookkeeping_domain_name,
                           sns=args.sns_enable,
+                          sns_monitored_vaults=args.sns_monitored_vaults,
                           logfile=args.logfile,
                           loglevel=args.loglevel,
                           logtostdout=args.logtostdout)
@@ -487,7 +488,6 @@ def main():
     # Join config options with environments
     aws = dict(os.environ.items() + aws.items() )
     glacier = dict(os.environ.items() + glacier.items() )
-    sns = dict(os.environ.items() + sns.items() )
 
     # Helper functions
     filt_s= lambda x: x.lower().replace("_","-")
@@ -526,6 +526,9 @@ def main():
                        required=False,
                        action="store_true",
                        default=default_sns("notifications"))
+    group.add_argument('--sns-monitored-vaults',
+                       required=False,
+                       default=default_sns("monitored_vaults"))
 
     # Glacier settings
     group = parser.add_argument_group('glacier')

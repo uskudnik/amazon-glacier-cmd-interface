@@ -286,6 +286,24 @@ glacier:
                        Set how to return results: print to the screen, or as
                        csv resp. json string. (default: print)
 
+SNS
+---
+To enable Short Notification Service for your vaults add a new section to your
+`.glacier-cmd` file with attribute `notifications` set to true:
+
+  [SNS]
+  notifications=True
+
+By default, notifications are enabled for all vaults which might be an issue if
+you have more than a 100 vaults since each vault is one topic. If you want to
+monitor more vaults either contact Amazon for a higher number of topics (word
+on the street is they usually increase that number) or specify additional
+option `monitored_vaults` that should be a list of vaults you want to monitor:
+
+  monitored_vaults=vault1,vault2, ...
+
+`monitored_vaults` can also be passed in through command line as 
+`--monitored_vaults=vault1,vault2, ...`.
 
 Bandwidth throttling
 --------------------

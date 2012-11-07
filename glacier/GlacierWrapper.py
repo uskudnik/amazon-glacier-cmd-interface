@@ -271,35 +271,35 @@ Connecting to Amazon SimpleDB domain %s with
             return func(*args, **kwargs)
         return sns_connect_wrap
 
-    def sns_enable(func):
-        """
-        Decorator to enable notifications on appropriate vaults.
+#     def sns_enable(func):
+#         """
+#         Decorator to enable notifications on appropriate vaults.
 
-        :param func: Function to wrap
-        :type func: function
+#         :param func: Function to wrap
+#         :type func: function
 
-        :returns: wrapper function
-        :rtype: function
-        :raises: GlacierWrapper.ConnectionException
-        """
-        @wraps(func)
-        def sns_enable_wrap(*args, **kwargs):
-            self = args[0]
-            if hasattr(self, "sns_conn"):
-                vault_name = args[1]
+#         :returns: wrapper function
+#         :rtype: function
+#         :raises: GlacierWrapper.ConnectionException
+#         """
+#         @wraps(func)
+#         def sns_enable_wrap(*args, **kwargs):
+#             self = args[0]
+#             if hasattr(self, "sns_conn"):
+#                 vault_name = args[1]
 
-                self.topic = self.sns_conn.create_topic("aws-glacier-%s" % vault_name)
-                # self.glacierconn.get_vault_notifications - just enable, either way we make one request (based on http://docs.amazonwebservices.com/sns/latest/api/API_CreateTopic.html)
-#                "aws-glacier-%s" % vault_name, #TODO format might be a problem; at the moment only 100 topics are allowed
-                config = {
-                    'SNSTopic': self.topic[u'CreateTopicResponse']['CreateTopicResult']['TopicArn'],
-                    'Events': ['ArchiveRetrievalCompleted', 'InventoryRetrievalCompleted']
-                }
-                self.glacierconn.set_vault_notifications(vault_name=vault_name, 
-                                                         notification_config=config)
-            return func(*args, **kwargs)
+#                 self.topic = self.sns_conn.create_topic("aws-glacier-%s" % vault_name)
+#                 # self.glacierconn.get_vault_notifications - just enable, either way we make one request (based on http://docs.amazonwebservices.com/sns/latest/api/API_CreateTopic.html)
+# #                "aws-glacier-%s" % vault_name, #TODO format might be a problem; at the moment only 100 topics are allowed
+#                 config = {
+#                     'SNSTopic': self.topic[u'CreateTopicResponse']['CreateTopicResult']['TopicArn'],
+#                     'Events': ['ArchiveRetrievalCompleted', 'InventoryRetrievalCompleted']
+#                 }
+#                 self.glacierconn.set_vault_notifications(vault_name=vault_name, 
+#                                                          notification_config=config)
+#             return func(*args, **kwargs)
 
-        return sns_enable_wrap
+#         return sns_enable_wrap
 
     @log_class_call('Checking whether vault name is valid.',
                      'Vault name is valid.')
@@ -1132,6 +1132,8 @@ using %s MB parts to upload."% part_size)
 
 
     @glacier_connect
+    @sns_connect
+    @sns_enable
     @log_class_call("Processing archive retrieval job.",
                     "Archive retrieval job response received.")
     def getarchive(self, vault_name, archive_id):
@@ -1188,6 +1190,8 @@ using %s MB parts to upload."% part_size)
 
     @glacier_connect
     @sdb_connect
+    @sns_connect
+    @sns_enable
     @log_class_call("Download an archive.",
                     "Download archive done.")
     def download(self, vault_name, archive_id, part_size,
@@ -1558,6 +1562,7 @@ your archive ID is correct, and start a retrieval job using \
     @glacier_connect
     @sns_connect
     def sns_subscribe(self, vault_names, protocol, endpoint):
+        # NA TEJ TOCKI ustvari nove topice!!!!
         all_topics = self.sns_conn.get_all_topics()['ListTopicsResponse']['ListTopicsResult']['Topics']
 
         if vault_names:
@@ -1630,7 +1635,7 @@ your archive ID is correct, and start a retrieval job using \
         return matching_subs
 
     def __init__(self, aws_access_key, aws_secret_key, region,
-                 sns=False,
+                 sns=False, sns_monitored_vaults=False,
                  bookkeeping=False, bookkeeping_domain_name=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
