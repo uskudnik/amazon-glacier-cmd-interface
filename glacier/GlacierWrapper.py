@@ -1018,7 +1018,7 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
-                    print 'start: %s, current position: %s'% (start, current_position)
+                    stop += 1
                     if not start == current_position:
                         if stdin:
                             raise InputException(
