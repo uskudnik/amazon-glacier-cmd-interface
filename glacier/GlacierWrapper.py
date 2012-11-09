@@ -20,6 +20,7 @@ import hashlib
 import fcntl
 import termios
 import struct
+import ConfigParser
 
 import boto
 from boto import sns
@@ -255,7 +256,11 @@ Connecting to Amazon SimpleDB domain %s with
         @wraps(func)
         def sns_connect_wrap(*args, **kwargs):
             self = args[0]
-            if not self.sns:
+
+            if not kwargs.get("sns_options", None):
+                raise InputException("You did't enable SNS.", 
+                                     cause="Lacking configuration.",
+                                     code="SNSConfigurationError")
                 return func(*args, **kwargs)
 
             if not hasattr(self, "sns_conn"):
@@ -1132,8 +1137,6 @@ using %s MB parts to upload."% part_size)
 
 
     @glacier_connect
-    @sns_connect
-    @sns_enable
     @log_class_call("Processing archive retrieval job.",
                     "Archive retrieval job response received.")
     def getarchive(self, vault_name, archive_id):
@@ -1190,8 +1193,6 @@ using %s MB parts to upload."% part_size)
 
     @glacier_connect
     @sdb_connect
-    @sns_connect
-    @sns_enable
     @log_class_call("Download an archive.",
                     "Download archive done.")
     def download(self, vault_name, archive_id, part_size,
@@ -1438,8 +1439,6 @@ your archive ID is correct, and start a retrieval job using \
 
     @glacier_connect
     @sdb_connect
-    @sns_connect
-    @sns_enable
     @log_class_call("Requesting inventory overview.",
                     "Inventory response received.")
     def inventory(self, vault_name, refresh):
@@ -1559,10 +1558,106 @@ your archive ID is correct, and start a retrieval job using \
         hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
         return glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hashes))
 
+    def sns_enable(self, sns_options):
+        options = sns_options
+
+        config = options['config']
+        configs_read = options['configs_read']
+
+        if options['configs_read']:
+            if os.path.expanduser('~/.glacier-cmd') in configs_read:
+                conffile = os.path.expanduser('~/.glacier-cmd')
+            elif '/etc/glacier-cmd.conf' in configs_read:
+                conffile = '/etc/glacier-cmd.conf'
+            else:
+                conffile = configs_read[0]
+
+        try:
+            config.add_section("SNS")
+            config.set("SNS", "topic", "aws-glacier-notifications")
+
+            with open(conffile, "wb") as configfile:
+                config.write(configfile)
+        except ConfigParser.DuplicateSectionError as e:
+            return "Section SNS already exists; aborting."
+        
+        return "Basic file settings written to configuration file."
+
+    def _init_events_for_vault(self, vault_name, topic):
+        config = {
+            'SNSTopic': topic,
+            'Events': ['ArchiveRetrievalCompleted', 'InventoryRetrievalCompleted']
+        }
+
+        return self.glacierconn.set_vault_notifications(vault_name=vault_name,
+                                                            notification_config=config)
+
+    def _init_events_for_vaults(self, vaults, topic):
+        results = []
+        for vault_name in vaults:
+            try:
+                import collections
+                result = collections.OrderedDict()
+            except AttributeError:
+                result = dict()
+
+            result["Vault Name"] = vault_name
+            result["Request Id"] = self._init_events_for_vault(vault_name, topic)[u'RequestId']
+            results += [result]
+        return results
+
+    @glacier_connect
+    @sns_connect
+    def sns_sync(self, sns_options):
+        options = sns_options
+
+        if not options['sections_present']:
+            topic = self.sns_conn.create_topic(options['topic'])
+            self.sns_topic = topic['CreateTopicResponse']['CreateTopicResult']['TopicArn']
+
+            if options.get('vaults', None):
+                vaults = options['vaults'].split(",") # monitored vaults
+            else:
+                vaults = [fvault[u'VaultARN'].split("vaults/")[-1] for fvault in self.lsvault()] # fvault - full vault information
+            
+            return _init_events_for_vaults(vaults, topic)
+        else:
+            results = []
+            for section in options["sections"]:
+                vaults = []
+                if section.get("options", None):
+                    if section.get("options").get('vaults', None):
+                        vaults = section.get("options").get('vaults').split(",")
+
+                if not vaults:
+                    vaults = [fvault[u'VaultARN'].split("vaults/")[-1] for fvault in self.lsvault()]
+
+                topic = self.sns_conn.create_topic(section['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
+                
+                section_results = self._init_events_for_vaults(vaults, topic)
+                
+                for i, vault in enumerate(section_results):
+                    try:
+                        import collections
+                        result = collections.OrderedDict()
+                    except AttributeError:
+                        result = dict()
+
+                    if not i:
+                        result['Section name'] = section['topic']
+                    else:
+                        result['Section name'] = ""
+
+                    result["Vault Name"] = vault['Vault Name']
+                    result["Request Id"] = vault['Request Id']
+                    results += [result]
+
+            return results
+
+
     @glacier_connect
     @sns_connect
     def sns_subscribe(self, vault_names, protocol, endpoint):
-        # NA TEJ TOCKI ustvari nove topice!!!!
         all_topics = self.sns_conn.get_all_topics()['ListTopicsResponse']['ListTopicsResult']['Topics']
 
         if vault_names:
@@ -1605,7 +1700,7 @@ your archive ID is correct, and start a retrieval job using \
             subvault = sub['TopicArn'].split(":")[-1].split("-")[-1]
             subprotocol = sub['Protocol']
             subendpoint = sub['Endpoint']
-                        
+            
             if vault and subvault != vault:
                 continue
             if protocol and subprotocol != protocol:
@@ -1635,7 +1730,9 @@ your archive ID is correct, and start a retrieval job using \
         return matching_subs
 
     def __init__(self, aws_access_key, aws_secret_key, region,
-                 sns=False, sns_monitored_vaults=False,
+                 # sns_enable=False, sns_topic=None, sns_monitored_vaults=False, 
+                 sns_options=None,
+                 config_object=None,
                  bookkeeping=False, bookkeeping_domain_name=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
@@ -1663,7 +1760,14 @@ your archive ID is correct, and start a retrieval job using \
         self.aws_secret_key = aws_secret_key
         self.bookkeeping = bookkeeping
         self.bookkeeping_domain_name = bookkeeping_domain_name
-        self.sns = sns
+        
+        # self.sns_enable = sns_enable
+        # self.sns_topic = sns_topic
+        # self.sns_monitored_vaults = sns_monitored_vaults
+        
+        # self.config_object = config_object
+        # self.sns_options = sns_options
+
         self.region = region
 
         self.setuplogging(logfile, loglevel, logtostdout)
