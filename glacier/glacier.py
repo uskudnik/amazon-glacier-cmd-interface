@@ -70,7 +70,7 @@ def output_table(results, output, keys=None, sort_key=None):
         headers = [keys[k] for k in keys.keys()] if keys else results[0].keys()
         table = PrettyTable(headers)
         for line in results:
-            table.add_row([line[k] for k in (keys.keys() if keys else headers)])
+            table.add_row([line[k] if k in line else '' for k in (keys.keys() if keys else headers)])
 
         if sort_key:
             table.sortby = keys[sort_key] if keys else sort_key
@@ -284,42 +284,51 @@ def upload(args):
             args.filename += [os.path.join(dirname, fileset[i]) for i in range(1, len(fileset))]
 
     glacier = default_glacier_wrapper(args)
-    args.filename = args.filename if args.filename else [None]
-    for f in args.filename:
-        if f:
+    results = []
 
+    # If we have one or more file names, they appear in a list.
+    # Iterate over these file names; do path expansion and wildcard expansion
+    # just in case the shell didn't take care of that.
+    # If no file name given it's an empty list, and we expect the file to
+    # be read over stdin.
+    if args.filename:
+        for f in args.filename:
+    
             # In case the shell does not expand wildcards, if any, do this here.
             if f[0] == '~':
                 f = os.path.expanduser(f)
 
-            results = []
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
                     response = glacier.upload(args.vault, g, args.description, args.region, args.stdin,
                                               args.name, args.partsize, args.uploadid, args.resume)
-                    result = {"Uploaded file": g,
-                              "Created archive with ID": response[0],
-                              "Archive SHA256 tree hash": response[1]}
-                    
-                    print "Uploaded file: %s."% g
-                    print "Created archive with ID: %s"% response[0]
-                    print "Archive SHA256 tree hash: %s."% response[1]
+                    results.append({"Uploaded file": g,
+                                    "Created archive with ID": response[0],
+                                    "Archive SHA256 tree hash": response[1]})
             else:
                 raise InputException(
                     "File name given for upload can not be found: %s."% f,
                     code='CommandError')
-        else:
-
-            # No file name; using stdin.
-            response = glacier.upload(args.vault, f, args.description, args.region, args.stdin,
-                                      args.name, args.partsize, args.uploadid, args.resume)
-            result = {"Created archive with ID": response[0],
-                      "Archive SHA256 tree hash": response[1]}
             
-        results.append(result)
-        
-    output_table(results, args.output) if len(results) > 1 else output_headers(results[0], args.output)
+    elif args.stdin:
+
+        # No file name; using stdin.
+        response = glacier.upload(args.vault, None, args.description, args.region, args.stdin,
+                                  args.name, args.partsize, args.uploadid, args.resume)
+        results = [{"Created archive with ID": response[0],
+                    "Archive SHA256 tree hash": response[1]}]
+
+    else:
+        raise InputException(
+            '''No input given. Either give a file name or file names
+on the command line, or use the --stdin switch and pipe
+in the data over stdin.''',
+            cause='No file name and no stdin pipe.',
+            code='CommandError')
+            
+    output_table(results, args.output) if len(results) > 1 \
+                          else output_headers(results[0], args.output)
 
 @handle_errors
 def getarchive(args):
@@ -572,10 +581,10 @@ def main():
                        default=default("region"),
                        help="Region where you want to store \
                              your archives " + help_msg_config)
-    bookkeeping = default("bookkeeping") and True
+    bookkeeping = True if default('bookkeeping') == 'True' else False
     group.add_argument('--bookkeeping',
                        required=False,
-                       default=bookkeeping,
+                       default=default("bookkeeping"),
                        action="store_true",
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
@@ -633,12 +642,12 @@ def main():
         help='Upload an archive to Amazon Glacier.')
     parser_upload.add_argument('vault',
         help='The vault the archive is to be stored in.')
-    group = parser_upload.add_mutually_exclusive_group(required=True)
-    group.add_argument('filename', nargs='*', default=None,
+##    group = parser_upload.add_mutually_exclusive_group(required=True)
+    parser_upload.add_argument('filename', nargs='*', default=None,
         help='''\
 The name(s) of the local file(s) to be uploaded. Wildcards
 are accepted. Can not be used if --stdin is used.''')
-    group.add_argument('--stdin', action='store_true',
+    parser_upload.add_argument('--stdin', action='store_true',
         help='''\
 Read data from stdin, instead of local file. 
 Can not be used if <filename> is given.''')
@@ -880,7 +889,7 @@ at hand.''')
     args = parser.parse_args(remaining_argv)
     
     args.logtostdout = logtostdout
-
+    
     # Run the subcommand.
     args.func(args)
 

@@ -5,6 +5,7 @@
    :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB support and other features.
 """
 
+import math
 import json
 import pytz
 import re
@@ -37,7 +38,10 @@ from glacierexception import *
 class log_class_call(object):
     """
     Decorator that logs class calls to specific functions.
-    Set loglevel to DEBUG to see these logs.
+
+    .. note::
+
+        Set loglevel to DEBUG to see these logs.
     """
 
     def __init__(self, start, finish, getter=None):
@@ -49,7 +53,7 @@ class log_class_call(object):
         :param finish: Message logged when finishing the class.
         :type finish: str.
         """
-        
+
         self.start = start
         self.finish = finish
         self.getter = getter
@@ -80,6 +84,23 @@ class log_class_call(object):
         return wrapper
 
 
+class mmap(object):
+    """
+    Not really a mmap, just a simple read-only substitute that
+    does not require having a lot of RAM to upload large files.
+    """
+    def __init__(self, file):
+        self.file = file
+        self.size = os.fstat(self.file.fileno()).st_size
+    
+    def __getitem__(self, key):
+        self.file.seek(key.start)
+        if key.stop is None:
+            stop = self.size
+        else:
+            stop = key.stop
+        return self.file.read(stop - key.start)
+
 class GlacierWrapper(object):
     """
     Wrapper for accessing Amazon Glacier, with Amazon SimpleDB support
@@ -102,20 +123,27 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
 
     def setuplogging(self, logfile, loglevel, logtostdout):
         """
-        Set up the logging facility. If no logging parameters are
-        given, WARNING-level logging will be printed to stdout.
-        If logtostdout is True, messages will be sent to stdout, even
-        if a logfile is given.
-        If a logfile is given but can not be written to, logs are sent to
-        stderr instead.
+        Set up the logging facility.
+
+        * If no logging parameters are given, WARNING-level logging will be printed to stdout.
+        * If logtostdout is True, messages will be sent to stdout, even if a logfile is given.
+        * If a logfile is given but can not be written to, logs are sent to stderr instead.
 
         :param logfile: the fully qualified file name of where to log to.
         :type logfile: str
-        :param loglevel: the level of logging.
+        :param loglevel: the level of logging::
+
+           * CRITICAL
+           * ERROR
+           * WARNING
+           * INFO
+           * DEBUG
+
         :type loglevel: str
         :param logtostdout: whether to sent log messages to stdout.
         :type logtostdout: boolean
         """
+
         levels = {'3': logging.CRITICAL,
                   'CRITICAL': logging.CRITICAL,
                   '2': logging.ERROR,
@@ -126,7 +154,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                   'INFO': logging.INFO,
                   '-1': logging.DEBUG,
                   'DEBUG': logging.DEBUG}
-        
+
         loglevel = 'WARNING' if not loglevel in levels.keys() else levels[loglevel]
 
         datefmt = '%b %d %H:%M:%S'
@@ -152,7 +180,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                                     filename=logfile,
                                     format=logformat,
                                     datefmt=datefmt)
-        
+
         else:
             logging.basicConfig(level='WARNING',
                                 stream=sys.stdout,
@@ -169,7 +197,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
 
         :returns: wrapper function
         :rtype: function
-        :raises: GlacierWrapper.ConnectionException
+        :raises: :py:exc:`glacier.glacierexception.ConnectionException`
         """
 
         @wraps(func)
@@ -205,7 +233,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
 
         :returns: wrapper function
         :rtype: function
-        :raises: GlacierWrapper.ConnectionException
+        :raises: :py:exc:`glacier.glacierexception.ConnectionException`
         """
 
         @wraps(func)
@@ -218,7 +246,15 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
 
             # TODO: give SimpleDB its own class? Or move the few calls
             # we need to glaciercorecalls?
-            
+
+            if not self.bookkeeping_domain_name:
+                raise InputException(
+                    '''\
+Bookkeeping enabled but no Amazon SimpleDB domain given.
+Provide a domain in either the config file or via the
+command line, or disable bookkeeping.''',
+                    code="SdbConnectionError")
+
             if not hasattr(self, 'sdb_conn'):
                 try:
                     self.logger.debug("""\
@@ -237,7 +273,7 @@ Connecting to Amazon SimpleDB domain %s with
                         "Cannot connect to Amazon SimpleDB.",
                         cause=e,
                         code="SdbConnectionError")
-                
+
             return func(*args, **kwargs)
 
         return sdb_connect_wrap
@@ -311,7 +347,7 @@ Connecting to Amazon SimpleDB domain %s with
 
         :returns: True if valid, raises exception otherwise.
         :rtype: boolean
-        :raises: GlacierWrapper.InputException
+        :raises: :py:exc:`glacier.glacierexception.InputException`
         """
 
         if len(name) > self.MAX_VAULT_NAME_LENGTH:
@@ -319,15 +355,18 @@ Connecting to Amazon SimpleDB domain %s with
                 u"Vault name can be at most %s characters long."% self.MAX_VAULT_NAME_LENGTH,
                 cause='Vault name more than %s characters long.'% self.MAX_VAULT_NAME_LENGTH,
                 code="VaultNameError")
-        
+
         if len(name) == 0:
             raise InputException(
                 u"Vault name has to be at least 1 character long.",
                 cause='Vault name has to be at least 1 character long.',
                 code="VaultNameError")
 
+        # If the name starts with an illegal character, then result
+        # m is None. In that case the expression becomes '0 != len(name)'
+        # which of course is always True.
         m = re.match(self.VAULT_NAME_ALLOWED_CHARACTERS, name)
-        if m.end() != len(name):
+        if (m.end() if m else 0) != len(name):
             raise InputException(
                 u"""Allowed characters are a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), and '.' (period)""",
                 cause='Illegal characters in the vault name.',
@@ -347,8 +386,9 @@ Connecting to Amazon SimpleDB domain %s with
 
         :returns: True if valid, raises exception otherwise.
         :rtype: boolean
-        :raises: GlacierWrapper.InputException
+        :raises: :py:exc:`glacier.glacierexception.InputException`
         """
+
         if len(description) > self.MAX_VAULT_DESCRIPTION_LENGTH:
             raise InputException(
                 u"Description must be no more than %s characters."% self.MAX_VAULT_DESCRIPTION_LENGTH,
@@ -364,7 +404,7 @@ control codes, specifically ASCII values 32-126 decimal \
 or 0x20-0x7E hexadecimal.""",
                     cause="Invalid characters in the vault name.",
                     code="VaultDescriptionError")
-            
+
         return True
 
     @log_class_call('Checking whether id is valid.',
@@ -383,7 +423,7 @@ or 0x20-0x7E hexadecimal.""",
 
         :returns: True if valid, raises exception otherwise.
         :rtype: boolean
-        :raises: GlacierWrapper.InputException
+        :raises: :py:exc:`glacier.glacierexception.InputException`
         """
 
         length = {'JobId': 92,
@@ -395,9 +435,9 @@ or 0x20-0x7E hexadecimal.""",
                 'A %s must be %s characters long. This ID is %s characters.'% (id_type, length[id_type], len(amazon_id)),
                 cause='Incorrect length of the %s string.'% id_type,
                 code="IdError")
-        
+
         m = re.match(self.ID_ALLOWED_CHARACTERS, amazon_id)
-        if m.end() != len(amazon_id):
+        if (m.end() if m else 0) != len(amazon_id):
             raise InputException(
                 u"""This %s contains invalid characters. \
 Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_type,
@@ -419,17 +459,19 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         :rtype: boolean
         :raises: GlacierWrapper.InputException
         """
+
         if not region in self.AVAILABLE_REGIONS:
             raise InputException(
                 self.AVAILABLE_REGIONS_MESSAGE,
                 cause='Invalid region code: %s.'% region,
                 code='RegionError')
-        
+
         return True
 
     def _check_part_size(self, part_size, total_size):
         """
         Check the part size:
+
         - check whether we have a part size, if not: use default.
         - check whether part size is a power of two: if not,
             increase until it is.
@@ -437,11 +479,16 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
             total size: if not, increase until it is.
 
         Return part size to use.
-        """        
-        
+        """
+        def _part_size_for_total_size(total_size):
+            return self._next_power_of_2(
+                int(math.ceil(
+                        float(total_size) / (1024 * 1024 * self.MAX_PARTS)
+                )))
+
         if part_size < 0:
             if total_size > 0:
-                part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+                part_size = _part_size_for_total_size(total_size)
             else:
                 part_size = GlacierWriter.DEFAULT_PART_SIZE
         else:
@@ -454,7 +501,7 @@ e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_siz
 
         # Check whether user specified value is big enough, and adjust if needed.
         if total_size > part_size*1024*1024*self.MAX_PARTS:
-            part_size = self._next_power_of_2(total_size / (1024*1024*self.MAX_PARTS))
+            part_size = _part_size_for_total_size(total_size)
             self.logger.warning("Part size given is too small; \
 using %s MB parts to upload."% part_size)
 
@@ -471,9 +518,10 @@ using %s MB parts to upload."% part_size)
         :returns: the next power of 2.
         :rtype: int
         """
+
         if v == 0:
             return 1
-        
+
         v -= 1
         v |= v >> 1
         v |= v >> 2
@@ -486,6 +534,7 @@ using %s MB parts to upload."% part_size)
         """
         Uses ANSI codes to make text bold for printing on the tty.
         """
+
         return u'\033[1m%s\033[0m' % msg
 
     def _progress(self, msg):
@@ -496,6 +545,7 @@ using %s MB parts to upload."% part_size)
         :param msg: the progress message to be printed.
         :type msg: str
         """
+
         if sys.stdout.isatty():
 
             # Get the current screen width.
@@ -511,6 +561,7 @@ using %s MB parts to upload."% part_size)
 
             sys.stdout.write(msg + '\r')
             sys.stdout.flush()
+
     def _size_fmt(self, num, decimals=1):
         """
         Formats byte sizes in human readable format. Anything bigger
@@ -530,9 +581,9 @@ using %s MB parts to upload."% part_size)
         for x in ['bytes','KB','MB','GB']:
             if num < 1024.0:
                 return fmt % (num, x)
-            
+
             num /= 1024.0
-            
+
         return fmt % (num, 'TB')
 
     def _decode_error_message(self, e):
@@ -549,21 +600,25 @@ using %s MB parts to upload."% part_size)
     def lsvault(self, limit=None):
         """
         Lists available vaults.
-        
-        :returns : List of vault descriptions.
-        :rtype: list ::
-        
-        [{u'CreationDate': u'2012-09-20T14:29:14.710Z',
-          u'LastInventoryDate': u'2012-10-01T02:10:12.497Z',
-          u'NumberOfArchives': 15,
-          u'SizeInBytes': 33932739443L,
-          u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name',
-          u'VaultName': u'your_vault_name'},
-         ...
-         ]
 
-        :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
+        :returns: List of vault descriptions.
+
+            .. code-block:: python
+
+                [{u'CreationDate': u'2012-09-20T14:29:14.710Z',
+                  u'LastInventoryDate': u'2012-10-01T02:10:12.497Z',
+                  u'NumberOfArchives': 15,
+                  u'SizeInBytes': 33932739443L,
+                  u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name',
+                  u'VaultName': u'your_vault_name'},
+                  ...
+                ]
+
+        :rtype: list
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`,
+                 :py:exc:`glacier.glacierexception.ResponseException`
         """
+
         marker = None
         vault_list = []
         while True:
@@ -583,7 +638,7 @@ using %s MB parts to upload."% part_size)
 
             if not marker:
                 break
-        
+
         return vault_list
 
     @glacier_connect
@@ -597,9 +652,8 @@ using %s MB parts to upload."% part_size)
         :type vault_name: str
 
         :returns: Response data.
-        :rtype: boto.glacier.response.GlacierResponse        
-         
-        :raises: GlacierWrapper.CommunicationException
+        :rtype: :py:class:`boto.glacier.response.GlacierResponse`
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`
         """
 
         self._check_vault_name(vault_name)
@@ -614,6 +668,7 @@ using %s MB parts to upload."% part_size)
         return response.copy()
 
     @glacier_connect
+    @sdb_connect
     @log_class_call("Removing vault.",
                     "Vault removal complete.")
     def rmvault(self, vault_name):
@@ -624,12 +679,14 @@ using %s MB parts to upload."% part_size)
         :type vault_name: str
 
         :returns: Response data. Raises exception on failure.
-        :rtype: list ::
-        
-        [('x-amzn-requestid', 'Example_rkQ-xzxHfrI-997hphbfdcIbL74IhDf_Example'),
-        ('date', 'Mon, 01 Oct 2012 13:54:06 GMT')]
 
-        :raises: GlacierWrapper.CommunicationException
+            .. code-block:: python
+
+                [('x-amzn-requestid', 'Example_rkQ-xzxHfrI-997hphbfdcIbL74IhDf_Example'),
+                 ('date', 'Mon, 01 Oct 2012 13:54:06 GMT')]
+
+        :rtype: list
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`
         """
 
         self._check_vault_name(vault_name)
@@ -640,9 +697,23 @@ using %s MB parts to upload."% part_size)
                 'Failed to remove vault with name %s.'% vault_name,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
-        
-        return response.copy()
 
+        # Check for orphaned entries in the bookkeeping database, and
+        # remove them.
+        if self.bookkeeping:
+            query = "select * from `%s` where vault='%s'" % (self.bookkeeping_domain_name, vault_name)
+            result = self.sdb_domain.select(query)
+            try:
+                for item in result:
+                    self.sdb_domain.delete_item(item)
+                    self.logger.debug('Deleted orphaned archive from the database: %s.'% item.name)
+            except boto.exception.SDBResponseError as e:
+                raise ResponseException(
+                        'SimpleDB did not respond correctly to our orphaned listings check.',
+                        cause=self._decode_error_message(e.body),
+                        code=e.code)
+
+        return response.copy()
 
     @glacier_connect
     @log_class_call("Requesting vault description.",
@@ -655,16 +726,18 @@ using %s MB parts to upload."% part_size)
         :type vault_name: str
 
         :returns: vault description.
-        :rtype: dict ::
-        
-        {u'CreationDate': u'2012-10-01T13:24:55.791Z',
-         u'LastInventoryDate': None,
-         u'NumberOfArchives': 0,
-         u'SizeInBytes': 0,
-         u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name',
-         u'VaultName': u'your_vault_name'}
-         
-        :raises: GlacierWrapper.CommunicationException
+
+            .. code-block:: python
+
+                {u'CreationDate': u'2012-10-01T13:24:55.791Z',
+                 u'LastInventoryDate': None,
+                 u'NumberOfArchives': 0,
+                 u'SizeInBytes': 0,
+                 u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name',
+                 u'VaultName': u'your_vault_name'}
+
+        :rtype: dict
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`
         """
 
         self._check_vault_name(vault_name)
@@ -675,7 +748,7 @@ using %s MB parts to upload."% part_size)
                 'Failed to get description of vault with name %s.'% vault_name,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
-        
+
         return response.copy()
 
     @glacier_connect
@@ -692,26 +765,29 @@ using %s MB parts to upload."% part_size)
         :type vault_name: str
 
         :returns: job list
-        :rtype: list ::
 
-        [{u'Action': u'InventoryRetrieval',
-          u'ArchiveId': None,
-          u'ArchiveSizeInBytes': None,
-          u'Completed': False,
-          u'CompletionDate': None,
-          u'CreationDate': u'2012-10-01T14:54:51.919Z',
-          u'InventorySizeInBytes': None,
-          u'JobDescription': None,
-          u'JobId': u'Example_rctvAMVd3tgAbCuQkD2vjNQ6aw9ifwACvhjhIeKtNnZqeSIuMYRo3JUKsK_0M-VNYvb0-eEreSUp_Example',
-          u'SHA256TreeHash': None,
-          u'SNSTopic': None,
-          u'StatusCode': u'InProgress',
-          u'StatusMessage': None,
-          u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'},
-          {...}]
-          
-        :raises: GlacierWrapper.ResponseException
+            .. code-block:: python
+
+                [{u'Action': u'InventoryRetrieval',
+                  u'ArchiveId': None,
+                  u'ArchiveSizeInBytes': None,
+                  u'Completed': False,
+                  u'CompletionDate': None,
+                  u'CreationDate': u'2012-10-01T14:54:51.919Z',
+                  u'InventorySizeInBytes': None,
+                  u'JobDescription': None,
+                  u'JobId': u'Example_rctvAMVd3tgAbCuQkD2vjNQ6aw9ifwACvhjhIeKtNnZqeSIuMYRo3JUKsK_0M-VNYvb0-eEreSUp_Example',
+                  u'SHA256TreeHash': None,
+                  u'SNSTopic': None,
+                  u'StatusCode': u'InProgress',
+                  u'StatusMessage': None,
+                  u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'},
+                  {...}]
+
+        :rtype: list
+        :raises: :py:exc:`glacier.glacierexception.ResponseException`
         """
+
         self._check_vault_name(vault_name)
         marker = None
         job_list = []
@@ -748,24 +824,26 @@ using %s MB parts to upload."% part_size)
         :type job_id: str
 
         :returns: List of job properties.
-        :rtype: dict ::
-        
-        {u'Action': u'InventoryRetrieval',
-         u'ArchiveId': None,
-         u'ArchiveSizeInBytes': None,
-         u'Completed': False,
-         u'CompletionDate': None,
-         u'CreationDate': u'2012-10-01T14:54:51.919Z',
-         u'InventorySizeInBytes': None,
-         u'JobDescription': None,
-         u'JobId': u'Example_d3tgAbCuQ9vPRqRJkD2vjNQ6wBgga7Xaw9ifwACvhjhIeKtNnZqeSIuMYRo3JUKsK_0M-VNYvb0-_Example',
-         u'SHA256TreeHash': None,
-         u'SNSTopic': None,
-         u'StatusCode': u'InProgress',
-         u'StatusMessage': None,
-         u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'}
-        
-        :raises: GlacierWrapper.CommunicationException
+
+            .. code-block:: python
+
+                {u'Action': u'InventoryRetrieval',
+                 u'ArchiveId': None,
+                 u'ArchiveSizeInBytes': None,
+                 u'Completed': False,
+                 u'CompletionDate': None,
+                 u'CreationDate': u'2012-10-01T14:54:51.919Z',
+                 u'InventorySizeInBytes': None,
+                 u'JobDescription': None,
+                 u'JobId': u'Example_d3tgAbCuQ9vPRqRJkD2vjNQ6wBgga7Xaw9ifwACvhjhIeKtNnZqeSIuMYRo3JUKsK_0M-VNYvb0-_Example',
+                 u'SHA256TreeHash': None,
+                 u'SNSTopic': None,
+                 u'StatusCode': u'InProgress',
+                 u'StatusMessage': None,
+                 u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'}
+
+        :rtype: dict
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`
         """
 
         self._check_vault_name(vault_name)
@@ -777,9 +855,9 @@ using %s MB parts to upload."% part_size)
                 'Failed to get description of job with job id %s.'% job_id,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
-        
+
         return response.copy()
-    
+
     @glacier_connect
     @log_class_call("Aborting multipart upload.",
                     "Multipart upload successfully aborted.")
@@ -794,14 +872,16 @@ using %s MB parts to upload."% part_size)
         :type upload_id: str
 
         :returns: server response.
-        :rtype: list ::
 
-        [('x-amzn-requestid', 'Example_ZJwjlLbvg8Dg_lnYUnC8bjV6cvlTBTO_Example'),
-         ('date', 'Mon, 01 Oct 2012 16:08:23 GMT')]
+            .. code-block:: python
 
-        :raises: GlacierWrapper.CommunicationException
+                [('x-amzn-requestid', 'Example_ZJwjlLbvg8Dg_lnYUnC8bjV6cvlTBTO_Example'),
+                 ('date', 'Mon, 01 Oct 2012 16:08:23 GMT')]
+
+        :rtype: list
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`
         """
-        
+
         self._check_vault_name(vault_name)
         self._check_id(upload_id, "UploadId")
         try:
@@ -811,9 +891,9 @@ using %s MB parts to upload."% part_size)
                 'Failed to abort multipart upload with id %s.'% upload_id,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
-        
+
         return response.copy()
-     
+
     @glacier_connect
     @log_class_call("Listing multipart uploads.",
                     "Multipart uploads list received successfully.")
@@ -825,17 +905,20 @@ using %s MB parts to upload."% part_size)
         :type vault_name: str
 
         :return: list of uploads, or None.
-        :rtype: list :: 
 
-        [{u'ArchiveDescription': u'myfile.tgz',
-          u'CreationDate': u'2012-09-30T15:21:35.890Z',
-          u'MultipartUploadId': u'Example_oiuhncYLvBRZLzYgVw7MO_OO4l6i78va8N83R9xLNqrFaa8Vyz4W_JsaXhLNicCCbi_OdsHD8dHK_Example',
-          u'PartSizeInBytes': 134217728,
-          u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'},
-         {...}]
+            .. code-block:: python
 
-        :raises: GlacierWrapper.CommunicationException
+                [{u'ArchiveDescription': u'myfile.tgz',
+                  u'CreationDate': u'2012-09-30T15:21:35.890Z',
+                  u'MultipartUploadId': u'Example_oiuhncYLvBRZLzYgVw7MO_OO4l6i78va8N83R9xLNqrFaa8Vyz4W_JsaXhLNicCCbi_OdsHD8dHK_Example',
+                  u'PartSizeInBytes': 134217728,
+                  u'VaultARN': u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name'},
+                  {...}]
+
+        :rtype: list
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`
         """
+
         self._check_vault_name(vault_name)
         marker = None
         uploads = []
@@ -853,10 +936,10 @@ using %s MB parts to upload."% part_size)
             if limit and len(uploads) >= limit:
                 uploads = uploads[:limit]
                 break
-            
+
             if not marker:
                 break
-            
+
         return uploads
 
     @glacier_connect
@@ -867,7 +950,7 @@ using %s MB parts to upload."% part_size)
                stdin, alternative_name, part_size, uploadid, resume):
         """
         Uploads a file to Amazon Glacier.
-        
+
         :param vault_name: Name of the vault.
         :type vault_name: str
         :param file_name: Name of the file to upload.
@@ -881,7 +964,10 @@ using %s MB parts to upload."% part_size)
         :param part_size: the size (in MB) of the blocks to upload.
         :type part_size: int
 
-        :raises:
+        :returns: Tupple of (archive_id, sha256hash)
+        :rtype: tupple
+        :raises: :py:exc:`glacier.glacierexception.InputException`,
+                 :py:exc:`glacier.glacierexception.ResponseException`
         """
 
         # Switch off debug logging for boto, as otherwise it's
@@ -897,7 +983,7 @@ using %s MB parts to upload."% part_size)
 
         if description:
             self._check_vault_description(description)
-            
+
         if uploadid:
             self._check_id(uploadid, 'UploadId')
 
@@ -910,21 +996,23 @@ using %s MB parts to upload."% part_size)
         # Otherwise try to read data from stdin.
         total_size = 0
         reader = None
+        mmapped_file = None
         if not stdin:
             if not file_name:
                 raise InputException(
                     "No file name given for upload.",
                     code='CommandError')
-            
+
             try:
-                reader = open(file_name, 'rb')
+                f = open(file_name, 'rb')
+                mmapped_file = mmap(f)
                 total_size = os.path.getsize(file_name)
             except IOError as e:
                 raise InputException(
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
-                
+
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
             total_size = 0
@@ -943,9 +1031,9 @@ using %s MB parts to upload."% part_size)
 
         # If user did not specify part_size, compute the optimal (i.e. lowest
         # value to stay within the self.MAX_PARTS (10,000) block limit).
-        part_size= self._check_part_size(part_size, total_size)
+        part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
-        
+
         # If we have an UploadId, check whether it is linked to a current
         # job. If so, check whether uploaded data matches the input data and
         # try to resume uploading.
@@ -979,7 +1067,7 @@ using %s MB parts to upload."% part_size)
                         'Failed to get a list already uploaded parts for interrupted upload %s.'% uploadid,
                         cause=self._decode_error_message(e.body),
                         code=e.code)
-                
+
                 list_parts_response = response.copy()
                 current_position = 0
 
@@ -991,18 +1079,27 @@ using %s MB parts to upload."% part_size)
                 # function to handle non-sequential parts.
                 for part in list_parts_response['Parts']:
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
+                    stop += 1
                     if not start == current_position:
                         if stdin:
                             raise InputException(
                                 'Cannot verify non-sequential upload data from stdin.',
                                 code='ResumeError')
-                        reader.seek(start)
+                        if reader:
+                            reader.seek(start)
+
+                    if mmapped_file and stop > mmapped_file.size:
+                        raise InputException(
+                            'File does not match uploaded data; please check your uploadid and try again.',
+                            cause='File is smaller than uploaded data.',
+                            code='ResumeError')
 
                     # Try to read the chunk of data, and take the hash if we
                     # have received anything.
                     # If no data or hash mismatch, stop checking raise an
                     # exception.
-                    data = reader.read(stop-start)
+                    data = None
+                    data = reader.read(stop-start) if reader else mmapped_file[start:stop]
                     if data:
                         data_hash = glaciercorecalls.tree_hash(glaciercorecalls.chunk_hashes(data))
                         if glaciercorecalls.bytes_to_hex(data_hash) == part['SHA256TreeHash']:
@@ -1013,12 +1110,14 @@ using %s MB parts to upload."% part_size)
                                 'Received data does not match uploaded data; please check your uploadid and try again.',
                                 cause='SHA256 hash mismatch.',
                                 code='ResumeError')
-                        
+
                     else:
                         raise InputException(
                             'Received data does not match uploaded data; please check your uploadid and try again.',
                             cause='No or not enough data to match.',
                             code='ResumeError')
+
+                    current_position += stop - start
 
                 # If a marker is present, this means there are more pages
                 # of parts available. If no marker, we have the last page.
@@ -1035,7 +1134,7 @@ using %s MB parts to upload."% part_size)
                 else:
                     msg = 'Checked %s.' \
                           % (self._size_fmt(writer.uploaded_size))
-                    
+
                 self._progress(msg)
 
             # Finished checking; log this and print the final status update
@@ -1051,16 +1150,27 @@ using %s MB parts to upload."% part_size)
                       % (self._size_fmt(writer.uploaded_size))
 
             self._progress(msg)
-                
+
         # Read file in parts so we don't fill the whole memory.
         start_time = current_time = previous_time = time.time()
         start_bytes = writer.uploaded_size
-        for part in iter((lambda:reader.read(part_size_in_bytes)), ''):
+        while True:
+            if reader:
+                part = reader.read(part_size_in_bytes)
+            else:
+                if mmapped_file.size > writer.uploaded_size+part_size_in_bytes:
+                    part = mmapped_file[writer.uploaded_size:writer.uploaded_size+part_size_in_bytes]
+                else:
+                    part = mmapped_file[writer.uploaded_size:]
+
+            if not part:
+                break
+
             writer.write(part)
             current_time = time.time()
             overall_rate = int((writer.uploaded_size-start_bytes)/(current_time - start_time))
             if total_size > 0:
-                
+
                 # Calculate transfer rates in bytes per second.
                 current_rate = int(part_size_in_bytes/(current_time - previous_time))
 
@@ -1090,6 +1200,7 @@ using %s MB parts to upload."% part_size)
             self.logger.debug(msg)
 
         writer.close()
+        f.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
         msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
@@ -1117,7 +1228,8 @@ using %s MB parts to upload."% part_size)
                 'location': location,
                 'description': description,
                 'date':'%s' % datetime.utcnow().replace(tzinfo=pytz.utc),
-                'hash': sha256hash
+                'hash': sha256hash,
+                'size': writer.uploaded_size
             }
 
 ##            if file_name:
@@ -1136,17 +1248,19 @@ using %s MB parts to upload."% part_size)
     def getarchive(self, vault_name, archive_id):
         """
         Requests Amazon Glacier to make archive available for download.
-        Returns a tuple (action, job status, job id, search results)
 
         If retrieval job is not yet initiated:
-                initiate a job,
-                return tuple ("initiated", job, None)
-                
+
+        - initiate a job,
+        - return tuple ("initiated", job, None)
+
         If retrieval job is already initiated:
-                return tuple ("running", job, None).
-                
+
+        - return tuple ("running", job, None).
+
         If the file is ready for download:
-                return tuple ("ready", job, jobId).
+
+        - return tuple ("ready", job, jobId).
 
         :param vault: Vault name from where we want to retrieve the archive.
         :type vault: str
@@ -1154,14 +1268,17 @@ using %s MB parts to upload."% part_size)
         :type archive: str
 
         :returns: Tuple of (status, job, JobId)
-                  TODO: Return example
+
+        TODO: Return example
+
         :rtype: (str, dict, str)
+        :raises: :py:exc:`glacier.glacierexception.ResponseException`
         """
 
         results = None
         self._check_vault_name(vault_name)
         self._check_id(archive_id, 'ArchiveId')
-        
+
         # Check whether we have a retrieval job for the archive.
         job_list = self.list_jobs(vault_name)
         for job in job_list:
@@ -1170,7 +1287,7 @@ using %s MB parts to upload."% part_size)
                     return ('ready', job, job['JobId'])
 
                 return ('running', job, None)
-            
+
         # No job found related to this archive, start a new job.
         job_data = {'ArchiveId': archive_id,
                     'Type': 'archive-retrieval'}
@@ -1181,7 +1298,7 @@ using %s MB parts to upload."% part_size)
                 'Failed to initiate an archive retrieval job for archive %s in vault %s.'% (archive_id, vault_name),
                 cause=self._decode_error_message(e.body),
                 code=e.code)
-        
+
         job = response.copy()
         return ('initiated', job, None)
 
@@ -1212,7 +1329,7 @@ using %s MB parts to upload."% part_size)
                         code='NotReady')
                 self.logger.debug('Archive retrieval completed; archive is available for download now.')
                 break
-            
+
         else:
             raise InputException(
                 "Requested archive not available. Please make sure \
@@ -1297,7 +1414,7 @@ your archive ID is correct, and start a retrieval job using \
             self._progress(msg)
             previous_time = current_time
             self.logger.debug(msg)
-            
+
         if out_file:
             out_file.close()
 
@@ -1313,13 +1430,33 @@ your archive ID is correct, and start a retrieval job using \
         msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
                                             self._size_fmt(overall_rate, 2))
         self._progress(msg)
-        self.logger.info(msg)       
+        self.logger.info(msg)
 
     @glacier_connect
     @sdb_connect
     @log_class_call("Searching for archive.",
                     "Search done.")
     def search(self, vault=None, region=None, file_name=None, search_term=None):
+        """
+        Searches for archives using SimpleDB
+
+        :param vault: Vault name where you want to search.
+        :type vault: str
+        :param region: Region where you want to search.
+        :type region: str
+        :param file_name: Name of the file
+        :type file_name: str
+        :param search_term: Additional search term to use
+        :type search_term: str
+
+        TODO: Search examples
+
+        :returns: List of archives that match
+
+        TODO: Return example
+
+        :rtype: list
+        """
 
         # Sanity checking.
         if not self.bookkeeping:
@@ -1330,7 +1467,7 @@ your archive ID is correct, and start a retrieval job using \
 
         if vault:
             self._check_vault_name(vault)
-            
+
         if region:
             self._check_region(region)
 
@@ -1338,7 +1475,7 @@ your archive ID is correct, and start a retrieval job using \
 ##            raise InputException(
 ##                'Quotes like \' and \" are not allowed in search terms.',
 ##                cause='Invalid search term %s: contains quotes.'% file_name)
-##                
+##
 ##
 ##        if search_term and ('"' in search_term or "'" in search_term):
 ##            raise InputException(
@@ -1356,7 +1493,7 @@ your archive ID is correct, and start a retrieval job using \
 
         if file_name:
             search_params += ["filename like '%"+file_name.replace("'", "''")+"%'"]
-            
+
         if search_term:
             search_params += ["description like '%"+search_term.replace("'", "''")+"%'"]
 
@@ -1369,10 +1506,14 @@ your archive ID is correct, and start a retrieval job using \
         self.logger.debug('Query: "%s"'% query)
         result = self.sdb_domain.select(query)
         items = []
+
+        # Get the results; filter out incomplete uploads (those without
+        # an archive_id attribute).
         try:
             for item in result:
                 self.logger.debug('Next search result:\n%s'% item)
-                items.append(item)
+                if item.has_key('archive_id'):
+                    items.append(item)
         except boto.exception.SDBResponseError as e:
             raise ResponseException(
                     'SimpleDB did not like your query with parameters %s.'% search_params,
@@ -1393,8 +1534,10 @@ your archive ID is correct, and start a retrieval job using \
         :param archive: the archive ID
         :type archive: str
 
-        :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`,
+                 :py:exc:`glacier.glacierexception.ResponseException`
         """
+
         self._check_vault_name(vault_name)
         self._check_id(archive_id, 'ArchiveId')
         try:
@@ -1405,25 +1548,11 @@ your archive ID is correct, and start a retrieval job using \
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
+        # Remove the listing from the bookkeeping database.
         if self.bookkeeping:
             try:
-                # TODO: can't find a method for counting right now
-                # TODO: proper message for when archive name is simply not
-                #       in the bookkeeping db (e.g. originally uploaded
-                #       with other tool).
-                #       (wvmarle: is this necessary? Archive is gone, who cares
-                #       whether it was in the db to begin with.)
-                query = ('select * from `%s` where archive_id="%s"' %
-                            (self.bookkeeping_domain_name, archive_id))
-                items = self.sdb_domain.select(query)
-            except boto.exception.SDBResponseError as e:
-                raise CommunicationException(
-                    "Cannot get archive info from Amazon SimpleDB.",
-                    code="SdbCommunicationError",
-                    cause=e)
-            
-            try:
-                for item in items:
+                item = self.sdb_domain.get_item(archive_id)
+                if item:
                     self.sdb_domain.delete_item(item)
             except boto.exception.SDBResponseError as e:
                 raise CommunicationException(
@@ -1447,26 +1576,30 @@ your archive ID is correct, and start a retrieval job using \
         :type refresh: boolean
 
         :returns: Tuple of retrieval job and inventory data (as list) if available.
-        :rtype: (list, list) ::
-        
-        ({u'CompletionDate': None,
-          u'VaultARN':
-          u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name',
-          u'SNSTopic': None,
-          u'SHA256TreeHash': None,
-          u'Completed': False,
-          u'InventorySizeInBytes': None,
-          u'JobId': u'Example_d3tgAbCuQ9vPRqRJkD2vjNQ6wBgga7Xaw9ifwACvhjhIeKtNnZqeSIuMYRo3JUKsK_0M-VNYvb0-_Example',
-          u'ArchiveId': None,
-          u'JobDescription': None,
-          u'StatusCode': u'InProgress',
-          u'Action': u'InventoryRetrieval',
-          u'CreationDate': u'2012-10-01T14:54:51.919Z',
-          u'StatusMessage': None,
-          u'ArchiveSizeInBytes': None},
-         None)
 
-        :raises: GlacierWrapper.CommunicationException, GlacierWrapper.ResponseException
+            .. code-block:: python
+
+                ({u'CompletionDate': None,
+                  u'VaultARN':
+                  u'arn:aws:glacier:us-east-1:012345678901:vaults/your_vault_name',
+                  u'SNSTopic': None,
+                  u'SHA256TreeHash': None,
+                  u'Completed': False,
+                  u'InventorySizeInBytes': None,
+                  u'JobId': u'Example_d3tgAbCuQ9vPRqRJkD2vjNQ6wBgga7Xaw9ifwACvhjhIeKtNnZqeSIuMYRo3JUKsK_0M-VNYvb0-_Example',
+                  u'ArchiveId': None,
+                  u'JobDescription': None,
+                  u'StatusCode': u'InProgress',
+                  u'Action': u'InventoryRetrieval',
+                  u'CreationDate': u'2012-10-01T14:54:51.919Z',
+                  u'StatusMessage': None,
+                  u'ArchiveSizeInBytes': None},
+                  None
+                )
+        :rtype: (list, list)
+
+        :raises: :py:exc:`glacier.glacierexception.CommunicationException`,
+                 :py:exc:`glacier.glacierexception.ResponseException`
         """
 
         self._check_vault_name(vault_name)
@@ -1491,27 +1624,75 @@ your archive ID is correct, and start a retrieval job using \
                         inventory_done = True
                         inventory_job = job
                         break
-                    
+
                     self.logger.debug('Found running inventory job %s.'% job)
                     inventory_job = job
-                        
+
             # If inventory retrieval is complete, process it.
             if inventory_done:
                 self.logger.debug('Fetching results of finished inventory retrieval.')
                 response = self.glacierconn.get_job_output(vault_name, inventory_job['JobId'])
                 inventory = response.copy()
-                
-                # if bookkeeping is enabled update cache
-                if self.bookkeeping:
+                archives = []
+
+                # If bookkeeping is enabled, update cache.
+                # Add all inventory information to the database, then check
+                # for any archives listed in the database for that vault and
+                # remove those.
+                if self.bookkeeping and len(inventory['ArchiveList']) > 0:
                     self.logger.debug('Updating the bookkeeping with the latest inventory.')
-                    d = dtparse(inventory['InventoryDate']).replace(tzinfo=pytz.utc)
+                    items = {}
+
+                    # Add items to the inventory, 25 at a time (maximum batch).
+                    for item in inventory['ArchiveList']:
+                        items[item['ArchiveId']] = {
+                            'vault': vault_name,
+                            'archive_id': item['ArchiveId'],
+                            'description': item['ArchiveDescription'],
+                            'date':'%s' % dtparse(item['CreationDate']).replace(tzinfo=pytz.utc),
+                            'hash': item['SHA256TreeHash'],
+                            'size': item['Size'],
+                            'region': self.region
+                            }
+                        archives.append(item['ArchiveId'])
+                        if len(items) == 25:
+                            self.logger.debug('Writing batch of 25 inventory items to the bookkeeping db.')
+                            try:
+                                self.sdb_domain.batch_put_attributes(items)
+                            except boto.exception.SDBResponseError as e:
+                                raise CommunicationException(
+                                    "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                    cause=e,
+                                    code="SdbWriteError")
+                            items = {}
+
+                    # Add the remaining batch of items, if any, to the
+                    # database.
+                    if items:
+                        self.logger.debug('Writing final batch of %s inventory items to the bookkeeping db.'% len(items))
+                        try:
+                            self.sdb_domain.batch_put_attributes(items)
+                        except boto.exception.SDBResponseError as e:
+                            raise CommunicationException(
+                                "Cannot update inventory cache, Amazon SimpleDB is not happy.",
+                                cause=e,
+                                code="SdbWriteError")
+
+                    # Get the inventory from the database for this vault,
+                    # and delete any orphaned items.
+                    query = "select * from `%s` where vault='%s'" % (self.bookkeeping_domain_name, vault_name)
+                    result = self.sdb_domain.select(query)
                     try:
-                        self.sdb_domain.put_attributes("%s" % (d,), inventory)
+                        for item in result:
+                            if not item.name in archives:
+                                self.sdb_domain.delete_item(item)
+                                self.logger.debug('Deleted orphaned archive from the database: %s.'% item.name)
+
                     except boto.exception.SDBResponseError as e:
-                        raise CommunicationException(
-                            "Cannot update inventory cache, Amazon SimpleDB is not happy.",
-                            cause=e,
-                            code="SdbWriteError")
+                        raise ResponseException(
+                                'SimpleDB did not respond correctly to our inventory check.',
+                                cause=self._decode_error_message(e.body),
+                                code=e.code)
 
         # If refresh == True or no current inventory jobs either finished or
         # in progress, we have to start a new job. Then request the job details
@@ -1526,7 +1707,7 @@ your archive ID is correct, and start a retrieval job using \
                     'Failed to create a new inventory retrieval job for vault %s.'% vault_name,
                     cause=self._decode_error_message(e.body),
                     code=e.code)
-            
+
             inventory_job = self.describejob(vault_name, new_job['JobId'])
 
         return (inventory_job, inventory)
@@ -1541,6 +1722,7 @@ your archive ID is correct, and start a retrieval job using \
         :returns: the tree hash of the file.
         :rtype: str
         """
+
         try:
             reader = open(file_name, 'rb')
         except IOError as e:
@@ -1746,20 +1928,20 @@ your archive ID is correct, and start a retrieval job using \
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
         Constructor, sets up important variables and so for GlacierWrapper.
-        
+
         :param aws_access_key: your AWS access key.
         :type aws_access_key: str
         :param aws_secret_key: your AWS secret key.
         :type aws_secret_key: str
-        :param region: name of your default region.
+        :param region: name of your default region, see :ref:`regions`.
         :type region: str
-        :param bookkeeping: whether to enable bookkeeping.
+        :param bookkeeping: whether to enable bookkeeping, see :reg:`bookkeeping`.
         :type bookkeeping: boolean
         :param bookkeeping_domain_name: your Amazon SimpleDB domain name where the bookkeeping information will be stored.
         :type bookkeeping_domain_name: str
         :param logfile: complete file name of where to log messages.
         :type logfile: str
-        :param loglevel: the desired loglevel.
+        :param loglevel: the desired loglevel, see :py:func:`setuplogging`
         :type loglevel: str
         :param logtostdout: whether to log messages to stdout instead of to file.
         :type logtostdout: boolean
