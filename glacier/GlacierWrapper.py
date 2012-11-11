@@ -257,12 +257,6 @@ Connecting to Amazon SimpleDB domain %s with
         def sns_connect_wrap(*args, **kwargs):
             self = args[0]
 
-            if not kwargs.get("sns_options", None):
-                raise InputException("You did't enable SNS.", 
-                                     cause="Lacking configuration.",
-                                     code="SNSConfigurationError")
-                return func(*args, **kwargs)
-
             if not hasattr(self, "sns_conn"):
                 try:
                     self.sns_conn = boto.sns.connect_to_region(aws_access_key_id=self.aws_access_key,
@@ -1558,31 +1552,6 @@ your archive ID is correct, and start a retrieval job using \
         hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
         return glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hashes))
 
-    def sns_enable(self, sns_options):
-        options = sns_options
-
-        config = options['config']
-        configs_read = options['configs_read']
-
-        if options['configs_read']:
-            if os.path.expanduser('~/.glacier-cmd') in configs_read:
-                conffile = os.path.expanduser('~/.glacier-cmd')
-            elif '/etc/glacier-cmd.conf' in configs_read:
-                conffile = '/etc/glacier-cmd.conf'
-            else:
-                conffile = configs_read[0]
-
-        try:
-            config.add_section("SNS")
-            config.set("SNS", "topic", "aws-glacier-notifications")
-
-            with open(conffile, "wb") as configfile:
-                config.write(configfile)
-        except ConfigParser.DuplicateSectionError as e:
-            return "Section SNS already exists; aborting."
-        
-        return "Basic file settings written to configuration file."
-
     def _init_events_for_vault(self, vault_name, topic):
         config = {
             'SNSTopic': topic,
@@ -1608,45 +1577,70 @@ your archive ID is correct, and start a retrieval job using \
 
     @glacier_connect
     @sns_connect
-    def sns_sync(self, sns_options):
+    def sns_sync(self, sns_options, output):
         options = sns_options
 
-        if not options['sections_present']:
-            topic = self.sns_conn.create_topic(options['topic'])
-            self.sns_topic = topic['CreateTopicResponse']['CreateTopicResult']['TopicArn']
-
+        if not options['topics_present']:
+            topic = self.sns_conn.create_topic(options['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
             if options.get('vaults', None):
                 vaults = options['vaults'].split(",") # monitored vaults
             else:
                 vaults = [fvault[u'VaultARN'].split("vaults/")[-1] for fvault in self.lsvault()] # fvault - full vault information
-            
-            return _init_events_for_vaults(vaults, topic)
+            return self._init_events_for_vaults(vaults, topic)
         else:
             results = []
-            for section in options["sections"]:
+            for topic in options["topics"]:
                 vaults = []
-                if section.get("options", None):
-                    if section.get("options").get('vaults', None):
-                        vaults = section.get("options").get('vaults').split(",")
+                if topic.get("options", None):
+                    if topic.get("options").get('vaults', None):
+                        vaults = topic.get("options").get('vaults').split(",")
+                        vaults = vaults[:-1] if vaults[-1] == "" else vaults
+
+                methods = []
+                if topic.get('options', None):
+                    if topic.get('options').get('method', None):
+                        methods = topic.get('options').get('method').split(";")
+                        methods = methods[:-1] if methods[-1] == "" else methods
 
                 if not vaults:
                     vaults = [fvault[u'VaultARN'].split("vaults/")[-1] for fvault in self.lsvault()]
 
-                topic = self.sns_conn.create_topic(section['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
+                topic_arn = self.sns_conn.create_topic(topic['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
                 
-                section_results = self._init_events_for_vaults(vaults, topic)
+                topic_results = self._init_events_for_vaults(vaults, topic_arn)
+
+                if methods:
+                    for method in methods:
+                        try:
+                            protocol, endpoint = method.split(',')
+                        except ValueError:
+                            return [{"Error":"You need to specify protocol and endpoint."}]
+
+                        results_subscribe = self.sns_subscribe(protocol, endpoint, topic=topic_arn.split(":")[-1], sns_options=sns_options)
                 
-                for i, vault in enumerate(section_results):
+                for i, vault in enumerate(topic_results):
                     try:
                         import collections
                         result = collections.OrderedDict()
                     except AttributeError:
                         result = dict()
 
-                    if not i:
-                        result['Section name'] = section['topic']
+                    if output == "print":
+                        if not i:
+                            result['Topic'] = topic['topic']
+                            if methods:
+                                result["Subscribe Result"] = results_subscribe[0]['SubscribeResult']
+                            else:
+                                result["Subscribe Result"] = ""
+                        else:
+                            result['Topic'] = ""
+                            result["Subscribe Result"] = ""
                     else:
-                        result['Section name'] = ""
+                        result['Topic'] = topic['topic']
+                        if methods:
+                            result["Subscribe Result"] = results_subscribe[0]['SubscribeResult']
+                        else:
+                            result["Subscribe Result"] = ""
 
                     result["Vault Name"] = vault['Vault Name']
                     result["Request Id"] = vault['Request Id']
@@ -1657,18 +1651,17 @@ your archive ID is correct, and start a retrieval job using \
 
     @glacier_connect
     @sns_connect
-    def sns_subscribe(self, vault_names, protocol, endpoint):
+    def sns_subscribe(self, protocol, endpoint, topic, sns_options, vault_names=None):
         all_topics = self.sns_conn.get_all_topics()['ListTopicsResponse']['ListTopicsResult']['Topics']
 
+        topic_arn = self.sns_conn.create_topic(topic)['CreateTopicResponse']['CreateTopicResult']['TopicArn']
+
+
         if vault_names:
-            topic_arns = []
-            for vault in vault_names:
-                for t in all_topics:
-                    topic_arn = t["TopicArn"]
-                    if vault in topic_arn:
-                        topic_arns += [topic_arn]
-        else:
-            topic_arns = [t["TopicArn"] for t in all_topics]
+            vaults = vault_names.split(",")
+            self._init_events_for_vaults(vaults, topic_arn)
+        
+        topic_arns = [topic_arn]
 
         if len(topic_arns):
             try:
@@ -1687,21 +1680,33 @@ your archive ID is correct, and start a retrieval job using \
 
     @glacier_connect
     @sns_connect
-    def sns_list(self, vault, protocol, endpoint, return_subscription_arn=False):
-        subscriptions = self.sns_conn.get_all_subscriptions()['ListSubscriptionsResponse']['ListSubscriptionsResult']['Subscriptions']
+    def sns_list_topics(self, sns_options):
+        topics = self.sns_conn.get_all_topics()['ListTopicsResponse']['ListTopicsResult']['Topics']
+        
         results = []
-        try:
-            import collections
-            result = collections.OrderedDict()
-        except AttributeError:
-            result = dict()
+        for topic in topics:
+            results += [{ "Topic":topic['TopicArn'].split(":")[-1], "Topic ARN": topic['TopicArn'] }]
+        return results
 
+    @glacier_connect
+    @sns_connect
+    def sns_list_subscriptions(self, protocol, endpoint, topic, sns_options):
+        subscriptions = self.sns_conn.get_all_subscriptions()['ListSubscriptionsResponse']['ListSubscriptionsResult']['Subscriptions']
+
+        results = []
         for sub in subscriptions:
-            subvault = sub['TopicArn'].split(":")[-1].split("-")[-1]
+            try:
+                import collections
+                result = collections.OrderedDict()
+            except AttributeError:
+                result = dict()
+            
+            subtopic = sub['TopicArn'].split(":")[-1]
             subprotocol = sub['Protocol']
             subendpoint = sub['Endpoint']
+            subarn = sub['SubscriptionArn']
             
-            if vault and subvault != vault:
+            if topic and subtopic != topic:
                 continue
             if protocol and subprotocol != protocol:
                 continue
@@ -1709,25 +1714,29 @@ your archive ID is correct, and start a retrieval job using \
                 continue
 
             result['Account #'] = sub['Owner']
-            result['Vault'] = subvault
+            result['Section'] = subtopic
             result['Protocol'] = subprotocol
             result['Endpoint'] =  subendpoint
+            result['ARN'] = subarn
             
-            if return_subscription_arn:
-                result['SubscriptionArn'] = sub['SubscriptionArn']
-
             results += [result]
         return results
 
     @glacier_connect
     @sns_connect
-    def sns_unsubscribe(self, vault, protocol, endpoint):
-        matching_subs = self.sns_list(vault, protocol, endpoint, return_subscription_arn=True)
+    def sns_unsubscribe(self, protocol, endpoint, topic, sns_options):
+        if not protocol or not endpoint or not topic:
+            return [{"Error": "You have to specify at least one option."}]
+        
+        matching_subs = self.sns_list_subscriptions(protocol, endpoint, topic, sns_options=sns_options)
 
+        unsubscribed = []
         for res in matching_subs:
-            self.sns_conn.unsubscribe(res['SubscriptionArn'])
+            if res['ARN'] != u'PendingConfirmation':
+                self.sns_conn.unsubscribe(res['ARN'])
+                unsubscribed += [res]
 
-        return matching_subs
+        return unsubscribed
 
     def __init__(self, aws_access_key, aws_secret_key, region,
                  # sns_enable=False, sns_topic=None, sns_monitored_vaults=False, 
