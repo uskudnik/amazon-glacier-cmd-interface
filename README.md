@@ -292,23 +292,23 @@ Short Notification Service (SNS) is Amazon's technology that allows you to be no
 
 If you run `glacier-cmd sns sync` without specifing anything in your configuration file, it will automatically subscribe all your vaults to `aws-glacier-notifications` topic.
 
-  $ glacier.py sns sync                                           
-  +------------+-------------------------------------------------+
-  | Vault Name |                    Request Id                   |
-  +------------+-------------------------------------------------+
-  |  vault1    | r6egKGUGtCPFi0uEQwP9hIcl5TRSr_EhxxogfX56RnN9FxA |
-  |  vault2    | bXxvIX-gaALibuU7OHOL8OIy1EAPgDDknnswV8DlOsESMAI |
-  |  vault3    | iJTMya-QvQ5Jf17hMd85vY9qk1q2dNwnR90aS-p5Vwl__PY |
-  +------------+-------------------------------------------------+
+    $ glacier.py sns sync                                           
+    +------------+-------------------------------------------------+
+    | Vault Name |                    Request Id                   |
+    +------------+-------------------------------------------------+
+    |  vault1    | r6egKGUGtCPFi0uEQwP9hIcl5TRSr_EhxxogfX56RnN9FxA |
+    |  vault2    | bXxvIX-gaALibuU7OHOL8OIy1EAPgDDknnswV8DlOsESMAI |
+    |  vault3    | iJTMya-QvQ5Jf17hMd85vY9qk1q2dNwnR90aS-p5Vwl__PY |
+    +------------+-------------------------------------------------+
 
 However, if you desire, you can put sections into your settings file to allow for finer control of your notifications. 
 
-  [SNS:topic1]
-  method=email,valid.email@address.com;
+    [SNS:topic1]
+    method=email,valid.email@address.com;
 
-  [SNS:topic2]
-  vaults=vault1,vault2
-  method=email,valid.email-1@address.com;email,valid.email-2@address.com
+    [SNS:topic2]
+    vaults=vault1,vault2
+    method=email,valid.email-1@address.com;email,valid.email-2@address.com
 
 Topic name is specified after `SNS:`. By default, if you don't specify any vaults, all your vault will be subscribed to that topic. 
 
@@ -316,67 +316,67 @@ If you pass in the method argument you will be automatically subscribed to that 
 
 After any changes to your `.glacier-cmd` file you should run `glacier-cmd sns sync` again.
 
-  $ glacier-cmd sns sync
-  +--------+----------------------+------------+-------------------------------------------------+
-  | Topic  |   Subscribe Result   | Vault Name |                    Request Id                   |
-  +--------+----------------------+------------+-------------------------------------------------+
-  | topic1 | pending confirmation |  vault1    | Ap-i98165PUh8eSnppwdstANnwSkcOe9VAqXEhIyY45ybYc |
-  |        |                      |  vault2    | QJOigsIM_JPKG1SEhMYmkbxZzxhQ9lkN4HLKLJKuqaKDHg0 |
-  |        |                      |  vault3    | 5cXDpeL91-ZKNIDKs5nUzqIJ9O1ktujwcPQtQf2tLHmgr54 |
-  | topic2 | pending confirmation |  vault1    | y8mmcnWrK5R5nQzmz5sxlJKD20DVkyDkUkOywo8p273TUDA |
-  |        |                      |  vault4    | gvrFKzO7W4Srr8NoLQLnCxuw64vf_7qpLSdAe_6Pon7KqfQ |
-  +--------+----------------------+------------+-------------------------------------------------+
+    $ glacier-cmd sns sync
+    +--------+----------------------+------------+-------------------------------------------------+
+    | Topic  |   Subscribe Result   | Vault Name |                    Request Id                   |
+    +--------+----------------------+------------+-------------------------------------------------+
+    | topic1 | pending confirmation |  vault1    | Ap-i98165PUh8eSnppwdstANnwSkcOe9VAqXEhIyY45ybYc |
+    |        |                      |  vault2    | QJOigsIM_JPKG1SEhMYmkbxZzxhQ9lkN4HLKLJKuqaKDHg0 |
+    |        |                      |  vault3    | 5cXDpeL91-ZKNIDKs5nUzqIJ9O1ktujwcPQtQf2tLHmgr54 |
+    | topic2 | pending confirmation |  vault1    | y8mmcnWrK5R5nQzmz5sxlJKD20DVkyDkUkOywo8p273TUDA |
+    |        |                      |  vault4    | gvrFKzO7W4Srr8NoLQLnCxuw64vf_7qpLSdAe_6Pon7KqfQ |
+    +--------+----------------------+------------+-------------------------------------------------+
 
 To get a list of all subscriptions you can run `glacier-cmd sns lssub`.
-  
-  $ glacier-cmd sns lssub                                      
-  +--------------+-----------+----------+-------------------------+-----------------------------------------------------------------------------------+
-  |  Account #   |  Section  | Protocol |         Endpoint        |                                        ARN                                        |
-  +--------------+-----------+----------+-------------------------+-----------------------------------------------------------------------------------+
-  | 123456789101 |   vault1  |  email   | valid.email@address.com |                                PendingConfirmation                                |
-  | 123456789101 | allvaults |  email   | valid.email@address.com | arn:aws:sns:us-east-1:123456789101:allvaults:xxxxxxxxxxxxxxxxxx                   |
-  | 123456789101 |  vault2   |  email   | valid.email@address.com |    arn:aws:sns:us-east-1:123456789101:vault2:xxxxxxxxxxxxxxxxxx                   |
-  | 123456789101 |   bleble  |  email   |     mail@example.com    |   arn:aws:sns:us-east-1:123456789101:bleble:xxxxxxxxxxxxxxxxxx                    |
-  | 123456789101 |   bleble  |  email   | valid.email@address.com |                                PendingConfirmation                                |
-  +--------------+-----------+----------+-------------------------+-----------------------------------------------------------------------------------+
+    
+    $ glacier-cmd sns lssub                                      
+    +--------------+-----------+----------+-------------------------+-----------------------------------------------------------------------------------+
+    |  Account #   |  Section  | Protocol |         Endpoint        |                                        ARN                                        |
+    +--------------+-----------+----------+-------------------------+-----------------------------------------------------------------------------------+
+    | 123456789101 |   vault1  |  email   | valid.email@address.com |                                PendingConfirmation                                |
+    | 123456789101 | allvaults |  email   | valid.email@address.com | arn:aws:sns:us-east-1:123456789101:allvaults:xxxxxxxxxxxxxxxxxx                   |
+    | 123456789101 |  vault2   |  email   | valid.email@address.com |    arn:aws:sns:us-east-1:123456789101:vault2:xxxxxxxxxxxxxxxxxx                   |
+    | 123456789101 |   bleble  |  email   |     mail@example.com    |   arn:aws:sns:us-east-1:123456789101:bleble:xxxxxxxxxxxxxxxxxx                    |
+    | 123456789101 |   bleble  |  email   | valid.email@address.com |                                PendingConfirmation                                |
+    +--------------+-----------+----------+-------------------------+-----------------------------------------------------------------------------------+
 
 To get a list of all topics (including non-glacier-related ones) run `glacier-cmd sns lstopic`.
 
-  $ glacier-cmd sns lstopic
-  +-------------------------------+------------------------------------------------------------------+
-  |             Topic             |                            Topic ARN                             |
-  +-------------------------------+------------------------------------------------------------------+
-  |   aws-glacier-notifications   |   arn:aws:sns:us-east-1:123456789101:aws-glacier-notifications   |
-  |            vault2             |             arn:aws:sns:us-east-1:123456789101:vault2            |
-  |            vault1             |             arn:aws:sns:us-east-1:123456789101:vault1            |
-  +-------------------------------+------------------------------------------------------------------+
+    $ glacier-cmd sns lstopic
+    +-------------------------------+------------------------------------------------------------------+
+    |             Topic             |                            Topic ARN                             |
+    +-------------------------------+------------------------------------------------------------------+
+    |   aws-glacier-notifications   |   arn:aws:sns:us-east-1:123456789101:aws-glacier-notifications   |
+    |            vault2             |             arn:aws:sns:us-east-1:123456789101:vault2            |
+    |            vault1             |             arn:aws:sns:us-east-1:123456789101:vault1            |
+    +-------------------------------+------------------------------------------------------------------+
 
 To subscribe to a specific topic, run
   
-  $ glacier-cmd sns subscribe protocol endpoint topic
-  +----------------------+--------------------------------------+
-  |   SubscribeResult    |              RequestId               |
-  +----------------------+--------------------------------------+
-  | pending confirmation | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx |
-  +----------------------+--------------------------------------+
+    $ glacier-cmd sns subscribe protocol endpoint topic
+    +----------------------+--------------------------------------+
+    |   SubscribeResult    |              RequestId               |
+    +----------------------+--------------------------------------+
+    | pending confirmation | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx |
+    +----------------------+--------------------------------------+
 
 You can also pass in the `--vault` argument which will subscribe all specified vaults (separated by comma) to a specified topic.
 
-  $ glacier-cmd sns subscribe email valid.email@address.com topic10 --vault vault1,vault2,vault3
-  +----------------------+--------------------------------------+
-  |   SubscribeResult    |              RequestId               |
-  +----------------------+--------------------------------------+
-  | pending confirmation | e9a1d360-193c-52e4-89b5-9a78f08252ea |
-  +----------------------+--------------------------------------+
+    $ glacier-cmd sns subscribe email valid.email@address.com topic10 --vault vault1,vault2,vault3
+    +----------------------+--------------------------------------+
+    |   SubscribeResult    |              RequestId               |
+    +----------------------+--------------------------------------+
+    | pending confirmation | e9a1d360-193c-52e4-89b5-9a78f08252ea |
+    +----------------------+--------------------------------------+
 
 To unsubscribe, use unsubsribe, which you can limit with --protocol, --endpoint and --topic.
 
-  $ glacier-cmd sns unsubscribe --endpoint valid.email@address.com --protocol email --topic vault2
-  +--------------+---------+----------+-------------------------+-----------------------------------------------------------------------------+
-  |  Account #   | Section | Protocol |         Endpoint        |                                     ARN                                     |
-  +--------------+---------+----------+-------------------------+-----------------------------------------------------------------------------+
-  | 123456789101 |  vault2 |  email   | valid.email@address.com | arn:aws:sns:us-east-1:123456789101:vault2:xxxxxxxxxxxxxxxxxxxxx             |
-  +--------------+---------+----------+-------------------------+-----------------------------------------------------------------------------+
+    $ glacier-cmd sns unsubscribe --endpoint valid.email@address.com --protocol email --topic vault2
+    +--------------+---------+----------+-------------------------+-----------------------------------------------------------------------------+
+    |  Account #   | Section | Protocol |         Endpoint        |                                     ARN                                     |
+    +--------------+---------+----------+-------------------------+-----------------------------------------------------------------------------+
+    | 123456789101 |  vault2 |  email   | valid.email@address.com | arn:aws:sns:us-east-1:123456789101:vault2:xxxxxxxxxxxxxxxxxxxxx             |
+    +--------------+---------+----------+-------------------------+-----------------------------------------------------------------------------+
 
 You have to pass in at least one option. If you pass in only one option, all subscriptions matching that option will be unsubscribed. So if you would pass in `--endpoint valid.email@address.com` all subscriptions to that address would be unsubscribed.
 
