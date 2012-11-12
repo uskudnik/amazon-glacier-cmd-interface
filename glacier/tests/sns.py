@@ -10,10 +10,9 @@ from GlacierWrapper import GlacierWrapper
 
 from boto.glacier.exceptions import UnexpectedHTTPResponseError
 
-import localsettings_tests
+import localsettings
 
-
-class TestGlacierSNSAuto(unittest.TestCase):
+class TestGlacierSNS(unittest.TestCase):
     def setUp(self):
         config = ConfigParser.SafeConfigParser()
         config.read(['/etc/glacier-cmd.conf',
@@ -45,7 +44,9 @@ class TestGlacierSNSAuto(unittest.TestCase):
             if topic['TopicArn'].split(":")[-1].startswith("test_topic"):
                 self.gw.sns_conn.delete_topic(topic['TopicArn'])
 
-    def test_snssync_auto_basic(self):
+
+class TestGlacierSNSAuto(TestGlacierSNS):
+    def test_sync_auto_basic(self):
         """
         No configuration
         """
@@ -91,38 +92,7 @@ class TestGlacierSNSAuto(unittest.TestCase):
         self.gw.rmvault(vault_name)
 
 
-class TestGlacierSNSMultiConfig(unittest.TestCase):
-    def setUp(self):
-        config = ConfigParser.SafeConfigParser()
-        config.read(['/etc/glacier-cmd.conf',
-                    os.path.expanduser('~/.glacier-cmd')])
-
-        secs = config.sections()
-        for sec in secs:
-            if sec != "aws":
-                config.remove_section(sec)
-
-        prepand_options = lambda section: [(section + "_" + k, v)
-                                           for k, v in config.items(section)]
-        self.args = dict(prepand_options("aws"))
-        self.args.update({"region": "us-east-1"})
-
-    def tearDown(self):
-        for vault in self.gw.lsvault():
-            if \
-                vault[u'VaultARN'].split("vaults/")[-1]\
-                    .startswith("test_vvault"):
-                self.gw.rmvault(vault[u'VaultARN'].split("vaults/")[-1])
-
-        topics = self.gw.sns_conn.get_all_topics()\
-['ListTopicsResponse']\
-['ListTopicsResult']\
-['Topics']
-
-        for topic in topics:
-            if topic['TopicArn'].split(":")[-1].startswith("test_topic"):
-                self.gw.sns_conn.delete_topic(topic['TopicArn'])
-
+class TestGlacierSNSMultiConfig(TestGlacierSNS):
     def test_withOUT_method(self):
         """
         Configuration
@@ -192,17 +162,17 @@ class TestGlacierSNSMultiConfig(unittest.TestCase):
         sns_options = {'topics': [
             {'topic': 'test_topic_1', 'options':
                 {'method': '%s,%s;' % (
-                    localsettings_tests.protocol_1,
-                    localsettings_tests.endpoint_1
+                    localsettings.protocol_1,
+                    localsettings.endpoint_1
                 )}},
             {'topic': 'test_topic_2', 'options':
                 {'vaults': 'test_vvault0,test_vvault2',
                  'method': ('%s,%s;'
                             '%s,%s') % (
-                                localsettings_tests.protocol_1,
-                                localsettings_tests.endpoint_1,
-                                localsettings_tests.protocol_2,
-                                localsettings_tests.endpoint_2)}}
+                                localsettings.protocol_1,
+                                localsettings.endpoint_1,
+                                localsettings.protocol_2,
+                                localsettings.endpoint_2)}}
         ],
             'topics_present': True}
 
@@ -238,39 +208,7 @@ class TestGlacierSNSMultiConfig(unittest.TestCase):
             self.gw.rmvault(vault)
 
 
-class TestGlacierSNSManualSubscribe(unittest.TestCase):
-    def setUp(self):
-        config = ConfigParser.SafeConfigParser()
-        config.read(['/etc/glacier-cmd.conf',
-                    os.path.expanduser('~/.glacier-cmd')])
-
-        secs = config.sections()
-        for sec in secs:
-            if sec != "aws":
-                config.remove_section(sec)
-
-        prepand_options = lambda section: [(section + "_" + k, v)
-                                           for k, v in config.items(section)]
-        self.args = dict(prepand_options("aws"))
-        self.args.update({"region": "us-east-1"})
-
-    def tearDown(self):
-        for vault in self.gw.lsvault():
-            if \
-                vault[u'VaultARN'].split("vaults/")[-1]\
-                    .startswith("test_vvault"):
-                self.gw.rmvault(vault[u'VaultARN'].split("vaults/")[-1])
-
-        topics = self.gw.sns_conn.get_all_topics()\
-['ListTopicsResponse']\
-['ListTopicsResult']\
-['Topics']
-
-        for topic in topics:
-            if topic['TopicArn'].split(":")[-1].startswith("test_topic"):
-                self.gw.sns_conn.delete_topic(topic['TopicArn'])
-
-
+class TestGlacierSNSManualSubscribe(TestGlacierSNS):
     def test_subscribe_to_existing_topic(self):
         """
         $ glacier-cmd subscribe email endpoint_1 test_topic_1
@@ -281,7 +219,7 @@ class TestGlacierSNSManualSubscribe(unittest.TestCase):
 
         # sns_subscribe actually creates a topic to "get it"
         response = self.gw.sns_subscribe(protocol="email",
-                                         endpoint=localsettings_tests.endpoint_1,
+                                         endpoint=localsettings.endpoint_1,
                                          topic=topic,
                                          sns_options={})
 
@@ -315,7 +253,7 @@ class TestGlacierSNSManualSubscribe(unittest.TestCase):
             self.gw.mkvault(vault)
 
         response = self.gw.sns_subscribe(protocol="email",
-                                         endpoint=localsettings_tests.endpoint_1,
+                                         endpoint=localsettings.endpoint_1,
                                          topic=topic,
                                          vault_names=",".join(vaults_used),
                                          sns_options={})
