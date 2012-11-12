@@ -1747,6 +1747,7 @@ your archive ID is correct, and start a retrieval job using \
     @sns_connect
     def sns_sync(self, sns_options, output):
         options = sns_options
+        print options
 
         if not options['topics_present']:
             topic = self.sns_conn.create_topic(options['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
