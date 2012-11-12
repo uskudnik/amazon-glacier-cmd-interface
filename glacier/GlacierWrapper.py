@@ -1726,8 +1726,9 @@ your archive ID is correct, and start a retrieval job using \
                        'InventoryRetrievalCompleted']
         }
 
-        return self.glacierconn.set_vault_notifications(vault_name=vault_name,
-                                                        notification_config=config)
+        return self.glacierconn.set_vault_notifications(
+            vault_name=vault_name,
+            notification_config=config)
 
     def _init_events_for_vaults(self, vaults, topic):
         results = []
@@ -1739,7 +1740,8 @@ your archive ID is correct, and start a retrieval job using \
                 result = dict()
 
             result["Vault Name"] = vault_name
-            result["Request Id"] = self._init_events_for_vault(vault_name, topic)[u'RequestId']
+            result["Request Id"] = \
+                self._init_events_for_vault(vault_name, topic)[u'RequestId']
             results += [result]
         return results
 
@@ -1747,7 +1749,6 @@ your archive ID is correct, and start a retrieval job using \
     @sns_connect
     def sns_sync(self, sns_options, output):
         options = sns_options
-        print options
 
         if not options['topics_present']:
             topic = self.sns_conn.create_topic(options['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
