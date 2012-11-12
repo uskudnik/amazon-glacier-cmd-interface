@@ -44,7 +44,9 @@ class GlacierException(Exception):
                  'SdbCommunicationError': 12, # Problem reading/writing SimpleDB data.
                  'ResourceNotFoundException': 13, # Glacier can not find the requested resource.
                  'InvalidParameterValueException': 14, # Parameter not accepted.
-                 'DownloadError': 15 }        # Downloading an archive failed.
+                 'DownloadError': 15,         # Downloading an archive failed.
+                 'SNSConnectionError': 126    # Can not connect to SNS
+    }
                  
     def __init__(self, message, code=None, cause=None):
         """

@@ -2,7 +2,8 @@
 """
 .. module:: GlacierWrapper
    :platform: Unix, Windows
-   :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB support and other features.
+   :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB 
+   support and other features.
 """
 
 import math
@@ -13,7 +14,6 @@ import logging
 import os.path
 import time
 import sys
-import re
 import traceback
 import glaciercorecalls
 import select
@@ -21,7 +21,6 @@ import hashlib
 import fcntl
 import termios
 import struct
-import ConfigParser
 
 import boto
 from boto import sns
@@ -92,7 +91,7 @@ class mmap(object):
     def __init__(self, file):
         self.file = file
         self.size = os.fstat(self.file.fileno()).st_size
-    
+
     def __getitem__(self, key):
         self.file.seek(key.start)
         if key.stop is None:
@@ -100,6 +99,7 @@ class mmap(object):
         else:
             stop = key.stop
         return self.file.read(stop - key.start)
+
 
 class GlacierWrapper(object):
     """
@@ -114,12 +114,14 @@ class GlacierWrapper(object):
     MAX_PARTS = 10000
     AVAILABLE_REGIONS = ('us-east-1', 'us-west-2', 'us-west-1',
                          'eu-west-1', 'ap-northeast-1')
-    AVAILABLE_REGIONS_MESSAGE = """Invalid region. Available regions for Amazon Glacier are:
+    AVAILABLE_REGIONS_MESSAGE = """\
+Invalid region. Available regions for Amazon Glacier are:
 us-east-1 (US - Virginia)
 us-west-1 (US - N. California)
 us-west-2 (US - Oregon)
 eu-west-1 (EU - Ireland)
-ap-northeast-1 (Asia-Pacific - Tokyo)"""
+ap-northeast-1 (Asia-Pacific - Tokyo)\
+"""
 
     def setuplogging(self, logfile, loglevel, logtostdout):
         """
@@ -187,7 +189,6 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
                                 format=logformat,
                                 datefmt=datefmt)
 
-
     def glacier_connect(func):
         """
         Decorator which handles the connection to Amazon Glacier.
@@ -208,7 +209,12 @@ ap-northeast-1 (Asia-Pacific - Tokyo)"""
             if not hasattr(self, "glacierconn") or \
                 (hasattr(self, "glacierconn") and not self.glacierconn):
                 try:
-                    self.logger.debug("""Connecting to Amazon Glacier with \n   aws_access_key %s\n   aws_secret_key %s\n   region %s""",
+                    self.logger.debug("""\
+                        Connecting to Amazon Glacier with
+                        aws_access_key %s
+                        aws_secret_key %s
+                        region %s\
+                        """,
                                       self.aws_access_key,
                                       self.aws_secret_key,
                                       self.region)
@@ -259,13 +265,15 @@ command line, or disable bookkeeping.''',
                 try:
                     self.logger.debug("""\
 Connecting to Amazon SimpleDB domain %s with
-    naws_access_key %s
-    naws_secret_key %s""",
+aws_access_key %s
+aws_secret_key %s\
+""",
                                       self.bookkeeping_domain_name,
                                       self.aws_access_key,
                                       self.aws_secret_key)
-                    self.sdb_conn = boto.connect_sdb(aws_access_key_id=self.aws_access_key,
-                                                     aws_secret_access_key=self.aws_secret_key)
+                    self.sdb_conn = boto.connect_sdb(
+                        aws_access_key_id=self.aws_access_key,
+                        aws_secret_access_key=self.aws_secret_key)
                     domain_name = self.bookkeeping_domain_name
                     self.sdb_domain = self.sdb_conn.create_domain(domain_name)
                 except (boto.exception.AWSConnectionError, boto.exception.SDBResponseError) as e:
@@ -295,49 +303,20 @@ Connecting to Amazon SimpleDB domain %s with
 
             if not hasattr(self, "sns_conn"):
                 try:
-                    self.sns_conn = boto.sns.connect_to_region(aws_access_key_id=self.aws_access_key,
-                                                               aws_secret_access_key=self.aws_secret_key,
-                                                               region_name=self.region)
+                    self.sns_conn = boto.sns.connect_to_region(
+                        aws_access_key_id=self.aws_access_key,
+                        aws_secret_access_key=self.aws_secret_key,
+                        region_name=self.region)
                 except boto.exception.AWSConnectionError as e:
                     raise ConnectionException(
-                            "Cannot connect to Amazon SNS.",
-                            cause=e.cause,
-                            code="SNSConnectionError")
+                        "Cannot connect to Amazon SNS.",
+                        cause=e.cause,
+                        code="SNSConnectionError")
             return func(*args, **kwargs)
         return sns_connect_wrap
 
-#     def sns_enable(func):
-#         """
-#         Decorator to enable notifications on appropriate vaults.
-
-#         :param func: Function to wrap
-#         :type func: function
-
-#         :returns: wrapper function
-#         :rtype: function
-#         :raises: GlacierWrapper.ConnectionException
-#         """
-#         @wraps(func)
-#         def sns_enable_wrap(*args, **kwargs):
-#             self = args[0]
-#             if hasattr(self, "sns_conn"):
-#                 vault_name = args[1]
-
-#                 self.topic = self.sns_conn.create_topic("aws-glacier-%s" % vault_name)
-#                 # self.glacierconn.get_vault_notifications - just enable, either way we make one request (based on http://docs.amazonwebservices.com/sns/latest/api/API_CreateTopic.html)
-# #                "aws-glacier-%s" % vault_name, #TODO format might be a problem; at the moment only 100 topics are allowed
-#                 config = {
-#                     'SNSTopic': self.topic[u'CreateTopicResponse']['CreateTopicResult']['TopicArn'],
-#                     'Events': ['ArchiveRetrievalCompleted', 'InventoryRetrievalCompleted']
-#                 }
-#                 self.glacierconn.set_vault_notifications(vault_name=vault_name, 
-#                                                          notification_config=config)
-#             return func(*args, **kwargs)
-
-#         return sns_enable_wrap
-
     @log_class_call('Checking whether vault name is valid.',
-                     'Vault name is valid.')
+                    'Vault name is valid.')
     def _check_vault_name(self, name):
         """
         Checks whether we have a valid vault name.
@@ -352,8 +331,8 @@ Connecting to Amazon SimpleDB domain %s with
 
         if len(name) > self.MAX_VAULT_NAME_LENGTH:
             raise InputException(
-                u"Vault name can be at most %s characters long."% self.MAX_VAULT_NAME_LENGTH,
-                cause='Vault name more than %s characters long.'% self.MAX_VAULT_NAME_LENGTH,
+                u"Vault name can be at most %s characters long." % self.MAX_VAULT_NAME_LENGTH,
+                cause="Vault name more than %s characters long." % self.MAX_VAULT_NAME_LENGTH,
                 code="VaultNameError")
 
         if len(name) == 0:
@@ -408,7 +387,7 @@ or 0x20-0x7E hexadecimal.""",
         return True
 
     @log_class_call('Checking whether id is valid.',
-                     'Id is valid.')
+                    'Id is valid.')
     def _check_id(self, amazon_id, id_type):
         """
         Checks if an id (jobID, uploadID, archiveID) is valid.
@@ -429,8 +408,8 @@ or 0x20-0x7E hexadecimal.""",
         length = {'JobId': 92,
                   'UploadId': 92,
                   'ArchiveId': 138}
-        self.logger.debug('Checking a %s.'% id_type)
-        if len(amazon_id) <> length[id_type]:
+        self.logger.debug('Checking a %s.' % id_type)
+        if len(amazon_id) != length[id_type]:
             raise InputException(
                 'A %s must be %s characters long. This ID is %s characters.'% (id_type, length[id_type], len(amazon_id)),
                 cause='Incorrect length of the %s string.'% id_type,
@@ -438,10 +417,11 @@ or 0x20-0x7E hexadecimal.""",
 
         m = re.match(self.ID_ALLOWED_CHARACTERS, amazon_id)
         if (m.end() if m else 0) != len(amazon_id):
-            raise InputException(
-                u"""This %s contains invalid characters. \
-Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_type,
-                cause='Illegal characters in the %s string.'% id_type,
+            raise InputException(u"""\
+This %s contains invalid characters. \
+Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)\
+""" % id_type,
+                cause='Illegal characters in the %s string.' % id_type,
                 code="IdError")
 
         return True
@@ -463,7 +443,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         if not region in self.AVAILABLE_REGIONS:
             raise InputException(
                 self.AVAILABLE_REGIONS_MESSAGE,
-                cause='Invalid region code: %s.'% region,
+                cause='Invalid region code: %s.' % region,
                 code='RegionError')
 
         return True
@@ -483,7 +463,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         def _part_size_for_total_size(total_size):
             return self._next_power_of_2(
                 int(math.ceil(
-                        float(total_size) / (1024 * 1024 * self.MAX_PARTS)
+                    float(total_size) / (1024 * 1024 * self.MAX_PARTS)
                 )))
 
         if part_size < 0:
@@ -494,16 +474,18 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)"""% id_t
         else:
             ps = self._next_power_of_2(part_size)
             if not ps == part_size:
-                self.logger.warning('Part size in MB must be a power of 2, \
-e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.'% (part_size, ps))
+                self.logger.warning("""\
+Part size in MB must be a power of 2, \
+e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.\
+""" % (part_size, ps))
 
             part_size = ps
 
-        # Check whether user specified value is big enough, and adjust if needed.
-        if total_size > part_size*1024*1024*self.MAX_PARTS:
+        # Check if user specified value is big enough, and adjust if needed.
+        if total_size > part_size * 1024 * 1024 * self.MAX_PARTS:
             part_size = _part_size_for_total_size(total_size)
             self.logger.warning("Part size given is too small; \
-using %s MB parts to upload."% part_size)
+using %s MB parts to upload." % part_size)
 
         return part_size
 
@@ -554,9 +536,9 @@ using %s MB parts to upload."% part_size)
             # Make sure the message fits on a single line, strip if not,
             # and add spaces to fill the line if it's shorter (to erase
             # old characters from longer lines)
-            msg = msg[:cols] if len(msg)>cols else msg
-            if len(msg)<cols:
-                for i in range(cols-len(msg)):
+            msg = msg[:cols] if len(msg) > cols else msg
+            if len(msg) < cols:
+                for i in range(cols - len(msg)):
                     msg += ' '
 
             sys.stdout.write(msg + '\r')
@@ -577,8 +559,8 @@ using %s MB parts to upload."% part_size)
         :rtype: str
         """
 
-        fmt = "%%3.%sf %%s"% decimals
-        for x in ['bytes','KB','MB','GB']:
+        fmt = "%%3.%sf %%s" % decimals
+        for x in ['bytes', 'KB', 'MB', 'GB']:
             if num < 1024.0:
                 return fmt % (num, x)
 
@@ -661,7 +643,7 @@ using %s MB parts to upload."% part_size)
             response = self.glacierconn.create_vault(vault_name)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
-                'Failed to create vault with name %s.'% vault_name,
+                'Failed to create vault with name %s.' % vault_name,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
@@ -694,7 +676,7 @@ using %s MB parts to upload."% part_size)
             response = self.glacierconn.delete_vault(vault_name)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
-                'Failed to remove vault with name %s.'% vault_name,
+                'Failed to remove vault with name %s.' % vault_name,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
@@ -706,7 +688,7 @@ using %s MB parts to upload."% part_size)
             try:
                 for item in result:
                     self.sdb_domain.delete_item(item)
-                    self.logger.debug('Deleted orphaned archive from the database: %s.'% item.name)
+                    self.logger.debug('Deleted orphaned archive from the database: %s.' % item.name)
             except boto.exception.SDBResponseError as e:
                 raise ResponseException(
                         'SimpleDB did not respond correctly to our orphaned listings check.',
@@ -745,7 +727,7 @@ using %s MB parts to upload."% part_size)
             response = self.glacierconn.describe_vault(vault_name)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
-                'Failed to get description of vault with name %s.'% vault_name,
+                'Failed to get description of vault with name %s.' % vault_name,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
@@ -793,11 +775,13 @@ using %s MB parts to upload."% part_size)
         job_list = []
         while True:
             try:
-                response = self.glacierconn.list_jobs(vault_name, completed=completed,
-                                                      status_code=status_code, marker=marker)
+                response = self.glacierconn.list_jobs(vault_name,
+                                                      completed=completed,
+                                                      status_code=status_code,
+                                                      marker=marker)
             except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                 raise ResponseException(
-                    'Failed to recieve the jobs list for vault %s.'% vault_name,
+                    'Failed to recieve the jobs list for vault %s.' % vault_name,
                     cause=self._decode_error_message(e.body),
                     code=e.code)
             job_list += response.copy()['JobList']
@@ -847,12 +831,12 @@ using %s MB parts to upload."% part_size)
         """
 
         self._check_vault_name(vault_name)
-        self._check_id (job_id, 'JobId')
+        self._check_id(job_id, 'JobId')
         try:
             response = self.glacierconn.describe_job(vault_name, job_id)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
-                'Failed to get description of job with job id %s.'% job_id,
+                'Failed to get description of job with job id %s.' % job_id,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
@@ -888,7 +872,7 @@ using %s MB parts to upload."% part_size)
             response = self.glacierconn.abort_multipart_upload(vault_name, upload_id)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
-                'Failed to abort multipart upload with id %s.'% upload_id,
+                'Failed to abort multipart upload with id %s.' % upload_id,
                 cause=self._decode_error_message(e.body),
                 code=e.code)
 
@@ -924,10 +908,11 @@ using %s MB parts to upload."% part_size)
         uploads = []
         while True:
             try:
-                response = self.glacierconn.list_multipart_uploads(vault_name, marker=marker)
+                response = self.glacierconn.list_multipart_uploads(vault_name,
+                                                                   marker=marker)
             except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
                 raise ResponseException(
-                    'Failed to get a list of multipart uploads for vault %s.'% vault_name,
+                    'Failed to get a list of multipart uploads for vault %s.' % vault_name,
                     cause=self._decode_error_message(e.body),
                     code=e.code)
 
@@ -1727,21 +1712,22 @@ your archive ID is correct, and start a retrieval job using \
             reader = open(file_name, 'rb')
         except IOError as e:
             raise InputException(
-                "Could not access the file given: %s."% file_name,
+                "Could not access the file given: %s." % file_name,
                 cause=e,
                 code='FileError')
 
-        hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024*1024)), '')]
+        hashes = [hashlib.sha256(part).digest() for part in iter((lambda:reader.read(1024 * 1024)), '')]
         return glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hashes))
 
     def _init_events_for_vault(self, vault_name, topic):
         config = {
             'SNSTopic': topic,
-            'Events': ['ArchiveRetrievalCompleted', 'InventoryRetrievalCompleted']
+            'Events': ['ArchiveRetrievalCompleted',
+                       'InventoryRetrievalCompleted']
         }
 
         return self.glacierconn.set_vault_notifications(vault_name=vault_name,
-                                                            notification_config=config)
+                                                        notification_config=config)
 
     def _init_events_for_vaults(self, vaults, topic):
         results = []
@@ -1765,9 +1751,9 @@ your archive ID is correct, and start a retrieval job using \
         if not options['topics_present']:
             topic = self.sns_conn.create_topic(options['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
             if options.get('vaults', None):
-                vaults = options['vaults'].split(",") # monitored vaults
+                vaults = options['vaults'].split(",")  # monitored vaults
             else:
-                vaults = [fvault[u'VaultARN'].split("vaults/")[-1] for fvault in self.lsvault()] # fvault - full vault information
+                vaults = [fvault[u'VaultARN'].split("vaults/")[-1] for fvault in self.lsvault()]  # fvault - full vault information
             return self._init_events_for_vaults(vaults, topic)
         else:
             results = []
@@ -1788,7 +1774,7 @@ your archive ID is correct, and start a retrieval job using \
                     vaults = [fvault[u'VaultARN'].split("vaults/")[-1] for fvault in self.lsvault()]
 
                 topic_arn = self.sns_conn.create_topic(topic['topic'])['CreateTopicResponse']['CreateTopicResult']['TopicArn']
-                
+
                 topic_results = self._init_events_for_vaults(vaults, topic_arn)
 
                 if methods:
@@ -1799,7 +1785,7 @@ your archive ID is correct, and start a retrieval job using \
                             return [{"Error":"You need to specify protocol and endpoint."}]
 
                         results_subscribe = self.sns_subscribe(protocol, endpoint, topic=topic_arn.split(":")[-1], sns_options=sns_options)
-                
+
                 for i, vault in enumerate(topic_results):
                     try:
                         import collections
@@ -1867,7 +1853,7 @@ your archive ID is correct, and start a retrieval job using \
         
         results = []
         for topic in topics:
-            results += [{ "Topic":topic['TopicArn'].split(":")[-1], "Topic ARN": topic['TopicArn'] }]
+            results += [{"Topic":topic['TopicArn'].split(":")[-1], "Topic ARN":topic['TopicArn']}]
         return results
 
     @glacier_connect
@@ -1882,12 +1868,12 @@ your archive ID is correct, and start a retrieval job using \
                 result = collections.OrderedDict()
             except AttributeError:
                 result = dict()
-            
+
             subtopic = sub['TopicArn'].split(":")[-1]
             subprotocol = sub['Protocol']
             subendpoint = sub['Endpoint']
             subarn = sub['SubscriptionArn']
-            
+
             if topic and subtopic != topic:
                 continue
             if protocol and subprotocol != protocol:
@@ -1898,9 +1884,8 @@ your archive ID is correct, and start a retrieval job using \
             result['Account #'] = sub['Owner']
             result['Section'] = subtopic
             result['Protocol'] = subprotocol
-            result['Endpoint'] =  subendpoint
+            result['Endpoint'] = subendpoint
             result['ARN'] = subarn
-            
             results += [result]
         return results
 
@@ -1909,8 +1894,10 @@ your archive ID is correct, and start a retrieval job using \
     def sns_unsubscribe(self, protocol, endpoint, topic, sns_options):
         if not protocol or not endpoint or not topic:
             return [{"Error": "You have to specify at least one option."}]
-        
-        matching_subs = self.sns_list_subscriptions(protocol, endpoint, topic, sns_options=sns_options)
+        matching_subs = self.sns_list_subscriptions(protocol,
+                                                    endpoint,
+                                                    topic,
+                                                    sns_options=sns_options)
 
         unsubscribed = []
         for res in matching_subs:
@@ -1921,9 +1908,6 @@ your archive ID is correct, and start a retrieval job using \
         return unsubscribed
 
     def __init__(self, aws_access_key, aws_secret_key, region,
-                 # sns_enable=False, sns_topic=None, sns_monitored_vaults=False, 
-                 sns_options=None,
-                 config_object=None,
                  bookkeeping=False, bookkeeping_domain_name=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
@@ -1951,13 +1935,6 @@ your archive ID is correct, and start a retrieval job using \
         self.aws_secret_key = aws_secret_key
         self.bookkeeping = bookkeeping
         self.bookkeeping_domain_name = bookkeeping_domain_name
-        
-        # self.sns_enable = sns_enable
-        # self.sns_topic = sns_topic
-        # self.sns_monitored_vaults = sns_monitored_vaults
-        
-        # self.config_object = config_object
-        # self.sns_options = sns_options
 
         self.region = region
 
