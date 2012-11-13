@@ -1784,8 +1784,11 @@ your archive ID is correct, and start a retrieval job using \
                         try:
                             protocol, endpoint = method.split(',')
                         except ValueError:
-                            return [{"Error":"You need to specify protocol and endpoint."}]
-
+                            raise InputException(
+                                ("If you specify method, you should use format "
+                                 "'protocol1,endpoint1;protocol2,endpoint2'."),
+                                cause='Wrong method format in configuration file.',
+                                code='SNSConfigurationError')
                         results_subscribe = self.sns_subscribe(protocol, endpoint, topic=topic_arn.split(":")[-1], sns_options=sns_options)
 
                 for i, vault in enumerate(topic_results):
@@ -1896,6 +1899,12 @@ your archive ID is correct, and start a retrieval job using \
     def sns_unsubscribe(self, protocol, endpoint, topic, sns_options):
         if not protocol or not endpoint or not topic:
             return [{"Error": "You have to specify at least one option."}]
+            raise InputException(
+                ("You must specify at least one parameter that will "
+                 "by which subscriptions will be canceled."),
+                cause='No parameters given for unsubscribe.',
+                code='SNSParameterError')
+
         matching_subs = self.sns_list_subscriptions(protocol,
                                                     endpoint,
                                                     topic,

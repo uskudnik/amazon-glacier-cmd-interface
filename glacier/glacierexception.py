@@ -30,7 +30,7 @@ class GlacierException(Exception):
     ERRORCODE = {'InternalError': 127,        # Library internal error.
                  'UndefinedErrorCode': 126,   # Undefined code.
                  'NoResults': 125,            # Operation yielded no results.
-                 'GlacierConnectionError': 1, # Can not connect to Glacier. 
+                 'GlacierConnectionError': 1,  # Can not connect to Glacier. 
                  'SdbConnectionError': 2,     # Can not connect to SimpleDB.
                  'CommandError': 3,           # Command line is invalid.
                  'VaultNameError': 4,         # Invalid vault name.
@@ -43,9 +43,11 @@ class GlacierException(Exception):
                  'BookkeepingError': 11,      # Bookkeeping not available.
                  'SdbCommunicationError': 12, # Problem reading/writing SimpleDB data.
                  'ResourceNotFoundException': 13, # Glacier can not find the requested resource.
-                 'InvalidParameterValueException': 14, # Parameter not accepted.
+                 'InvalidParameterValueException': 14,  # Parameter not accepted.
                  'DownloadError': 15,         # Downloading an archive failed.
-                 'SNSConnectionError': 126    # Can not connect to SNS
+                 'SNSConnectionError': 126,   # Can not connect to SNS
+                 'SNSConfigurationError': 127,  # Problem with configuration file
+                 'SNSParameterError':128,     # Problem with arguments passed to SNS
     }
                  
     def __init__(self, message, code=None, cause=None):
