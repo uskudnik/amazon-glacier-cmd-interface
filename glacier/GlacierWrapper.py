@@ -246,6 +246,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)\
         @log_class_call("Connecting to Amazon SimpleDB.",
                         "Connection to Amazon SimpleDB successful.")
         def sdb_connect_wrap(*args, **kwargs):
+            print "sdb_connect_wrap"
             self = args[0]
             if not self.bookkeeping:
                 return func(*args, **kwargs)
@@ -254,6 +255,7 @@ ap-northeast-1 (Asia-Pacific - Tokyo)\
             # we need to glaciercorecalls?
 
             if not self.bookkeeping_domain_name:
+                print "no bookkeeping_domain_name"
                 raise InputException(
                     '''\
 Bookkeeping enabled but no Amazon SimpleDB domain given.
@@ -262,7 +264,9 @@ command line, or disable bookkeeping.''',
                     code="SdbConnectionError")
 
             if not hasattr(self, 'sdb_conn'):
+                print "no attr sdb_conn"
                 try:
+                    print "tralala"
                     self.logger.debug("""\
 Connecting to Amazon SimpleDB domain %s with
 aws_access_key %s
@@ -277,6 +281,7 @@ aws_secret_key %s\
                     domain_name = self.bookkeeping_domain_name
                     self.sdb_domain = self.sdb_conn.create_domain(domain_name)
                 except (boto.exception.AWSConnectionError, boto.exception.SDBResponseError) as e:
+                    print "exception occured"
                     raise ConnectionException(
                         "Cannot connect to Amazon SimpleDB.",
                         cause=e,
@@ -834,6 +839,7 @@ using %s MB parts to upload." % part_size)
         self._check_id(job_id, 'JobId')
         try:
             response = self.glacierconn.describe_job(vault_name, job_id)
+            print response
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
             raise ResponseException(
                 'Failed to get description of job with job id %s.' % job_id,
@@ -1597,6 +1603,7 @@ your archive ID is correct, and start a retrieval job using \
             # to find the latest finished job, or that failing the latest
             # in progress job.
             job_list = self.list_jobs(vault_name)
+            print job_list
             inventory_done = False
             for job in job_list:
                 if job['Action'] == "InventoryRetrieval":
@@ -1618,6 +1625,7 @@ your archive ID is correct, and start a retrieval job using \
                 self.logger.debug('Fetching results of finished inventory retrieval.')
                 response = self.glacierconn.get_job_output(vault_name, inventory_job['JobId'])
                 inventory = response.copy()
+                print inventory
                 archives = []
 
                 # If bookkeeping is enabled, update cache.
