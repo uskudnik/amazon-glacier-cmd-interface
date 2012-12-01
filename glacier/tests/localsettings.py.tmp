@@ -1,0 +1,6 @@
+#!/usr/bin/python
+protocol_1 = ""  # email, http/https
+protocol_2 = ""
+
+endpoint_1 = ""
+endpoint_2 = ""

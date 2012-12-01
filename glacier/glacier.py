@@ -123,7 +123,7 @@ def size_fmt(num, decimals = 1):
         
     return fmt % (num, 'TB')
 
-def default_glacier_wrapper(args):
+def default_glacier_wrapper(args, **kwargs):
     """
     Convenience function to call an instance of GlacierWrapper
     with all required arguments.
@@ -133,6 +133,11 @@ def default_glacier_wrapper(args):
                           args.region,
                           bookkeeping=args.bookkeeping,
                           bookkeeping_domain_name=args.bookkeeping_domain_name,
+                          # sns_enable=args.sns_enable,
+                          # sns_topic=args.sns_topic,
+                          # sns_monitored_vaults=args.sns_monitored_vaults,
+                          # sns_options=args.sns_options,
+                          # config_object=args.config_object,
                           logfile=args.logfile,
                           loglevel=args.loglevel,
                           logtostdout=args.logtostdout)
@@ -419,6 +424,58 @@ def treehash(args):
 
     output_table(hash_results, args.output)
 
+def snssync(args):
+    """
+    If monitored_vaults is specified in configuration file, subscribe vaults
+    specificed in it to notifications, otherwiser subscribe all vault.
+    """
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_sync(sns_options=args.sns_options, output=args.output)
+    output_table(response, args.output)
+
+def snssubscribe(args):
+    """
+    Subscribe individual vaults to notifications by method specified by user.
+    """
+    protocol = args.protocol
+    endpoint = args.endpoint
+    vault_names = args.vault
+    topic = args.topic
+
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_subscribe(protocol, endpoint, topic, vault_names=vault_names, sns_options=args.sns_options)
+    output_table(response, args.output)
+
+def snslistsubscriptions(args):
+    """
+    List subscriptions.
+    """
+    protocol = args.protocol
+    endpoint = args.endpoint
+    topic = args.topic
+
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_list_subscriptions(protocol, endpoint, topic, sns_options=args.sns_options)
+    output_table(response, args.output)
+
+def snslisttopics(args):
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_list_topics(sns_options=args.sns_options)
+    output_table(response, args.output)
+
+def snsunsubscribe(args):
+    """
+    Unsubscribe individual vaults from notifications for specified protocol, 
+    endpoint and vault.
+    """
+    protocol = args.protocol
+    endpoint = args.endpoint
+    topic = args.topic
+
+    glacier = default_glacier_wrapper(args)
+    response = glacier.sns_unsubscribe(protocol, endpoint, topic, sns_options=args.sns_options)
+    output_table(response, args.output)    
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
@@ -437,12 +494,16 @@ def main():
     args, remaining_argv = conf_parser.parse_known_args()
 
     # Here we parse config from files in home folder or in current folder
-    # We use separate sections for aws and glacier specific configs
+    # We use separate topics for aws and glacier specific configs
     aws = glacier = {}
     config = ConfigParser.SafeConfigParser()
-    if config.read(['/etc/glacier-cmd.conf',
+
+    sns = {'topics_present':False, 'topic':'aws-glacier-notifications'}
+
+    configs_read = config.read(['/etc/glacier-cmd.conf',
                     os.path.expanduser('~/.glacier-cmd'),
-                    args.conf]):
+                    args.conf])
+    if configs_read:
         try:
             aws = dict(config.items("aws"))
         except ConfigParser.NoSectionError:
@@ -452,6 +513,28 @@ def main():
         except ConfigParser.NoSectionError:
             pass
 
+        topics_present = any(topic for topic in config.sections() if topic.startswith("SNS:"))
+        if topics_present:
+            sns = { 'topics_present':True }
+
+            sns_topics = []
+            for topic in config.sections():
+                if topic.startswith("SNS:"):
+                    s = {
+                        'topic':topic.split("SNS:")[-1],
+                        'options':dict(config.items(topic))
+                    }
+                    sns_topics += [s]
+            
+            if sns_topics:
+                sns['topics'] = sns_topics
+        elif any(topic for topic in config.sections() if topic == "SNS"):
+            sns = { 'topics_present':False }
+            if not config.get('SNS', 'topic', vars={ "topic":None }):
+                sns['topic'] = "aws-glacier-notifications"
+            else:
+                sns['topic'] = config.get('SNS', 'topic')
+
     # Join config options with environments
     aws = dict(os.environ.items() + aws.items() )
     glacier = dict(os.environ.items() + glacier.items() )
@@ -460,6 +543,12 @@ def main():
     filt_s= lambda x: x.lower().replace("_","-")
     filt = lambda x,y="": dict(((y+"-" if y not in filt_s(k) else "") +
                              filt_s(k), v) for (k, v) in x.iteritems())
+
+    """
+    >>> a = {'notifications': 'True', 'monitored_vaults': 'vvt,vv1', "aws-foo":"neki"}
+    >>> filt(a, "aws").get('aws-foo')
+    'neki'
+    """
     a_required = lambda x: x not in filt(aws, "aws")
     required = lambda x: x not in filt(glacier)
     a_default = lambda x: filt(aws, "aws").get(x)
@@ -472,6 +561,7 @@ def main():
     subparsers = parser.add_subparsers(title='Subcommands',
         help=u"For subcommand help, use: glacier-cmd <subcommand> -h")
 
+    # Amazon Web Services settings
     group = parser.add_argument_group('aws')
     help_msg_config = u"(Required if you have not created a \
                         ~/.glacier-cmd or /etc/glacier-cmd.conf config file)"
@@ -483,6 +573,8 @@ def main():
                        required=a_required("aws-secret-key"),
                        default=a_default("aws-secret-key"),
                        help="Your aws secret key " + help_msg_config)
+
+    # Glacier settings
     group = parser.add_argument_group('glacier')
     group.add_argument('--region',
                        required=required("region"),
@@ -542,7 +634,7 @@ def main():
     parser_rmvault.add_argument('vault',
         help='The vault to be removed.')
     parser_rmvault.set_defaults(func=rmvault)
-    
+
     # glacier-cmd upload <vault> <filename> [--description <description>] [--name <store file name>] [--partsize <part size>]
     # glacier-cmd upload <vault> --stdin [--description <description>] [--name <store file name>] [--partsize <part size>]
     parser_upload = subparsers.add_parser('upload',
@@ -737,6 +829,57 @@ at hand.''')
     parser_describejob.add_argument('filename', nargs='*',
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
+
+    # SNS related commands are located in their own subparser 
+    parser_sns = subparsers.add_parser('sns', 
+        help="Subcommands related to SNS")
+    sns_subparsers = parser_sns.add_subparsers(title="Subcommands related to SNS")
+
+    # glacier-cmd sns syncs
+    sns_parser_sync = sns_subparsers.add_parser('sync',
+        help="Go through configuration file and either subscribe all vaults to default topic or, if sections are present, create separate topics and subscribe specified vaults to that topic.")
+    sns_parser_sync.set_defaults(func=snssync, sns_options=sns)
+
+    # glacier-cmd sns subscribe protocol endpoint topic [--vault]
+    sns_parser_subscribe = sns_subparsers.add_parser('subscribe',
+        help="Subscribe to topic.")
+    sns_parser_subscribe.add_argument("protocol",
+        help="Protocol used for notifications. Can be email, http, https or sms.")
+    sns_parser_subscribe.add_argument("endpoint",
+        help="Valid applicable endpoint - email address, URL or phone number.")
+    sns_parser_subscribe.add_argument("topic", 
+        help="Topic for which notifications will be sent to specified protocol and endpoint.")
+    sns_parser_subscribe.add_argument("--vault",
+        help="Optional vault names, seperated by comma, for this a new topic will be created and subscribed to.")
+    sns_parser_subscribe.set_defaults(func=snssubscribe, sns_options={ "options":sns, })
+
+    # glacier-cmd sns unsubscribe [--protocol <protocol>] [--endpoint <endpoint>] [--topic <topic>]
+    sns_parser_unsubscribe = sns_subparsers.add_parser('unsubscribe',
+        help="Unsubscribe from a specified topic.")
+    sns_parser_unsubscribe.add_argument("--protocol",
+        help="Protocol used for notifications. Can be email, http, https or sms.")
+    sns_parser_unsubscribe.add_argument("--endpoint",
+        help="Valid applicable endpoint - email address, URL or phone number.")
+    sns_parser_unsubscribe.add_argument("--topic",
+        help="Topic for which notifications will be sent to specified protocol and endpoint.")
+    sns_parser_unsubscribe.set_defaults(func=snsunsubscribe, sns_options=sns)
+
+    # glacier-cmd sns lssub [--protocol <protocol>] [--endpoint <endpoint>] [--topic <topic>]
+    sns_parser_listsubs = sns_subparsers.add_parser('lssub', 
+        help="List subscriptions. Other arguments are ANDed together.")
+    sns_parser_listsubs.add_argument("--protocol",
+        help="Show only subscriptions on a specified protocol.")
+    sns_parser_listsubs.add_argument("--endpoint",
+        help="Show only subscriptions to a specified endpoint.")
+    sns_parser_listsubs.add_argument("--topic",
+        help="Show only subscriptions for a specified topic.")
+    sns_parser_listsubs.set_defaults(func=snslistsubscriptions, sns_options=sns)
+
+    # glacier-cmd sns lstopic
+    sns_parser_listtopics = sns_subparsers.add_parser('lstopic',
+        help="List all topics.")
+    sns_parser_listtopics.set_defaults(func=snslisttopics, sns_options=sns)
+    
 
     # TODO args.logtostdout becomes false when parsing the remaining_argv
     # so here we bridge this. An ugly hack but it works.
