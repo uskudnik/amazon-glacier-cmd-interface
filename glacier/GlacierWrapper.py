@@ -1367,7 +1367,7 @@ your archive ID is correct, and start a retrieval job using \
                     cause=self._decode_error_message(e.body),
                     code=e.code)
 
-            hash_list.append(glaciercorecalls.chunk_hashes(data))
+            hash_list.append(glaciercorecalls.chunk_hashes(data)[0])
             downloaded_size = to_bytes
             if out_file:
                 try:
@@ -1402,8 +1402,7 @@ your archive ID is correct, and start a retrieval job using \
 
         if out_file:
             out_file.close()
-
-        if glaciercorecalls.tree_hash(hash_list) != download_job['SHA256TreeHash']:
+        if glaciercorecalls.bytes_to_hex(glaciercorecalls.tree_hash(hash_list)) != download_job['SHA256TreeHash']:
             raise CommunicationException(
                 "Downloaded data hash mismatch",
                 code="DownloadError",
@@ -1412,7 +1411,7 @@ your archive ID is correct, and start a retrieval job using \
         self.logger.debug('Download of archive finished successfully.')
         current_time = time.time()
         overall_rate = int(downloaded_size/(current_time - start_time))
-        msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
+        msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(downloaded_size),
                                             self._size_fmt(overall_rate, 2))
         self._progress(msg)
         self.logger.info(msg)
