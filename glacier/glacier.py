@@ -15,6 +15,7 @@ import locale
 import glob
 import csv
 import json
+import pprint
 
 from prettytable import PrettyTable
 
@@ -22,6 +23,9 @@ from GlacierWrapper import GlacierWrapper
 
 from functools import wraps
 from glacierexception import *
+
+pp = pprint.PrettyPrinter(indent=5)
+
 
 def output_headers(headers, output):
     """
@@ -270,6 +274,9 @@ def upload(args):
     Upload a file or a set of files to a Glacier vault.
     """
 
+    pp.pprint(args)
+    sys.exit()
+
     # See if we got a bacula-style file set.
     # This is /path/to/vol001|vol002|vol003
     if args.bacula:
@@ -495,7 +502,7 @@ def main():
 
     # Here we parse config from files in home folder or in current folder
     # We use separate topics for aws and glacier specific configs
-    aws = glacier = {}
+    aws = glacier = sdb = {}
     config = ConfigParser.SafeConfigParser()
 
     sns = {'topics_present':False, 'topic':'aws-glacier-notifications'}
@@ -510,6 +517,13 @@ def main():
             pass
         try:
             glacier = dict(config.items("glacier"))
+        except ConfigParser.NoSectionError:
+            pass
+        try:
+            sdb = dict(config.items("sdb"))
+            for key,value in sdb.items():
+                sdb["sdb_%s"%key]=value
+                del sdb[key]
         except ConfigParser.NoSectionError:
             pass
 
@@ -538,20 +552,29 @@ def main():
     # Join config options with environments
     aws = dict(os.environ.items() + aws.items() )
     glacier = dict(os.environ.items() + glacier.items() )
+    sdb = dict(os.environ.items() + sdb.items() )
 
-    # Helper functions
+    print "aws-----------"
+    pp.pprint(aws)
+    print "glacier-----------"
+    pp.pprint(glacier)
+    print "sdb-----------"
+    pp.pprint(sdb)
+
+# Helper functions
     filt_s= lambda x: x.lower().replace("_","-")
     filt = lambda x,y="": dict(((y+"-" if y not in filt_s(k) else "") +
                              filt_s(k), v) for (k, v) in x.iteritems())
-
     """
     >>> a = {'notifications': 'True', 'monitored_vaults': 'vvt,vv1', "aws-foo":"neki"}
     >>> filt(a, "aws").get('aws-foo')
     'neki'
     """
     a_required = lambda x: x not in filt(aws, "aws")
+    s_required = lambda x: x not in filt(sdb, "sdb")
     required = lambda x: x not in filt(glacier)
     a_default = lambda x: filt(aws, "aws").get(x)
+    s_default = lambda x: filt(sdb, "sdb").get(x)
     default = lambda x: filt(glacier).get(x)
 
     # Main configuration parser
@@ -608,6 +631,22 @@ def main():
                        default=default('output') if default('output') else 'print',
                        choices=['print', 'csv', 'json'],
                        help='Set how to return results: print to the screen, or as csv resp. json string.')
+
+    # SimpleDB settings
+    group = parser.add_argument_group('sdb')
+    group.add_argument('--sdb-access-key',
+        required=s_required("sdb-access-key"),
+        default=s_default("sdb-access-key"),
+        help="aws access key to be used with bookkeeping" + help_msg_config)
+    group.add_argument('--sdb-secret-key',
+        required=s_required("sdb-secret-key"),
+        default=s_default("sdb-secret-key"),
+        help="aws secret key to be used with bookkeeping" + help_msg_config)
+    group.add_argument('--sdb-region',
+        required=s_required("sdb-region"),
+        default=s_default("sdb-region"),
+        help="Region where you want to store \
+                             your bookkeeping " + help_msg_config)
 
     # glacier-cmd mkvault <vault>
     parser_mkvault = subparsers.add_parser("mkvault",
