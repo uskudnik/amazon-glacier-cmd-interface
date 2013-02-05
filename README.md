@@ -52,7 +52,7 @@ Here is an example configuration:
 
     [sdb]
     access_key=your_sdb_access_key
-    secret_key=your_sdn_secret_key
+    secret_key=your_sdb_secret_key
     region=us-west-1
 
     [glacier]
