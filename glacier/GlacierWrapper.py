@@ -271,7 +271,8 @@ aws_secret_key %s\
                                       self.bookkeeping_domain_name,
                                       self.aws_access_key,
                                       self.aws_secret_key)
-                    self.sdb_conn = boto.connect_sdb(
+                    self.sdb_conn = boto.sdb.connect__to_region(
+                        self.sdb_region,
                         aws_access_key_id=self.aws_access_key,
                         aws_secret_access_key=self.aws_secret_key)
                     domain_name = self.bookkeeping_domain_name
@@ -1919,6 +1920,7 @@ your archive ID is correct, and start a retrieval job using \
 
     def __init__(self, aws_access_key, aws_secret_key, region,
                  bookkeeping=False, bookkeeping_domain_name=None,
+                 sdb_access_key=None, sdb_secret_key=None, sdb_region=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
         Constructor, sets up important variables and so for GlacierWrapper.
@@ -1933,6 +1935,12 @@ your archive ID is correct, and start a retrieval job using \
         :type bookkeeping: boolean
         :param bookkeeping_domain_name: your Amazon SimpleDB domain name where the bookkeeping information will be stored.
         :type bookkeeping_domain_name: str
+        :param sdb_access_key: your SimpleDB access key.
+        :type sdb_access_key: str
+        :param sdb_secret_key: your SimpleDB secret key.
+        :type sdb_secret_key: str
+        :param sdb_region: name of your sdb region, see :ref:`regions`.
+        :type sdb_region: str
         :param logfile: complete file name of where to log messages.
         :type logfile: str
         :param loglevel: the desired loglevel, see :py:func:`setuplogging`
@@ -1948,6 +1956,10 @@ your archive ID is correct, and start a retrieval job using \
 
         self.region = region
 
+        self.sdb_access_key = sdb_access_key if sdb_access_key else aws_access_key
+        self.sdb_secret_key = sdb_secret_key if sdb_secret_key else aws_secret_key
+        self.sdb_region = sdb_region if sdb_region else region
+
         self.setuplogging(logfile, loglevel, logtostdout)
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -1960,9 +1972,13 @@ Creating GlacierWrapper instance with
     bookkeeping=%r,
     bookkeeping_domain_name=%s,
     region=%s,
+    sdb_access_key=%s,
+    sdb_secret_key=%s,
+    sdb_region=%s,
     logfile %s,
     loglevel %s,
     logging to stdout %s.""",
                           aws_access_key, aws_secret_key, bookkeeping,
-                          bookkeeping_domain_name, region, logfile,
-                          loglevel, logtostdout)
+                          bookkeeping_domain_name, region,
+                          sdb_access_key, sdb_secret_key, sdb_region,
+                          logfile, loglevel, logtostdout)

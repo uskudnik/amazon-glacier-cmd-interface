@@ -15,7 +15,6 @@ import locale
 import glob
 import csv
 import json
-import pprint
 
 from prettytable import PrettyTable
 
@@ -23,9 +22,6 @@ from GlacierWrapper import GlacierWrapper
 
 from functools import wraps
 from glacierexception import *
-
-pp = pprint.PrettyPrinter(indent=5)
-
 
 def output_headers(headers, output):
     """
@@ -137,6 +133,9 @@ def default_glacier_wrapper(args, **kwargs):
                           args.region,
                           bookkeeping=args.bookkeeping,
                           bookkeeping_domain_name=args.bookkeeping_domain_name,
+                          sdb_access_key=args.sdb_access_key,
+                          sdb_secret_key=args.sdb_secret_key,
+                          sdb_region=args.sdb_region,
                           # sns_enable=args.sns_enable,
                           # sns_topic=args.sns_topic,
                           # sns_monitored_vaults=args.sns_monitored_vaults,
@@ -273,9 +272,6 @@ def upload(args):
     """
     Upload a file or a set of files to a Glacier vault.
     """
-
-    pp.pprint(args)
-    sys.exit()
 
     # See if we got a bacula-style file set.
     # This is /path/to/vol001|vol002|vol003
@@ -554,14 +550,7 @@ def main():
     glacier = dict(os.environ.items() + glacier.items() )
     sdb = dict(os.environ.items() + sdb.items() )
 
-    print "aws-----------"
-    pp.pprint(aws)
-    print "glacier-----------"
-    pp.pprint(glacier)
-    print "sdb-----------"
-    pp.pprint(sdb)
-
-# Helper functions
+    # Helper functions
     filt_s= lambda x: x.lower().replace("_","-")
     filt = lambda x,y="": dict(((y+"-" if y not in filt_s(k) else "") +
                              filt_s(k), v) for (k, v) in x.iteritems())
