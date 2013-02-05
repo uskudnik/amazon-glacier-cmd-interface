@@ -23,6 +23,7 @@ import termios
 import struct
 
 import boto
+import boto.sdb
 from boto import sns
 
 from functools import wraps
@@ -271,10 +272,10 @@ aws_secret_key %s\
                                       self.bookkeeping_domain_name,
                                       self.aws_access_key,
                                       self.aws_secret_key)
-                    self.sdb_conn = boto.sdb.connect__to_region(
+                    self.sdb_conn = boto.sdb.connect_to_region(
                         self.sdb_region,
-                        aws_access_key_id=self.aws_access_key,
-                        aws_secret_access_key=self.aws_secret_key)
+                        aws_access_key_id=self.sdb_access_key,
+                        aws_secret_access_key=self.sdb_secret_key)
                     domain_name = self.bookkeeping_domain_name
                     self.sdb_domain = self.sdb_conn.create_domain(domain_name)
                 except (boto.exception.AWSConnectionError, boto.exception.SDBResponseError) as e:
