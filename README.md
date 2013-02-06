@@ -50,6 +50,11 @@ Here is an example configuration:
     access_key=your_access_key
     secret_key=your_secret_key
 
+    [sdb]
+    access_key=your_sdb_access_key
+    secret_key=your_sdb_secret_key
+    region=us-west-1
+
     [glacier]
     region=us-east-1
     bookkeeping=True
