@@ -1164,12 +1164,12 @@ using %s MB parts to upload." % part_size)
                 # Estimate finish time, based on overall transfer rate.
                 if overall_rate > 0:
                     time_left = (total_size - writer.uploaded_size)/overall_rate
-                    eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+                    eta = time.strftime("%a %b %d %H:%M:%S", time.localtime(current_time + time_left))
                 else:
                     time_left = "Unknown"
                     eta = "Unknown"
 
-                msg = 'Wrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+                msg = 'Wrote %s of %s (%s%%). Rate %s/s, average %s/s, ETA %s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(total_size),
                          self._bold(str(int(100 * writer.uploaded_size/total_size))),
@@ -1391,8 +1391,8 @@ your archive ID is correct, and start a retrieval job using \
 
             # Estimate finish time, based on overall transfer rate.
             time_left = (total_size - downloaded_size)/overall_rate
-            eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
-            msg = 'Read %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+            eta = time.strftime("%a %b %d %H:%M:%S", time.localtime(current_time + time_left))
+            msg = 'Read %s of %s (%s%%). Rate %s/s, average %s/s, ETA %s.' \
                   % (self._size_fmt(downloaded_size),
                      self._size_fmt(total_size),
                      self._bold(str(int(100 * downloaded_size/total_size))),
