@@ -222,6 +222,7 @@ Usage description(help):
                        [--aws-access-key AWS_ACCESS_KEY]
                        [--aws-secret-key AWS_SECRET_KEY] [--region REGION]
                        [--bookkeeping]
+                       [--no-bookkeeping]
                        [--bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME]
                        [--logfile LOGFILE]
                        [--loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}]
@@ -283,6 +284,9 @@ Usage description(help):
      --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
                            Amazon SimpleDB domain name for bookkeeping. (default:
                            squirrel)
+     --no-bookkeeping      If present, overrides either CLI or configuration file
+                           options provided for bookkeeping either beforehand or 
+                           afterwards
      --logfile LOGFILE     File to write log messages to. (default: /home/wouter
                            /.glacier-cmd.log)
      --loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}
@@ -291,6 +295,10 @@ Usage description(help):
      --output {print,csv,json}
                            Set how to return results: print to the screen, or as
                            csv resp. json string. (default: print)
+
+SimpleDB bookkeeping (custom) domain name
+-----------------------------------------
+If you don't know how to or don't have utilities to create custom SimpleDB domain, you can use [Javascript Scratchpad for Amazon SimpleDB](http://aws.amazon.com/code/developertools/1137). It should help you create that in no time.
 
 SNS
 ---
