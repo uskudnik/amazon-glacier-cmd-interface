@@ -1164,12 +1164,19 @@ using %s MB parts to upload." % part_size)
                 # Estimate finish time, based on overall transfer rate.
                 if overall_rate > 0:
                     time_left = (total_size - writer.uploaded_size)/overall_rate
-                    eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
+                    eta_seconds = current_time + time_left
+                    if datetime.datetime.fromtimestamp(eta_seconds).day is not\
+                            datetime.datetime.now().day:
+                        eta_template = "%a, %d %b, %H:%M:%S"
+                    else:
+                        eta_template = "%H:%M:%S"
+                    eta = time.strftime(eta_template,
+                                        time.localtime(eta_seconds))
                 else:
                     time_left = "Unknown"
                     eta = "Unknown"
 
-                msg = 'Wrote %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+                msg = 'Wrote %s of %s (%s%%). Rate %s/s, average %s/s, ETA %s.' \
                       % (self._size_fmt(writer.uploaded_size),
                          self._size_fmt(total_size),
                          self._bold(str(int(100 * writer.uploaded_size/total_size))),
@@ -1187,7 +1194,8 @@ using %s MB parts to upload." % part_size)
             self.logger.debug(msg)
 
         writer.close()
-        f.close()
+        if not stdin:
+            f.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))
         msg = 'Wrote %s. Rate %s/s.\n' % (self._size_fmt(writer.uploaded_size),
@@ -1390,8 +1398,15 @@ your archive ID is correct, and start a retrieval job using \
 
             # Estimate finish time, based on overall transfer rate.
             time_left = (total_size - downloaded_size)/overall_rate
-            eta = time.strftime("%H:%M:%S", time.localtime(current_time + time_left))
-            msg = 'Read %s of %s (%s%%). Rate %s/s, average %s/s, eta %s.' \
+            eta_seconds = current_time + time_left
+            if datetime.datetime.fromtimestamp(eta_seconds).day is not\
+                    datetime.datetime.now().day:
+                eta_template = "%a, %d %b, %H:%M:%S"
+            else:
+                eta_template = "%H:%M:%S"
+
+            eta = time.strftime(eta_template, time.localtime(eta_seconds))
+            msg = 'Read %s of %s (%s%%). Rate %s/s, average %s/s, ETA %s.' \
                   % (self._size_fmt(downloaded_size),
                      self._size_fmt(total_size),
                      self._bold(str(int(100 * downloaded_size/total_size))),
@@ -1919,7 +1934,7 @@ your archive ID is correct, and start a retrieval job using \
         return unsubscribed
 
     def __init__(self, aws_access_key, aws_secret_key, region,
-                 bookkeeping=False, bookkeeping_domain_name=None,
+                 bookkeeping=False, no_bookkeeping=None, bookkeeping_domain_name=None,
                  sdb_access_key=None, sdb_secret_key=None, sdb_region=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
@@ -1952,6 +1967,10 @@ your archive ID is correct, and start a retrieval job using \
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.bookkeeping = bookkeeping
+
+        if no_bookkeeping:
+            self.bookkeeping = False
+
         self.bookkeeping_domain_name = bookkeeping_domain_name
 
         self.region = region
@@ -1979,6 +1998,7 @@ Creating GlacierWrapper instance with
     loglevel %s,
     logging to stdout %s.""",
                           aws_access_key, aws_secret_key, bookkeeping,
+                          no_bookkeeping,
                           bookkeeping_domain_name, region,
                           sdb_access_key, sdb_secret_key, sdb_region,
                           logfile, loglevel, logtostdout)
