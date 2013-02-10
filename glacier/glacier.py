@@ -132,6 +132,7 @@ def default_glacier_wrapper(args, **kwargs):
                           args.aws_secret_key,
                           args.region,
                           bookkeeping=args.bookkeeping,
+                          no_bookkeeping=args.no_bookkeeping,
                           bookkeeping_domain_name=args.bookkeeping_domain_name,
                           sdb_access_key=args.sdb_access_key,
                           sdb_secret_key=args.sdb_secret_key,
@@ -601,6 +602,12 @@ def main():
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
                              bookkeeping domain name set")
+    group.add_argument('--no-bookkeeping',
+                   required=False,
+                   default=False,
+                   action="store_true",
+                   help="Explicitly disables bookkeeping, regardless of other\
+                        configuration or command line options.")
     group.add_argument('--bookkeeping-domain-name',
                         required=False,
                         default=default("bookkeeping-domain-name"),
@@ -624,16 +631,16 @@ def main():
     # SimpleDB settings
     group = parser.add_argument_group('sdb')
     group.add_argument('--sdb-access-key',
-        required=s_required("sdb-access-key"),
-        default=s_default("sdb-access-key"),
+        required=False,
+        default=s_default("sdb-access-key") or a_default("aws-secret-key"),
         help="aws access key to be used with bookkeeping" + help_msg_config)
     group.add_argument('--sdb-secret-key',
-        required=s_required("sdb-secret-key"),
-        default=s_default("sdb-secret-key"),
+        required=False,
+        default=s_default("sdb-secret-key") or a_default("aws-secret-key"),
         help="aws secret key to be used with bookkeeping" + help_msg_config)
     group.add_argument('--sdb-region',
-        required=s_required("sdb-region"),
-        default=s_default("sdb-region"),
+        required=False,
+        default=s_default("sdb-region") or default("region"),
         help="Region where you want to store \
                              your bookkeeping " + help_msg_config)
 

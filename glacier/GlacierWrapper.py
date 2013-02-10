@@ -1919,7 +1919,7 @@ your archive ID is correct, and start a retrieval job using \
         return unsubscribed
 
     def __init__(self, aws_access_key, aws_secret_key, region,
-                 bookkeeping=False, bookkeeping_domain_name=None,
+                 bookkeeping=False, no_bookkeeping=None, bookkeeping_domain_name=None,
                  sdb_access_key=None, sdb_secret_key=None, sdb_region=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
         """
@@ -1952,6 +1952,10 @@ your archive ID is correct, and start a retrieval job using \
         self.aws_access_key = aws_access_key
         self.aws_secret_key = aws_secret_key
         self.bookkeeping = bookkeeping
+
+        if no_bookkeeping:
+            self.bookkeeping = False
+
         self.bookkeeping_domain_name = bookkeeping_domain_name
 
         self.region = region
@@ -1979,6 +1983,7 @@ Creating GlacierWrapper instance with
     loglevel %s,
     logging to stdout %s.""",
                           aws_access_key, aws_secret_key, bookkeeping,
+                          no_bookkeeping,
                           bookkeeping_domain_name, region,
                           sdb_access_key, sdb_secret_key, sdb_region,
                           logfile, loglevel, logtostdout)
