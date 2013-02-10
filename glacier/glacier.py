@@ -492,7 +492,7 @@ def main():
     bookkeeping = True if default('bookkeeping') == 'True' else False
     group.add_argument('--bookkeeping',
                        required=False,
-                       default=default("bookkeeping"),
+                       default=bookkeeping,
                        action="store_true",
                        help="Should we keep book of all created archives.\
                              This requires a Amazon SimpleDB account and its \
