@@ -1165,8 +1165,8 @@ using %s MB parts to upload." % part_size)
                 if overall_rate > 0:
                     time_left = (total_size - writer.uploaded_size)/overall_rate
                     eta_seconds = current_time + time_left
-                    if datetime.datetime.fromtimestamp(eta_seconds).day is not\
-                            datetime.datetime.now().day:
+                    if datetime.fromtimestamp(eta_seconds).day is not\
+                            datetime.now().day:
                         eta_template = "%a, %d %b, %H:%M:%S"
                     else:
                         eta_template = "%H:%M:%S"
@@ -1399,8 +1399,8 @@ your archive ID is correct, and start a retrieval job using \
             # Estimate finish time, based on overall transfer rate.
             time_left = (total_size - downloaded_size)/overall_rate
             eta_seconds = current_time + time_left
-            if datetime.datetime.fromtimestamp(eta_seconds).day is not\
-                    datetime.datetime.now().day:
+            if datetime.fromtimestamp(eta_seconds).day is not\
+                    datetime.now().day:
                 eta_template = "%a, %d %b, %H:%M:%S"
             else:
                 eta_template = "%H:%M:%S"
