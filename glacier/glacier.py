@@ -632,7 +632,7 @@ def main():
     group = parser.add_argument_group('sdb')
     group.add_argument('--sdb-access-key',
         required=False,
-        default=s_default("sdb-access-key") or a_default("aws-secret-key"),
+        default=s_default("sdb-access-key") or a_default("aws-access-key"),
         help="aws access key to be used with bookkeeping" + help_msg_config)
     group.add_argument('--sdb-secret-key',
         required=False,
