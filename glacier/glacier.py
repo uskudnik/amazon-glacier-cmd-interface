@@ -49,7 +49,7 @@ def output_headers(headers, output):
 		
     if output == 'term':
         for row in rows:
-            print "%-16s%s" % (row[0], row[1])
+            print "%-15s %s" % (row[0], row[1])
 
 def output_table(results, output, keys=None, sort_key=None):
     """
@@ -100,7 +100,7 @@ def output_table(results, output, keys=None, sort_key=None):
         table = PrettyTable(headers)
         for line in results:
 			for k in (keys.keys() if keys else headers):
-				print "%-16s%s" % (k, line[k] if k in line else '')
+				print "%-15s %s" % (k, line[k] if k in line else '')
 			print "";
 		
 def output_msg(msg, output, success=True):
