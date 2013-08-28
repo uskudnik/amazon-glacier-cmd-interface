@@ -416,6 +416,13 @@ and later, to disable filtering:
     $TC qdisc del dev $IF root
 
 
+Chef Integration :
+-----
+
+You can use chef cookbooks to install and configure Glacier-CMD
+https://github.com/nonflet/Glacier-CMD-chef
+
+
 TODO:
 -----
 
