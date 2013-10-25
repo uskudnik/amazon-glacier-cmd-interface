@@ -1057,7 +1057,7 @@ using %s MB parts to upload." % part_size)
 
                 list_parts_response = response.copy()
                 current_position = 0
-
+                stop = 0
                 # Process the parts list.
                 # For each part of data, take the matching data range from
                 # the local file, and compare hashes.
