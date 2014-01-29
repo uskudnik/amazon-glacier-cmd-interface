@@ -1988,7 +1988,8 @@ your archive ID is correct, and start a retrieval job using \
 Creating GlacierWrapper instance with
     aws_access_key=%s,
     aws_secret_key=%s,
-    bookkeeping=%r,
+    bookkeeping=%s,
+    nobookkeeping=%s,
     bookkeeping_domain_name=%s,
     region=%s,
     sdb_access_key=%s,
