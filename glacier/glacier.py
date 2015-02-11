@@ -34,7 +34,7 @@ def output_headers(headers, output):
     if output == 'print':
         table = PrettyTable(["Header", "Value"])
         for row in rows:
-            if len(str(row[1])) < 100:
+            if len(str(row[1])) <= 138:
                 table.add_row(row)
         
         print table
