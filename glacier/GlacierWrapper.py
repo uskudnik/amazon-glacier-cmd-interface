@@ -12,6 +12,7 @@ import pytz
 import re
 import logging
 import os.path
+import stat
 import time
 import sys
 import traceback
@@ -985,7 +986,13 @@ using %s MB parts to upload." % part_size)
         total_size = 0
         reader = None
         mmapped_file = None
-        if not stdin:
+
+        if stdin:
+            is_pipe = False
+        else:
+            is_pipe = stat.S_ISFIFO(os.stat(file_name).st_mode)
+
+        if not stdin and not is_pipe:
             if not file_name:
                 raise InputException(
                     "No file name given for upload.",
@@ -1000,6 +1007,15 @@ using %s MB parts to upload." % part_size)
                     "Could not access file: %s."% file_name,
                     cause=e,
                     code='FileError')
+
+        elif is_pipe:
+            try:
+                reader = open(file_name, 'rb')
+                total_size = 0
+            except IOError:
+                raise InputException(
+                    "Could not access pipe: %s."% file_name,
+                    cause = e, code = 'FileError')
 
         elif select.select([sys.stdin,],[],[],0.0)[0]:
             reader = sys.stdin
@@ -1069,9 +1085,9 @@ using %s MB parts to upload." % part_size)
                     start, stop = (int(p) for p in part['RangeInBytes'].split('-'))
                     stop += 1
                     if not start == current_position:
-                        if stdin:
+                        if stdin or is_pipe:
                             raise InputException(
-                                'Cannot verify non-sequential upload data from stdin.',
+                                'Cannot verify non-sequential upload data from stdin or pipe.',
                                 code='ResumeError')
                         if reader:
                             reader.seek(start)
@@ -1195,7 +1211,9 @@ using %s MB parts to upload." % part_size)
             self.logger.debug(msg)
 
         writer.close()
-        if not stdin:
+        if is_pipe:
+            reader.close()
+        elif not stdin:
             f.close()
         current_time = time.time()
         overall_rate = int(writer.uploaded_size/(current_time - start_time))

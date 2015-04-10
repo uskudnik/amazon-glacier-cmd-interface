@@ -716,7 +716,7 @@ partsize  MaxArchiveSize
 
 If not given, the smallest possible part size
 will be used when uploading a file, and 128 MB
-when uploading from stdin.''')
+when uploading from stdin or from a FIFO pipe.''')
     parser_upload.add_argument('--description', default=None,
         help='''\
 Description of the file to be uploaded. Use quotes

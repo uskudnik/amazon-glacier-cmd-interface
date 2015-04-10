@@ -142,7 +142,7 @@ To upload from stdin:
 
     $ cat file | glacier-cmd upload Test --description "Some description" --stdin  --name /path/BetterName
 
-IMPORTANT NOTE: If you're uploading from stdin, and you don't specify a
+IMPORTANT NOTE: If you're uploading from stdin or a pipe, and you don't specify a
 --partsize option, your upload will be limited to 1.3Tb, and the progress
 report will come out every 128Mb. For more details, run:
 
