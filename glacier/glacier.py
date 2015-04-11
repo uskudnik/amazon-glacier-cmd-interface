@@ -96,15 +96,16 @@ def output_msg(msg, output, success=True):
     :param success: whether the operation was a success or not.
     :type success: boolean
     """
-    if output == 'print':
-        print msg
-        
-    if output == 'csv':
-        csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
-        csvwriter.writerow(msg)
-            
-    if output == 'json':
-        print json.dumps(msg)
+    if msg is not None:
+        if output == 'print':
+            print msg
+
+        if output == 'csv':
+            csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
+            csvwriter.writerow(msg)
+
+        if output == 'json':
+            print json.dumps(msg)
         
     if not success:
         sys.exit(125)
