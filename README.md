@@ -306,7 +306,7 @@ Short Notification Service (SNS) is Amazon's technology that allows you to be no
 
 If you run `glacier-cmd sns sync` without specifing anything in your configuration file, it will automatically subscribe all your vaults to `aws-glacier-notifications` topic.
 
-    $ glacier.py sns sync                                           
+    $ glacier-cmd sns sync
     +------------+-------------------------------------------------+
     | Vault Name |                    Request Id                   |
     +------------+-------------------------------------------------+
