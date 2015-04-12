@@ -121,51 +121,63 @@ class GlacierWriter(object):
                     "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
 
-        response = self.connection.upload_part(self.vault_name,
-                                    self.uploadid,
-                                    hashlib.sha256(data).hexdigest(),
-                                    bytes_to_hex(part_tree_hash),
-                                    (self.uploaded_size, self.uploaded_size+len(data)-1),
-                                    data)
-        response.read()
+        retries = 0
+        while True:
+            try:
+                response = self.connection.upload_part(self.vault_name,
+                                        self.uploadid,
+                                        hashlib.sha256(data).hexdigest(),
+                                        bytes_to_hex(part_tree_hash),
+                                        (self.uploaded_size, self.uploaded_size+len(data)-1),
+                                        data)
+                break
 
-##        retries = 0
-##        while True:
-##            response = self.connection.make_request(
-##                "PUT",
-##                self.upload_url,
-##                headers,
-##                data)
-##
-##            # Success.
-##            if response.status == 204:
-##                break
-##
-##            # Time-out recieved: sleep for 5 minutes and try again.
-##            # Do not try more than five times; after that it's over.
-##            elif response.status == 408:
-##                if retries >= 5:
-##                    resp = json.loads(response.read())
-##                    raise ResonseException(
-##                        resp['message'],
-##                        cause='Timeout',
-##                        code=resp['code'])
-##                        
-##                if self.logger:
-##                    logger.warning(resp['message'])
-##                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
-##                    
-##                retries += 1
-##                time.sleep(300)
-##
-##            else:
-##                raise ResponseException(
-##                    "Multipart upload part expected response status 204 (got %s):\n%s"\
-##                        % (response.status, response.read()),
-##                    cause=resp['message'],
-##                    code=resp['code'])
+            except Exception as e:
+                if '408' in e.message:
+                    if retries >= 5:
+                        raise e
 
-##        response.read()
+                    if self.logger:
+                        self.logger.warning(e.message)
+                        self.logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
+                        retries += 1
+                        time.sleep(300)
+                else:
+                    raise e
+
+            response.read()
+
+
+            # response.read()
+
+            # # Success.
+            # if response.status == 204:
+            #     break
+
+            # # Time-out recieved: sleep for 5 minutes and try again.
+            # # Do not try more than five times; after that it's over.
+            # elif response.status == 408:
+            #     if retries >= 5:
+            #         resp = json.loads(response.read())
+            #         raise ResponseException(
+            #             resp['message'],
+            #             cause = 'Timeout',
+            #             code = resp['code'])
+
+            #     if self.logger:
+            #         logger.warning(resp['message'])
+            #         logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
+
+            #     retries += 1
+            #     time.sleep(300)
+
+            # else:
+            #     raise ResponseException(
+            #         "Multipart upload part expected response status 204 (got %s):\n%s"\
+            #             % (response.status, response.read()),
+            #         cause = resp['message'],
+            #         code = resp['code'])
+
         self.uploaded_size += len(data)
 
     def close(self):
