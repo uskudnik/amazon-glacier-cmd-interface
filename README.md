@@ -287,8 +287,7 @@ Usage description(help):
      --no-bookkeeping      If present, overrides either CLI or configuration file
                            options provided for bookkeeping either beforehand or 
                            afterwards
-     --logfile LOGFILE     File to write log messages to. (default: /home/wouter
-                           /.glacier-cmd.log)
+     --logfile LOGFILE     File to write log messages to. (default: ~/.glacier-cmd.log)
      --loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}
                            Set the lowest level of messages you want to log.
                            (default: DEBUG)

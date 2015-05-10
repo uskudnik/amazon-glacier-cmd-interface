@@ -122,6 +122,7 @@ class GlacierWriter(object):
                   }
 
         retries = 0
+        total_retries = 0
         while True:
             try:
                 response = self.connection.upload_part(self.vault_name,
@@ -130,6 +131,7 @@ class GlacierWriter(object):
                                         bytes_to_hex(part_tree_hash),
                                         (self.uploaded_size, self.uploaded_size+len(data)-1),
                                         data)
+                retries = 0
                 break
 
             except Exception as e:
@@ -137,10 +139,15 @@ class GlacierWriter(object):
                     if retries >= 5:
                         raise e
 
+                    if total_retries >= 200:
+                        raise e
+
                     if self.logger:
                         self.logger.warning(e.message)
-                        self.logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
+                        self.logger.warning('Sleeping 300 seconds (5 minutes) before retrying.')
+                        self.logger.warning('Current retry = %d, total retries = %d' % (retries, total_retries))
                         retries += 1
+                        total_retries += 1
                         time.sleep(300)
                 else:
                     raise e

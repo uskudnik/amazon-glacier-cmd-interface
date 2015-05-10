@@ -630,8 +630,7 @@ def main():
                        help='Set how to return results: print to the screen,\
                              or as csv resp. json string. NOTE: to receive full\
                              output use csv or json. `print` removes lines\
-                             longer than 99 chars, such as `archiveId`\
-                             on successful upload')
+                             longer than 138 chars')
 
     # SimpleDB settings
     group = parser.add_argument_group('sdb')
