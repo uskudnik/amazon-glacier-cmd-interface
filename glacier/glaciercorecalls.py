@@ -131,6 +131,7 @@ class GlacierWriter(object):
                                         bytes_to_hex(part_tree_hash),
                                         (self.uploaded_size, self.uploaded_size+len(data)-1),
                                         data)
+                response.read()
                 retries = 0
                 break
 
@@ -152,7 +153,6 @@ class GlacierWriter(object):
                 else:
                     raise e
 
-            response.read()
 
 
             # response.read()
