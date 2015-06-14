@@ -73,6 +73,7 @@ class GlacierWriter(object):
     Archive. The data is written using the multi-part upload API.
     """
     DEFAULT_PART_SIZE = 128 # in MB, power of 2.
+    MAX_TOTAL_RETRIES = 200
     
     def __init__(self, connection, vault_name,
                  description=None, part_size_in_bytes=DEFAULT_PART_SIZE*1024*1024,
@@ -83,6 +84,7 @@ class GlacierWriter(object):
         self.connection = connection
 ##        self.location = None
         self.logger = logger
+        self.total_retries = 0
 
         if uploadid:
             self.uploadid = uploadid
@@ -122,7 +124,6 @@ class GlacierWriter(object):
                   }
 
         retries = 0
-        total_retries = 0
         while True:
             try:
                 response = self.connection.upload_part(self.vault_name,
@@ -132,23 +133,25 @@ class GlacierWriter(object):
                                         (self.uploaded_size, self.uploaded_size+len(data)-1),
                                         data)
                 response.read()
-                retries = 0
                 break
 
             except Exception as e:
                 if '408' in e.message:
                     if retries >= 5:
+                        self.logger.warning('Retries exhausted.')
                         raise e
 
-                    if total_retries >= 200:
+                    if self.total_retries >= 200:
+                        self.logger.warning('Total retries exhausted.')
                         raise e
 
                     if self.logger:
                         self.logger.warning(e.message)
                         self.logger.warning('Sleeping 300 seconds (5 minutes) before retrying.')
-                        self.logger.warning('Current retry = %d, total retries = %d' % (retries, total_retries))
+                        self.logger.warning('Uploaded size = %d, hash = %s' % (self.uploaded_size, bytes_to_hex(part_tree_hash)))
+                        self.logger.warning('Current retry = %d, total retries = %d' % (retries, self.total_retries))
                         retries += 1
-                        total_retries += 1
+                        self.total_retries += 1
                         time.sleep(300)
                 else:
                     raise e
