@@ -1,18 +1,18 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-.. module:: botocorecalls
-   :platform: Unix, Windows
-   :synopsis: boto calls to access Amazon Glacier.
-   
+..  module:: botocorecalls
+    :platform: Unix, Windows
+    :synopsis: boto calls to access Amazon Glacier.
+
 This depends on the boto library, use version 2.6.0 or newer.
 
-     
-     writer = GlacierWriter(glacierconn, GLACIER_VAULT)
-     writer.write(block of data)
-     writer.close()
-     # Get the id of the newly created archive
-     archive_id = writer.get_archive_id()from boto.connection import AWSAuthConnection
+
+    writer = GlacierWriter(glacierconn, GLACIER_VAULT)
+    writer.write(block of data)
+    writer.close()
+    # Get the id of the newly created archive
+    archive_id = writer.get_archive_id()from boto.connection import AWSAuthConnection
 """
 
 import urllib
@@ -30,7 +30,7 @@ from glacierexception import *
 class GlacierConnection(boto.glacier.layer1.Layer1):
 
     pass
-    
+
 
 def chunk_hashes(data):
     """
@@ -74,7 +74,7 @@ class GlacierWriter(object):
     """
     DEFAULT_PART_SIZE = 128 # in MB, power of 2.
     MAX_TOTAL_RETRIES = 200
-    
+
     def __init__(self, connection, vault_name,
                  description=None, part_size_in_bytes=DEFAULT_PART_SIZE*1024*1024,
                  uploadid=None, logger=None):
@@ -100,7 +100,7 @@ class GlacierWriter(object):
 ##        self.upload_url = response.getheader("location")
 
     def write(self, data):
-        
+
         if self.closed:
             raise CommunicationError(
                 "Tried to write to a GlacierWriter that is already closed.",
@@ -110,7 +110,7 @@ class GlacierWriter(object):
             raise InputException (
                 'Block of data provided must be equal to or smaller than the set block size.',
                 code='InternalError')
-        
+
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
         headers = {
@@ -123,7 +123,11 @@ class GlacierWriter(object):
                     "x-amz-content-sha256": hashlib.sha256(data).hexdigest()
                   }
 
+        # How many times we tried uploading this block
         retries = 0
+        # How much to sleep between re-tries.
+        sleep_time = 150
+
         while True:
             try:
                 response = self.connection.upload_part(self.vault_name,
@@ -137,64 +141,41 @@ class GlacierWriter(object):
 
             except Exception as e:
                 if '408' in e.message:
-                    if retries >= 5:
-                        self.logger.warning('Retries exhausted.')
+                    if retries >= 10:
+                        if self.logger:
+                            self.logger.warning('Retries exhausted for this block.')
                         raise e
 
-                    if self.total_retries >= 200:
-                        self.logger.warning('Total retries exhausted.')
+                    if self.total_retries >= MAX_TOTAL_RETRIES:
+                        if self.logger:
+                            self.logger.warning('Total retries exhausted.')
                         raise e
+
+                    retries += 1
+                    self.total_retries += 1
 
                     if self.logger:
                         self.logger.warning(e.message)
-                        self.logger.warning('Sleeping 300 seconds (5 minutes) before retrying.')
-                        self.logger.warning('Uploaded size = %d, hash = %s' % (self.uploaded_size, bytes_to_hex(part_tree_hash)))
-                        self.logger.warning('Current retry = %d, total retries = %d' % (retries, self.total_retries))
-                        retries += 1
-                        self.total_retries += 1
-                        time.sleep(300)
+                        if sys.version_info < (2, 7, 0):
+                            self.logger.warning('Total uploaded size = %d, block hash = %s' % (self.uploaded_size, bytes_to_hex(part_tree_hash)))
+                        else:
+                            # Commify large numbers
+                            self.logger.warning('Total uploaded size = {:,d}, block hash = {:}'.format(self.uploaded_size, bytes_to_hex(part_tree_hash)))
+                        self.logger.warning('Retries (this block, total) = %d, %d' % (retries, self.total_retries))
+                        self.logger.warning('Sleeping %d seconds (%.1f minutes) before retrying this block.' % (sleep_time, sleep_time / 60.0))
+
+                    time.sleep(sleep_time)
+
                 else:
                     raise e
-
-
-
-            # response.read()
-
-            # # Success.
-            # if response.status == 204:
-            #     break
-
-            # # Time-out recieved: sleep for 5 minutes and try again.
-            # # Do not try more than five times; after that it's over.
-            # elif response.status == 408:
-            #     if retries >= 5:
-            #         resp = json.loads(response.read())
-            #         raise ResponseException(
-            #             resp['message'],
-            #             cause = 'Timeout',
-            #             code = resp['code'])
-
-            #     if self.logger:
-            #         logger.warning(resp['message'])
-            #         logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
-
-            #     retries += 1
-            #     time.sleep(300)
-
-            # else:
-            #     raise ResponseException(
-            #         "Multipart upload part expected response status 204 (got %s):\n%s"\
-            #             % (response.status, response.read()),
-            #         cause = resp['message'],
-            #         code = resp['code'])
 
         self.uploaded_size += len(data)
 
     def close(self):
-        
+
         if self.closed:
             return
-            
+
         # Complete the multiplart glacier upload
         response = self.connection.complete_multipart_upload(self.vault_name,
                                                              self.uploadid,
