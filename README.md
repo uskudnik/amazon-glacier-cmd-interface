@@ -156,7 +156,8 @@ its file name, its description, or limit the search by region and vault.
 If that is not enough you should use `getarchive` and specify the archive ID of
 the archive you want to retrieve:
 
-    $ TODO: example here
+    $ glacier-cmd download Test eBLl4DbMbZ4YMA7fD9cNacf2z1kGxpYxBqTV4qFVsuzgjuNlKSkWm2rFpw6Gq-bFT6Vt9cUZ1lGqSbtZjtbeh0jYn9tJC-MczQyA3tP6bezYUeN8dGGvqNqT3la79wjRRair1am1JA --outfile filename
+    Read 1 GB of 10 GB (10%). Rate 3.05 MB/s, average 2.71 MB/s, ETA 1:00:00.   
 
 To remove uploaded archive use `rmarchive`. You can currently delete only by
 archive id (notice the use of `--` when the archive ID starts with a dash):
