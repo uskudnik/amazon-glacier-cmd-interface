@@ -310,7 +310,8 @@ def upload(args):
                                               args.name, args.partsize, args.uploadid, args.resume)
                     results.append({"Uploaded file": g,
                                     "Created archive with ID": response[0],
-                                    "Archive SHA256 tree hash": response[1]})
+                                    "Archive SHA256 tree hash": response[1],
+                                    "Description": args.description})
             else:
                 raise InputException(
                     "File name given for upload can not be found: %s."% f,
@@ -322,7 +323,8 @@ def upload(args):
         response = glacier.upload(args.vault, None, args.description, args.region, args.stdin,
                                   args.name, args.partsize, args.uploadid, args.resume)
         results = [{"Created archive with ID": response[0],
-                    "Archive SHA256 tree hash": response[1]}]
+                    "Archive SHA256 tree hash": response[1],
+                    "Description": args.description}]
 
     else:
         raise InputException(

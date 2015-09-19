@@ -146,7 +146,7 @@ class GlacierWriter(object):
                             self.logger.warning('Retries exhausted for this block.')
                         raise e
 
-                    if self.total_retries >= MAX_TOTAL_RETRIES:
+                    if self.total_retries >= self.MAX_TOTAL_RETRIES:
                         if self.logger:
                             self.logger.warning('Total retries exhausted.')
                         raise e
