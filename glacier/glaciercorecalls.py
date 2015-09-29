@@ -126,7 +126,7 @@ class GlacierWriter(object):
         # How many times we tried uploading this block
         retries = 0
         # How much to sleep between re-tries.
-        sleep_time = 150
+        sleep_time = 300
 
         while True:
             try:
@@ -140,7 +140,7 @@ class GlacierWriter(object):
                 break
 
             except Exception as e:
-                if '408' in e.message:
+                if '408' in e.message or e.code == "ServiceUnavailableException" or e.type == "Server":
                     if retries >= 10:
                         if self.logger:
                             self.logger.warning('Retries exhausted for this block.')
@@ -161,12 +161,16 @@ class GlacierWriter(object):
                         else:
                             # Commify large numbers
                             self.logger.warning('Total uploaded size = {:,d}, block hash = {:}'.format(self.uploaded_size, bytes_to_hex(part_tree_hash)))
+
                         self.logger.warning('Retries (this block, total) = %d, %d' % (retries, self.total_retries))
+                        self.logger.warning('Check the AWS status at: http://status.aws.amazon.com/')
                         self.logger.warning('Sleeping %d seconds (%.1f minutes) before retrying this block.' % (sleep_time, sleep_time / 60.0))
 
                     time.sleep(sleep_time)
 
                 else:
+                    self.logger.warning(e.message)
+                    self.logger.warning('Not re-trying on this error')
                     raise e
 
         self.uploaded_size += len(data)
