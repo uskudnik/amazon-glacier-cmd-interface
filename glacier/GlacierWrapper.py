@@ -1557,7 +1557,7 @@ your archive ID is correct, and start a retrieval job using \
         # Remove the listing from the bookkeeping database.
         if self.bookkeeping:
             try:
-                item = self.sdb_domain.get_item(archive_id)
+                item = self.sdb_domain.select("select * from `%s` where archive_id='%s'" % (self.sdb_domain.name, archive_id)).next()
                 if item:
                     self.sdb_domain.delete_item(item)
             except boto.exception.SDBResponseError as e:
