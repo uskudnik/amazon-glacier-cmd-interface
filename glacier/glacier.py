@@ -46,6 +46,10 @@ def output_headers(headers, output):
         
     if output == 'json':
         print json.dumps(headers)
+		
+    if output == 'term':
+        for row in rows:
+            print "%-15s %s" % (row[0], row[1])
 
 def output_table(results, output, keys=None, sort_key=None):
     """
@@ -87,6 +91,18 @@ def output_table(results, output, keys=None, sort_key=None):
     if output == 'json':
         print json.dumps(results)
 
+    if output == 'term':
+        if len(results) == 0:
+            print 'No output!'
+            return
+
+        headers = [keys[k] for k in keys.keys()] if keys else results[0].keys()
+        table = PrettyTable(headers)
+        for line in results:
+			for k in (keys.keys() if keys else headers):
+				print "%-15s %s" % (k, line[k] if k in line else '')
+			print "";
+		
 def output_msg(msg, output, success=True):
     """
     In case of a single message output, e.g. nothing found.
@@ -105,6 +121,9 @@ def output_msg(msg, output, success=True):
             
     if output == 'json':
         print json.dumps(msg)
+
+    if output == 'term':
+        print msg
         
     if not success:
         sys.exit(125)
@@ -625,8 +644,8 @@ def main():
     group.add_argument('--output',
                        required=False,
                        default=default('output') if default('output') else 'print',
-                       choices=['print', 'csv', 'json'],
-                       help='Set how to return results: print to the screen, or as csv resp. json string.')
+                       choices=['print', 'term', 'csv', 'json'],
+                       help='Set how to return results: print to the screen as a table, terminal friendly key-value or as csv resp. json string.')
 
     # SimpleDB settings
     group = parser.add_argument_group('sdb')
