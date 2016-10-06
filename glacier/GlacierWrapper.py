@@ -1619,7 +1619,7 @@ your archive ID is correct, and start a retrieval job using \
             # in progress job.
             job_list = self.list_jobs(vault_name)
             inventory_done = False
-            for job in job_list:
+            for job in sorted(job_list, key=lambda x: x['CompletionDate'], reverse=True):
                 if job['Action'] == "InventoryRetrieval":
 
                     # As soon as a finished inventory job is found, we're done.
