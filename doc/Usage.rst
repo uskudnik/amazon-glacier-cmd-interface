@@ -122,7 +122,7 @@ Give an overview of the available vaults. ::
 Describing status of a vault.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-``$ glacier-cmd decribevault <vault name>``
+``$ glacier-cmd describevault <vault name>``
 
 .. program-output:: glacier-cmd describevault -h
 
