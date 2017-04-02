@@ -18,10 +18,10 @@ import json
 
 from prettytable import PrettyTable
 
-from GlacierWrapper import GlacierWrapper
+from modules.GlacierWrapper import GlacierWrapper
 
 from functools import wraps
-from glacierexception import *
+from modules.glacierexception import *
 
 def output_headers(headers, output):
     """
@@ -36,14 +36,14 @@ def output_headers(headers, output):
         for row in rows:
             if len(str(row[1])) < 100:
                 table.add_row(row)
-        
+
         print table
-        
+
     if output == 'csv':
         csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
         for row in rows:
             csvwriter.writerow(row)
-        
+
     if output == 'json':
         print json.dumps(headers)
 
@@ -74,16 +74,16 @@ def output_table(results, output, keys=None, sort_key=None):
 
         if sort_key:
             table.sortby = keys[sort_key] if keys else sort_key
-            
+
         print table
-        
+
     if output == 'csv':
         csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
         keys = results[0].keys()
         csvwriter.writerow(keys)
         for row in results:
             csvwriter.writerow([row[k] for k in keys])
-            
+
     if output == 'json':
         print json.dumps(results)
 
@@ -98,14 +98,14 @@ def output_msg(msg, output, success=True):
     """
     if output == 'print':
         print msg
-        
+
     if output == 'csv':
         csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
         csvwriter.writerow(msg)
-            
+
     if output == 'json':
         print json.dumps(msg)
-        
+
     if not success:
         sys.exit(125)
 
@@ -118,9 +118,9 @@ def size_fmt(num, decimals = 1):
     for x in ['bytes','KB','MB','GB']:
         if num < 1024.0:
             return fmt % (num, x)
-        
+
         num /= 1024.0
-        
+
     return fmt % (num, 'TB')
 
 def default_glacier_wrapper(args, **kwargs):
@@ -280,7 +280,7 @@ def upload(args):
         if len(args.filename) > 1:
             raise InputException(
                 'Bacula-style file name input can accept only one file name argument.')
-        
+
         fileset = args.filename[0].split('|')
         if len(fileset) > 1:
             dirname = os.path.dirname(fileset[0])
@@ -297,7 +297,7 @@ def upload(args):
     # be read over stdin.
     if args.filename:
         for f in args.filename:
-    
+
             # In case the shell does not expand wildcards, if any, do this here.
             if f[0] == '~':
                 f = os.path.expanduser(f)
@@ -314,7 +314,7 @@ def upload(args):
                 raise InputException(
                     "File name given for upload can not be found: %s."% f,
                     code='CommandError')
-            
+
     elif args.stdin:
 
         # No file name; using stdin.
@@ -330,7 +330,7 @@ on the command line, or use the --stdin switch and pipe
 in the data over stdin.''',
             cause='No file name and no stdin pipe.',
             code='CommandError')
-            
+
     output_table(results, args.output) if len(results) > 1 \
                           else output_headers(results[0], args.output)
 
@@ -374,14 +374,14 @@ def inventory(args):
     if sys.stdout.isatty() and output == 'print':
         print 'Checking inventory, please wait.\r',
         sys.stdout.flush()
-        
+
     job, inventory = glacier.inventory(args.vault, args.refresh)
     if inventory:
         if sys.stdout.isatty() and output == 'print':
             print "Inventory of vault: %s" % (inventory["VaultARN"],)
             print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
             print "Content:"
-            
+
         headers = {'ArchiveDescription': 'Archive Description',
                    'CreationDate': 'Uploaded',
                    'Size': 'Size',
@@ -414,7 +414,7 @@ def treehash(args):
             # In case the shell does not expand wildcards, if any, do this here.
             if f[0] == '~':
                 f = os.path.expanduser(f)
-                
+
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
@@ -469,7 +469,7 @@ def snslisttopics(args):
 
 def snsunsubscribe(args):
     """
-    Unsubscribe individual vaults from notifications for specified protocol, 
+    Unsubscribe individual vaults from notifications for specified protocol,
     endpoint and vault.
     """
     protocol = args.protocol
@@ -478,7 +478,7 @@ def snsunsubscribe(args):
 
     glacier = default_glacier_wrapper(args)
     response = glacier.sns_unsubscribe(protocol, endpoint, topic, sns_options=args.sns_options)
-    output_table(response, args.output)    
+    output_table(response, args.output)
 
 def main():
     program_description = u"""
@@ -536,7 +536,7 @@ def main():
                         'options':dict(config.items(topic))
                     }
                     sns_topics += [s]
-            
+
             if sns_topics:
                 sns['topics'] = sns_topics
         elif any(topic for topic in config.sections() if topic == "SNS"):
@@ -651,7 +651,7 @@ def main():
         help='The vault to be created.')
     parser_mkvault.set_defaults(func=mkvault)
 
-    # glacier-cmd lsvault    
+    # glacier-cmd lsvault
     parser_lsvault = subparsers.add_parser("lsvault",
         help="List available vaults.")
     parser_lsvault.set_defaults(func=lsvault)
@@ -684,12 +684,12 @@ The name(s) of the local file(s) to be uploaded. Wildcards
 are accepted. Can not be used if --stdin is used.''')
     parser_upload.add_argument('--stdin', action='store_true',
         help='''\
-Read data from stdin, instead of local file. 
+Read data from stdin, instead of local file.
 Can not be used if <filename> is given.''')
     parser_upload.add_argument('--name', default=None,
         help='''\
-Use the given name as the filename for bookkeeping 
-purposes. To be used in conjunction with --stdin or 
+Use the given name as the filename for bookkeeping
+purposes. To be used in conjunction with --stdin or
 when the file being uploaded is a temporary file.''')
     parser_upload.add_argument('--partsize', type=int, default=-1,
         help='''\
@@ -865,8 +865,8 @@ at hand.''')
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
 
-    # SNS related commands are located in their own subparser 
-    parser_sns = subparsers.add_parser('sns', 
+    # SNS related commands are located in their own subparser
+    parser_sns = subparsers.add_parser('sns',
         help="Subcommands related to SNS")
     sns_subparsers = parser_sns.add_subparsers(title="Subcommands related to SNS")
 
@@ -882,7 +882,7 @@ at hand.''')
         help="Protocol used for notifications. Can be email, http, https or sms.")
     sns_parser_subscribe.add_argument("endpoint",
         help="Valid applicable endpoint - email address, URL or phone number.")
-    sns_parser_subscribe.add_argument("topic", 
+    sns_parser_subscribe.add_argument("topic",
         help="Topic for which notifications will be sent to specified protocol and endpoint.")
     sns_parser_subscribe.add_argument("--vault",
         help="Optional vault names, seperated by comma, for this a new topic will be created and subscribed to.")
@@ -900,7 +900,7 @@ at hand.''')
     sns_parser_unsubscribe.set_defaults(func=snsunsubscribe, sns_options=sns)
 
     # glacier-cmd sns lssub [--protocol <protocol>] [--endpoint <endpoint>] [--topic <topic>]
-    sns_parser_listsubs = sns_subparsers.add_parser('lssub', 
+    sns_parser_listsubs = sns_subparsers.add_parser('lssub',
         help="List subscriptions. Other arguments are ANDed together.")
     sns_parser_listsubs.add_argument("--protocol",
         help="Show only subscriptions on a specified protocol.")
@@ -914,7 +914,7 @@ at hand.''')
     sns_parser_listtopics = sns_subparsers.add_parser('lstopic',
         help="List all topics.")
     sns_parser_listtopics.set_defaults(func=snslisttopics, sns_options=sns)
-    
+
 
     # TODO args.logtostdout becomes false when parsing the remaining_argv
     # so here we bridge this. An ugly hack but it works.
@@ -922,9 +922,9 @@ at hand.''')
 
     # Process the remaining arguments.
     args = parser.parse_args(remaining_argv)
-    
+
     args.logtostdout = logtostdout
-    
+
     # Run the subcommand.
     args.func(args)
 
