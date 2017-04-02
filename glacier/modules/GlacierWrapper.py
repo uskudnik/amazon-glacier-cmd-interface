@@ -40,7 +40,7 @@ class log_class_call(object):
     """
     Decorator that logs glacierexception.pyclass calls to specific functions.
 
-    .. note::
+    .. note:
 
         Set loglevel to DEBUG to see these logs.
     """
@@ -457,7 +457,7 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)\
             if total_size > 0:
                 part_size = _part_size_for_total_size(total_size)
             else:
-                part_size = GlacierWriter.DEFAULT_PART_SIZE
+                part_size = constants.DEFAULT_PART_SIZE
         else:
             ps = self._next_power_of_2(part_size)
             if not ps == part_size:
