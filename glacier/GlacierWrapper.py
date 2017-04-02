@@ -2,7 +2,7 @@
 """
 .. module:: GlacierWrapper
    :platform: Unix, Windows
-   :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB 
+   :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB
    support and other features.
 """
 
@@ -115,6 +115,7 @@ class GlacierWrapper(object):
     MAX_PARTS = 10000
     AVAILABLE_REGIONS = ('us-east-1', 'us-east-2',
                          'us-west-2', 'us-west-1',
+                         'ca-central-1',
                          'eu-west-1', 'eu-central-1', 'sa-east-1',
                          'ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2')
     AVAILABLE_REGIONS_MESSAGE = """\
@@ -1855,7 +1856,7 @@ your archive ID is correct, and start a retrieval job using \
         if vault_names:
             vaults = vault_names.split(",")
             self._init_events_for_vaults(vaults, topic_arn)
-        
+
         topic_arns = [topic_arn]
 
         if len(topic_arns):
@@ -1877,7 +1878,7 @@ your archive ID is correct, and start a retrieval job using \
     @sns_connect
     def sns_list_topics(self, sns_options):
         topics = self.sns_conn.get_all_topics()['ListTopicsResponse']['ListTopicsResult']['Topics']
-        
+
         results = []
         for topic in topics:
             results += [{"Topic":topic['TopicArn'].split(":")[-1], "Topic ARN":topic['TopicArn']}]
