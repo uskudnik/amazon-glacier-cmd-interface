@@ -4,10 +4,10 @@
 .. module:: botocorecalls
    :platform: Unix, Windows
    :synopsis: boto calls to access Amazon Glacier.
-   
+
 This depends on the boto library, use version 2.6.0 or newer.
 
-     
+
      writer = GlacierWriter(glacierconn, GLACIER_VAULT)
      writer.write(block of data)
      writer.close()
@@ -22,6 +22,8 @@ import json
 import sys
 import time
 
+from modules import constants
+
 import boto.glacier.layer1
 
 from glacierexception import *
@@ -30,7 +32,7 @@ from glacierexception import *
 class GlacierConnection(boto.glacier.layer1.Layer1):
 
     pass
-    
+
 
 def chunk_hashes(data):
     """
@@ -72,10 +74,9 @@ class GlacierWriter(object):
     Presents a file-like object for writing to a Amazon Glacier
     Archive. The data is written using the multi-part upload API.
     """
-    DEFAULT_PART_SIZE = 128 # in MB, power of 2.
-    
+
     def __init__(self, connection, vault_name,
-                 description=None, part_size_in_bytes=DEFAULT_PART_SIZE*1024*1024,
+                 description=None, part_size_in_bytes=constants.DEFAULT_PART_SIZE*1024*1024,
                  uploadid=None, logger=None):
 
         self.part_size = part_size_in_bytes
@@ -98,7 +99,7 @@ class GlacierWriter(object):
 ##        self.upload_url = response.getheader("location")
 
     def write(self, data):
-        
+
         if self.closed:
             raise CommunicationError(
                 "Tried to write to a GlacierWriter that is already closed.",
@@ -108,7 +109,7 @@ class GlacierWriter(object):
             raise InputException (
                 'Block of data provided must be equal to or smaller than the set block size.',
                 code='InternalError')
-        
+
         part_tree_hash = tree_hash(chunk_hashes(data))
         self.tree_hashes.append(part_tree_hash)
         headers = {
@@ -150,11 +151,11 @@ class GlacierWriter(object):
 ##                        resp['message'],
 ##                        cause='Timeout',
 ##                        code=resp['code'])
-##                        
+##
 ##                if self.logger:
 ##                    logger.warning(resp['message'])
 ##                    logger.warning('sleeping 300 seconds (5 minutes) before retrying.')
-##                    
+##
 ##                retries += 1
 ##                time.sleep(300)
 ##
@@ -169,10 +170,10 @@ class GlacierWriter(object):
         self.uploaded_size += len(data)
 
     def close(self):
-        
+
         if self.closed:
             return
-            
+
         # Complete the multiplart glacier upload
         response = self.connection.complete_multipart_upload(self.vault_name,
                                                              self.uploadid,

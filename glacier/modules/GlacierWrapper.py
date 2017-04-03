@@ -2,7 +2,7 @@
 """
 .. module:: GlacierWrapper
    :platform: Unix, Windows
-   :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB 
+   :synopsis: Wrapper for accessing Amazon Glacier, with Amazon SimpleDB
    support and other features.
 """
 
@@ -31,15 +31,16 @@ from dateutil.parser import parse as dtparse
 from datetime import datetime
 from pprint import pformat
 
-from glaciercorecalls import GlacierConnection, GlacierWriter
+from modules import constants
 
-from glacierexception import *
+from modules.glaciercorecalls import GlacierConnection, GlacierWriter
 
+from modules.glacierexception import *
 class log_class_call(object):
     """
-    Decorator that logs class calls to specific functions.
+    Decorator that logs glacierexception.pyclass calls to specific functions.
 
-    .. note::
+    .. note:
 
         Set loglevel to DEBUG to see these logs.
     """
@@ -107,27 +108,6 @@ class GlacierWrapper(object):
     Wrapper for accessing Amazon Glacier, with Amazon SimpleDB support
     and other features.
     """
-
-    VAULT_NAME_ALLOWED_CHARACTERS = "[a-zA-Z\.\-\_0-9]+"
-    ID_ALLOWED_CHARACTERS = "[a-zA-Z\-\_0-9]+"
-    MAX_VAULT_NAME_LENGTH = 255
-    MAX_VAULT_DESCRIPTION_LENGTH = 1024
-    MAX_PARTS = 10000
-    AVAILABLE_REGIONS = ('us-east-1', 'us-west-2', 'us-west-1',
-                         'eu-west-1', 'eu-central-1', 'sa-east-1',
-                         'ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2')
-    AVAILABLE_REGIONS_MESSAGE = """\
-Invalid region. Available regions for Amazon Glacier are:
-us-east-1 (US - Virginia)
-us-west-1 (US - N. California)
-us-west-2 (US - Oregon)
-eu-west-1 (EU - Ireland)
-eu-central-1 (EU - Frankfurt)
-sa-east-1 (South America - Sao Paulo)
-ap-northeast-1 (Asia-Pacific - Tokyo)
-ap-southeast-1 (Asia Pacific (Singapore)
-ap-southeast-2 (Asia-Pacific - Sydney)\
-"""
 
     def setuplogging(self, logfile, loglevel, logtostdout):
         """
@@ -336,10 +316,10 @@ aws_secret_key %s\
         :raises: :py:exc:`glacier.glacierexception.InputException`
         """
 
-        if len(name) > self.MAX_VAULT_NAME_LENGTH:
+        if len(name) > constants.MAX_VAULT_NAME_LENGTH:
             raise InputException(
-                u"Vault name can be at most %s characters long." % self.MAX_VAULT_NAME_LENGTH,
-                cause="Vault name more than %s characters long." % self.MAX_VAULT_NAME_LENGTH,
+                u"Vault name can be at most %s characters long." % constants.MAX_VAULT_NAME_LENGTH,
+                cause="Vault name more than %s characters long." % constants.MAX_VAULT_NAME_LENGTH,
                 code="VaultNameError")
 
         if len(name) == 0:
@@ -351,7 +331,7 @@ aws_secret_key %s\
         # If the name starts with an illegal character, then result
         # m is None. In that case the expression becomes '0 != len(name)'
         # which of course is always True.
-        m = re.match(self.VAULT_NAME_ALLOWED_CHARACTERS, name)
+        m = re.match(constants.VAULT_NAME_ALLOWED_CHARACTERS, name)
         if (m.end() if m else 0) != len(name):
             raise InputException(
                 u"""Allowed characters are a-z, A-Z, 0-9, '_' (underscore), '-' (hyphen), and '.' (period)""",
@@ -375,10 +355,10 @@ aws_secret_key %s\
         :raises: :py:exc:`glacier.glacierexception.InputException`
         """
 
-        if len(description) > self.MAX_VAULT_DESCRIPTION_LENGTH:
+        if len(description) > constants.MAX_VAULT_DESCRIPTION_LENGTH:
             raise InputException(
-                u"Description must be no more than %s characters."% self.MAX_VAULT_DESCRIPTION_LENGTH,
-                cause='Vault description contains more than %s characters.'% self.MAX_VAULT_DESCRIPTION_LENGTH,
+                u"Description must be no more than %s characters."% constants.MAX_VAULT_DESCRIPTION_LENGTH,
+                cause='Vault description contains more than %s characters.'% constants.MAX_VAULT_DESCRIPTION_LENGTH,
                 code="VaultDescriptionError")
 
         for char in description:
@@ -422,7 +402,7 @@ or 0x20-0x7E hexadecimal.""",
                 cause='Incorrect length of the %s string.'% id_type,
                 code="IdError")
 
-        m = re.match(self.ID_ALLOWED_CHARACTERS, amazon_id)
+        m = re.match(constants.ID_ALLOWED_CHARACTERS, amazon_id)
         if (m.end() if m else 0) != len(amazon_id):
             raise InputException(u"""\
 This %s contains invalid characters. \
@@ -447,9 +427,9 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)\
         :raises: GlacierWrapper.InputException
         """
 
-        if not region in self.AVAILABLE_REGIONS:
+        if not region in constants.AVAILABLE_REGIONS:
             raise InputException(
-                self.AVAILABLE_REGIONS_MESSAGE,
+                sconstants.AVAILABLE_REGIONS_MESSAGE,
                 cause='Invalid region code: %s.' % region,
                 code='RegionError')
 
@@ -470,14 +450,14 @@ Allowed characters are a-z, A-Z, 0-9, '_' (underscore) and '-' (hyphen)\
         def _part_size_for_total_size(total_size):
             return self._next_power_of_2(
                 int(math.ceil(
-                    float(total_size) / (1024 * 1024 * self.MAX_PARTS)
+                    float(total_size) / (1024 * 1024 * constants.MAX_PARTS)
                 )))
 
         if part_size < 0:
             if total_size > 0:
                 part_size = _part_size_for_total_size(total_size)
             else:
-                part_size = GlacierWriter.DEFAULT_PART_SIZE
+                part_size = constants.DEFAULT_PART_SIZE
         else:
             ps = self._next_power_of_2(part_size)
             if not ps == part_size:
@@ -489,7 +469,7 @@ e.g. 1, 2, 4, 8 MB; automatically increased part size from %s to %s.\
             part_size = ps
 
         # Check if user specified value is big enough, and adjust if needed.
-        if total_size > part_size * 1024 * 1024 * self.MAX_PARTS:
+        if total_size > part_size * 1024 * 1024 * constants.MAX_PARTS:
             part_size = _part_size_for_total_size(total_size)
             self.logger.warning("Part size given is too small; \
 using %s MB parts to upload." % part_size)
@@ -1022,7 +1002,7 @@ using %s MB parts to upload." % part_size)
             self.logger.info('Starting upload of %s to %s.\nDescription: %s'% (file_name if file_name else 'data from stdin', vault_name, description))
 
         # If user did not specify part_size, compute the optimal (i.e. lowest
-        # value to stay within the self.MAX_PARTS (10,000) block limit).
+        # value to stay within the constants.MAX_PARTS (10,000) block limit).
         part_size = self._check_part_size(part_size, total_size)
         part_size_in_bytes = part_size * 1024 * 1024
 
@@ -1854,7 +1834,7 @@ your archive ID is correct, and start a retrieval job using \
         if vault_names:
             vaults = vault_names.split(",")
             self._init_events_for_vaults(vaults, topic_arn)
-        
+
         topic_arns = [topic_arn]
 
         if len(topic_arns):
@@ -1876,7 +1856,7 @@ your archive ID is correct, and start a retrieval job using \
     @sns_connect
     def sns_list_topics(self, sns_options):
         topics = self.sns_conn.get_all_topics()['ListTopicsResponse']['ListTopicsResult']['Topics']
-        
+
         results = []
         for topic in topics:
             results += [{"Topic":topic['TopicArn'].split(":")[-1], "Topic ARN":topic['TopicArn']}]
