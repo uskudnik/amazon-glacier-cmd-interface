@@ -1245,7 +1245,7 @@ using %s MB parts to upload." % part_size)
     @glacier_connect
     @log_class_call("Processing archive retrieval job.",
                     "Archive retrieval job response received.")
-    def getarchive(self, vault_name, archive_id):
+    def getarchive(self, vault_name, archive_id, type):
         """
         Requests Amazon Glacier to make archive available for download.
 
@@ -1290,7 +1290,8 @@ using %s MB parts to upload." % part_size)
 
         # No job found related to this archive, start a new job.
         job_data = {'ArchiveId': archive_id,
-                    'Type': 'archive-retrieval'}
+                    'Type': 'archive-retrieval',
+                    'Tier': type}
         try:
             response = self.glacierconn.initiate_job(vault_name, job_data)
         except boto.glacier.exceptions.UnexpectedHTTPResponseError as e:
