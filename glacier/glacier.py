@@ -207,7 +207,7 @@ def describevault(args):
                'SizeInBytes': "Size",
                'VaultARN': "ARN",
                'CreationDate': "Created"}
-    output_headers(response, args.output)
+    output_table([response], args.output, keys=headers)
 
 @handle_errors
 def listmultiparts(args):

@@ -73,7 +73,19 @@ class GlacierWriter(object):
     Archive. The data is written using the multi-part upload API.
     """
     DEFAULT_PART_SIZE = 128 # in MB, power of 2.
-    MAX_TOTAL_RETRIES = 200
+    # After every failed block upload we sleep (SLEEP_TIME * retries) seconds.
+    # The more retries we've made for one particular block, the longer we sleep
+    # before re-attempting to re-upload that block.
+    SLEEP_TIME = 300
+    # How many retries we should make to upload a particular block. We will not
+    # give up unless we've made at LEAST this many attempts to upload a block.
+    BLOCK_RETRIES = 10
+    # How many retries we should allow for the whole upload. We will not give up
+    # unless we've made at LEAST this many attempts to upload the archive.
+    TOTAL_RETRIES = 100
+    # For large files, the limits above could be surpassed. We also set a per-Gb
+    # criteria that allows more errors for larger uploads.
+    MAX_TOTAL_RETRY_PER_GB = 2
 
     def __init__(self, connection, vault_name,
                  description=None, part_size_in_bytes=DEFAULT_PART_SIZE*1024*1024,
@@ -125,8 +137,6 @@ class GlacierWriter(object):
 
         # How many times we tried uploading this block
         retries = 0
-        # How much to sleep between re-tries.
-        sleep_time = 300
 
         while True:
             try:
@@ -141,12 +151,17 @@ class GlacierWriter(object):
 
             except Exception as e:
                 if '408' in e.message or e.code == "ServiceUnavailableException" or e.type == "Server":
-                    if retries >= 10:
+                    uploaded_gb = self.uploaded_size / (1024 * 1024 * 1024)
+                    if retries >= self.BLOCK_RETRIES and retries > math.log10(uploaded_gb) * 10:
                         if self.logger:
                             self.logger.warning('Retries exhausted for this block.')
                         raise e
 
-                    if self.total_retries >= self.MAX_TOTAL_RETRIES:
+                    if uploaded_gb > 0:
+                        retry_per_gb = self.total_retries / uploaded_gb
+                    else:
+                        retry_per_gb = 0
+                    if self.total_retries >= self.TOTAL_RETRIES and retry_per_gb > self.MAX_TOTAL_RETRY_PER_GB:
                         if self.logger:
                             self.logger.warning('Total retries exhausted.')
                         raise e
@@ -162,11 +177,11 @@ class GlacierWriter(object):
                             # Commify large numbers
                             self.logger.warning('Total uploaded size = {:,d}, block hash = {:}'.format(self.uploaded_size, bytes_to_hex(part_tree_hash)))
 
-                        self.logger.warning('Retries (this block, total) = %d, %d' % (retries, self.total_retries))
+                        self.logger.warning('Retries (this block, total) = %d/%d, %d/%d' % (retries, self.BLOCK_RETRIES, self.total_retries, self.TOTAL_RETRIES))
                         self.logger.warning('Check the AWS status at: http://status.aws.amazon.com/')
-                        self.logger.warning('Sleeping %d seconds (%.1f minutes) before retrying this block.' % (sleep_time, sleep_time / 60.0))
+                        self.logger.warning('Sleeping %d seconds (%.1f minutes) before retrying this block.' % (self.SLEEP_TIME, self.SLEEP_TIME / 60.0))
 
-                    time.sleep(sleep_time)
+                    time.sleep(self.SLEEP_TIME * retries)
 
                 else:
                     self.logger.warning(e.message)
