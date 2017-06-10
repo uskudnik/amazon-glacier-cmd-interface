@@ -16,12 +16,12 @@ import glob
 import csv
 import json
 
+import glacierexception
+import constants
+
 from prettytable import PrettyTable
-
 from GlacierWrapper import GlacierWrapper
-
 from functools import wraps
-from glacierexception import *
 
 def output_headers(headers, output):
     """
@@ -36,21 +36,27 @@ def output_headers(headers, output):
         for row in rows:
             if len(str(row[1])) <= 138:
                 table.add_row(row)
-        
+
         print table
-        
+
+    if output not in constants.HEADERS_OUTPUT_FORMAT:
+        raise ValueError("Output format must be {}, got"
+                         ":{}".format(constants.HEADERS_OUTPUT_FORMAT,
+                                      output))
+
     if output == 'csv':
         csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
         for row in rows:
             csvwriter.writerow(row)
-        
+
     if output == 'json':
         print json.dumps(headers)
 
 def output_table(results, output, keys=None, sort_key=None):
     """
     Prettyprints results. Expects a list of identical dicts.
-    Use the dict keys as headers unless keys is given; one line for each item.
+    Use the dict keys as headers unless keys is given;
+    one line for each item.
 
     Expected format of data is a list of dicts:
     [{'key1':'data1.1', 'key2':'data1.2', ... },
@@ -62,6 +68,10 @@ def output_table(results, output, keys=None, sort_key=None):
     sort_key: the key to use for sorting the table.
     """
 
+    if output not in constants.TABLE_OUTPUT_FORMAT:
+        raise ValueError("Output format must be{}, "
+                         "got {}".format(constants.TABLE_OUTPUT_FORMAT,
+                                         output))
     if output == 'print':
         if len(results) == 0:
             print 'No output!'
@@ -74,16 +84,16 @@ def output_table(results, output, keys=None, sort_key=None):
 
         if sort_key:
             table.sortby = keys[sort_key] if keys else sort_key
-            
+
         print table
-        
+
     if output == 'csv':
         csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
         keys = results[0].keys()
         csvwriter.writerow(keys)
         for row in results:
             csvwriter.writerow([row[k] for k in keys])
-            
+
     if output == 'json':
         print json.dumps(results)
 
@@ -96,6 +106,12 @@ def output_msg(msg, output, success=True):
     :param success: whether the operation was a success or not.
     :type success: boolean
     """
+
+    if output not in constants.TABLE_OUTPUT_FORMAT:
+        raise ValueError("Output format must be{}, "
+                         "got {}".format(constants.TABLE_OUTPUT_FORMAT,
+                                         output))
+
     if msg is not None:
         if output == 'print':
             print msg
@@ -106,22 +122,23 @@ def output_msg(msg, output, success=True):
 
         if output == 'json':
             print json.dumps(msg)
-        
+
     if not success:
         sys.exit(125)
 
 def size_fmt(num, decimals = 1):
     """
-    Formats file sizes in human readable format. Anything bigger than TB
-    is returned is TB. Number of decimals is optional, defaults to 1.
+    Formats file sizes in human readable format. Anything bigger than
+    TB is returned is TB. Number of decimals is optional,
+    defaults to 1.
     """
     fmt = "%%3.%sf %%s"% decimals
     for x in ['bytes','KB','MB','GB']:
         if num < 1024.0:
             return fmt % (num, x)
-        
+
         num /= 1024.0
-        
+
     return fmt % (num, 'TB')
 
 def default_glacier_wrapper(args, **kwargs):
@@ -155,10 +172,10 @@ def handle_errors(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except GlacierException as e:
+        except glacierexception.GlacierException as e:
 
-            # We are only interested in the error message in case it is a
-            # self-caused exception.
+            # We are only interested in the error message in case
+            # it is a self-caused exception.
             e.write(indentation='||  ', stack=False, message=True)
             sys.exit(e.exitcode)
 
@@ -217,7 +234,8 @@ def listmultiparts(args):
     glacier = default_glacier_wrapper(args)
     response = glacier.listmultiparts(args.vault)
     if not response:
-        output_msg('No active multipart uploads.', args.output, success=False)
+        output_msg('No active multipart uploads.', args.output,
+                   success=False)
     else:
         output_table(response, args.output)
 
@@ -265,7 +283,8 @@ def download(args):
     """
     glacier = default_glacier_wrapper(args)
     response = glacier.download(args.vault, args.archive, args.partsize,
-                                out_file_name=args.outfile, overwrite=args.overwrite)
+                                out_file_name=args.outfile,
+                                overwrite=args.overwrite)
     if args.outfile:
         output_msg(response, args.output, success=True)
 
@@ -279,9 +298,9 @@ def upload(args):
     # This is /path/to/vol001|vol002|vol003
     if args.bacula:
         if len(args.filename) > 1:
-            raise InputException(
-                'Bacula-style file name input can accept only one file name argument.')
-        
+            raise glacierexception.InputException("Bacula-style file name input can"\
+                                 "accept only one file name argument.")
+
         fileset = args.filename[0].split('|')
         if len(fileset) > 1:
             dirname = os.path.dirname(fileset[0])
@@ -298,7 +317,7 @@ def upload(args):
     # be read over stdin.
     if args.filename:
         for f in args.filename:
-    
+
             # In case the shell does not expand wildcards, if any, do this here.
             if f[0] == '~':
                 f = os.path.expanduser(f)
@@ -306,34 +325,41 @@ def upload(args):
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
-                    response = glacier.upload(args.vault, g, args.description, args.region, args.stdin,
-                                              args.name, args.partsize, args.uploadid, args.resume)
+                    response = glacier.upload(args.vault, g,
+                                              args.description,
+                                              args.region, args.stdin,
+                                              args.name, args.partsize,
+                                              args.uploadid,
+                                              args.resume)
                     results.append({"Uploaded file": g,
                                     "Created archive with ID": response[0],
                                     "Archive SHA256 tree hash": response[1],
                                     "Description": args.description})
             else:
-                raise InputException(
-                    "File name given for upload can not be found: %s."% f,
+                raise glacierexception.InputException(
+                    "File name given for upload can not "\
+                    "be found: {}.".format(f),
                     code='CommandError')
-            
+
     elif args.stdin:
 
         # No file name; using stdin.
-        response = glacier.upload(args.vault, None, args.description, args.region, args.stdin,
-                                  args.name, args.partsize, args.uploadid, args.resume)
+        response = glacier.upload(args.vault, None, args.description,
+                                  args.region, args.stdin,
+                                  args.name, args.partsize,
+                                  args.uploadid, args.resume)
         results = [{"Created archive with ID": response[0],
                     "Archive SHA256 tree hash": response[1],
                     "Description": args.description}]
 
     else:
-        raise InputException(
+        raise glacierexception.InputException(
             '''No input given. Either give a file name or file names
-on the command line, or use the --stdin switch and pipe
-in the data over stdin.''',
+            on the command line, or use the --stdin switch and pipe
+            in the data over stdin.''',
             cause='No file name and no stdin pipe.',
             code='CommandError')
-            
+
     output_table(results, args.output) if len(results) > 1 \
                           else output_headers(results[0], args.output)
 
@@ -377,26 +403,30 @@ def inventory(args):
     if sys.stdout.isatty() and output == 'print':
         print 'Checking inventory, please wait.\r',
         sys.stdout.flush()
-        
+
     job, inventory = glacier.inventory(args.vault, args.refresh)
     if inventory:
         if sys.stdout.isatty() and output == 'print':
-            print "Inventory of vault: %s" % (inventory["VaultARN"],)
-            print "Inventory Date: %s\n" % (inventory['InventoryDate'],)
+            print "Inventory of vault: {}".format(inventory["VaultARN"])
+            print "Inventory Date: {}\n".format(['InventoryDate'])
             print "Content:"
-            
+
         headers = {'ArchiveDescription': 'Archive Description',
                    'CreationDate': 'Uploaded',
                    'Size': 'Size',
                    'ArchiveId': 'Archive ID',
                    'SHA256TreeHash': 'SHA256 tree hash'}
-        output_table(inventory['ArchiveList'], args.output, keys=headers)
+        output_table(inventory['ArchiveList'],
+                     args.output,
+                     keys=headers)
         if sys.stdout.isatty() and output == 'print':
             size = 0
             for item in inventory['ArchiveList']:
                 size += int(item['Size'])
 
-            print 'This vault contains %s items, total size %s.'% (len(inventory['ArchiveList']), size_fmt(size))
+            print "This vault contains {} items, total size "\
+                    "{}.".format(len(inventory['ArchiveList']),
+                                 size_fmt(size))
 
     else:
         result = {'Status':'Inventory retrieval in progress.',
@@ -414,10 +444,11 @@ def treehash(args):
     for f in args.filename:
         if f:
 
-            # In case the shell does not expand wildcards, if any, do this here.
+            # In case the shell does not expand wildcards,
+            # if any, do this here.
             if f[0] == '~':
                 f = os.path.expanduser(f)
-                
+
             globbed = glob.glob(f)
             if globbed:
                 for g in globbed:
@@ -425,24 +456,26 @@ def treehash(args):
                         {'File name': g,
                          'SHA256 tree hash': glacier.get_tree_hash(g)})
         else:
-            raise InputException(
-                'No file name given.',
-                code='CommandError')
+            raise glacierexception.InputException('No file name given.',
+                                 code='CommandError')
 
     output_table(hash_results, args.output)
 
 def snssync(args):
     """
-    If monitored_vaults is specified in configuration file, subscribe vaults
-    specificed in it to notifications, otherwiser subscribe all vault.
+    If monitored_vaults is specified in configuration file, subscribe
+    vaults specificed in it to notifications, otherwiser
+    subscribe all vault.
     """
     glacier = default_glacier_wrapper(args)
-    response = glacier.sns_sync(sns_options=args.sns_options, output=args.output)
+    response = glacier.sns_sync(sns_options=args.sns_options,
+                                output=args.output)
     output_table(response, args.output)
 
 def snssubscribe(args):
     """
-    Subscribe individual vaults to notifications by method specified by user.
+    Subscribe individual vaults to notifications by method
+    specified by user.
     """
     protocol = args.protocol
     endpoint = args.endpoint
@@ -450,7 +483,9 @@ def snssubscribe(args):
     topic = args.topic
 
     glacier = default_glacier_wrapper(args)
-    response = glacier.sns_subscribe(protocol, endpoint, topic, vault_names=vault_names, sns_options=args.sns_options)
+    response = glacier.sns_subscribe(protocol, endpoint, topic,
+                                     vault_names=vault_names,
+                                     sns_options=args.sns_options)
     output_table(response, args.output)
 
 def snslistsubscriptions(args):
@@ -462,7 +497,9 @@ def snslistsubscriptions(args):
     topic = args.topic
 
     glacier = default_glacier_wrapper(args)
-    response = glacier.sns_list_subscriptions(protocol, endpoint, topic, sns_options=args.sns_options)
+    response = glacier.sns_list_subscriptions(protocol, endpoint,
+                                              topic,
+                                              sns_options=args.sns_options)
     output_table(response, args.output)
 
 def snslisttopics(args):
@@ -472,16 +509,18 @@ def snslisttopics(args):
 
 def snsunsubscribe(args):
     """
-    Unsubscribe individual vaults from notifications for specified protocol, 
-    endpoint and vault.
+    Unsubscribe individual vaults from notifications for
+    specified protocol, endpoint and vault.
     """
     protocol = args.protocol
     endpoint = args.endpoint
     topic = args.topic
 
     glacier = default_glacier_wrapper(args)
-    response = glacier.sns_unsubscribe(protocol, endpoint, topic, sns_options=args.sns_options)
-    output_table(response, args.output)    
+    response = glacier.sns_unsubscribe(protocol, endpoint,
+                                       topic,
+                                       sns_options=args.sns_options)
+    output_table(response, args.output)
 
 def main():
     program_description = u"""
@@ -490,25 +529,32 @@ def main():
 
     # Config parser
     conf_parser = argparse.ArgumentParser(
-                                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                add_help=False)
+                formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+                add_help=False)
 
-    conf_parser.add_argument("-c", "--conf", default="~/.glacier-cmd",
-        help="Name of the file to log messages to.", metavar="FILE")
-    conf_parser.add_argument('--logtostdout', action='store_true',
-        help='Send log messages to stdout instead of the config file.')
+    conf_parser.add_argument("-c",
+                             "--conf",
+                             default="~/.glacier-cmd",
+                             help="Name of the file to log messages to.",
+                             metavar="FILE")
+    conf_parser.add_argument('--logtostdout',
+                             action='store_true',
+                             help="Send log messages "\
+                                  "to stdout instead of "\
+                                  "the config file.")
 
     args, remaining_argv = conf_parser.parse_known_args()
 
-    # Here we parse config from files in home folder or in current folder
-    # We use separate topics for aws and glacier specific configs
+    # Here we parse config from files in home folder or in current
+    # folder We use separate topics for aws and glacier
+    # specific configs
     aws = glacier = sdb = {}
     config = ConfigParser.SafeConfigParser()
 
     sns = {'topics_present':False, 'topic':'aws-glacier-notifications'}
 
-    configs_read = config.read(['/etc/glacier-cmd.conf',
-                    os.path.expanduser('~/.glacier-cmd'),
+    configs_read = config.read([constants.SYSTEM_WIDE_CONFIG_FILENAME,
+                    os.path.expanduser(constants.USER_CONFIG_FILENAME),
                     args.conf])
     if configs_read:
         try:
@@ -522,7 +568,7 @@ def main():
         try:
             sdb = dict(config.items("sdb"))
             for key,value in sdb.items():
-                sdb["sdb_%s"%key]=value
+                sdb["sdb_{}".format(key)]=value
                 del sdb[key]
         except ConfigParser.NoSectionError:
             pass
@@ -539,7 +585,7 @@ def main():
                         'options':dict(config.items(topic))
                     }
                     sns_topics += [s]
-            
+
             if sns_topics:
                 sns['topics'] = sns_topics
         elif any(topic for topic in config.sections() if topic == "SNS"):
@@ -572,23 +618,24 @@ def main():
 
     # Main configuration parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-                                     description=program_description)
+             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+             description=program_description)
     subparsers = parser.add_subparsers(title='Subcommands',
         help=u"For subcommand help, use: glacier-cmd <subcommand> -h")
 
     # Amazon Web Services settings
     group = parser.add_argument_group('aws')
-    help_msg_config = u"(Required if you have not created a \
-                        ~/.glacier-cmd or /etc/glacier-cmd.conf config file)"
+
     group.add_argument('--aws-access-key',
                        required=a_required("aws-access-key"),
                        default=a_default("aws-access-key"),
-                       help="Your aws access key " + help_msg_config)
+                       help="Your aws access key "\
+                            "{}".format(constants.HELP_MESSAGE_CONFIG))
     group.add_argument('--aws-secret-key',
                        required=a_required("aws-secret-key"),
                        default=a_default("aws-secret-key"),
-                       help="Your aws secret key " + help_msg_config)
+                       help="Your aws secret key "\
+                            "{}".format(constants.HELP_MESSAGE_CONFIG))
 
     # Glacier settings
     group = parser.add_argument_group('glacier')
@@ -596,25 +643,29 @@ def main():
                        required=required("region"),
                        default=default("region"),
                        help="Region where you want to store \
-                             your archives " + help_msg_config)
+                             your archives "\
+                             "{}".format(constants.HELP_MESSAGE_CONFIG))
     bookkeeping = True if default('bookkeeping') == 'True' else False
     group.add_argument('--bookkeeping',
                        required=False,
                        default=bookkeeping,
                        action="store_true",
-                       help="Should we keep book of all created archives.\
-                             This requires a Amazon SimpleDB account and its \
-                             bookkeeping domain name set")
+                       help="Should we keep book of all created "\
+                            "archives. This requires a Amazon "\
+                            "SimpleDB account and its "\
+                            "bookkeeping domain name set")
     group.add_argument('--no-bookkeeping',
                    required=False,
                    default=False,
                    action="store_true",
-                   help="Explicitly disables bookkeeping, regardless of other\
-                        configuration or command line options.")
+                   help="Explicitly disables bookkeeping, "\
+                        "regardless of other configuration "\
+                        "or command line options.")
     group.add_argument('--bookkeeping-domain-name',
                         required=False,
                         default=default("bookkeeping-domain-name"),
-                        help="Amazon SimpleDB domain name for bookkeeping.")
+                        help="Amazon SimpleDB domain name "
+                             "for bookkeeping.")
     group.add_argument('--logfile',
                        required=False,
                        default=os.path.expanduser('~/.glacier-cmd.log'),
@@ -629,26 +680,31 @@ def main():
                        required=False,
                        default=default('output') if default('output') else 'print',
                        choices=['print', 'csv', 'json'],
-                       help='Set how to return results: print to the screen,\
-                             or as csv resp. json string. NOTE: to receive full\
-                             output use csv or json. `print` removes lines\
-                             longer than 138 chars')
+                       help="Set how to return results: print to "\
+                            "the screen, or as csv resp. json string. "\
+                            "NOTE: to receive full output use csv or "\
+                            "json. `print` removes lines "\
+                            "longer than 138 chars")
 
     # SimpleDB settings
     group = parser.add_argument_group('sdb')
     group.add_argument('--sdb-access-key',
         required=False,
-        default=s_default("sdb-access-key") or a_default("aws-access-key"),
-        help="aws access key to be used with bookkeeping" + help_msg_config)
+        default=(s_default("sdb-access-key") or
+                 a_default("aws-access-key")),
+        help="aws access key to be used with \
+              bookkeeping {}".format(constants.HELP_MESSAGE_CONFIG))
     group.add_argument('--sdb-secret-key',
         required=False,
-        default=s_default("sdb-secret-key") or a_default("aws-secret-key"),
-        help="aws secret key to be used with bookkeeping" + help_msg_config)
+        default=(s_default("sdb-secret-key") or
+                 a_default("aws-secret-key")),
+        help="aws secret key to be used with "\
+             "bookkeeping {}".format(constants.HELP_MESSAGE_CONFIG))
     group.add_argument('--sdb-region',
         required=False,
         default=s_default("sdb-region") or default("region"),
-        help="Region where you want to store \
-                             your bookkeeping " + help_msg_config)
+        help="Region where you want to store "\
+             "bookkeeping {}".format(constants.HELP_MESSAGE_CONFIG))
 
     # glacier-cmd mkvault <vault>
     parser_mkvault = subparsers.add_parser("mkvault",
@@ -657,7 +713,7 @@ def main():
         help='The vault to be created.')
     parser_mkvault.set_defaults(func=mkvault)
 
-    # glacier-cmd lsvault    
+    # glacier-cmd lsvault
     parser_lsvault = subparsers.add_parser("lsvault",
         help="List available vaults.")
     parser_lsvault.set_defaults(func=lsvault)
@@ -683,19 +739,18 @@ def main():
         help='Upload an archive to Amazon Glacier.')
     parser_upload.add_argument('vault',
         help='The vault the archive is to be stored in.')
-##    group = parser_upload.add_mutually_exclusive_group(required=True)
     parser_upload.add_argument('filename', nargs='*', default=None,
         help='''\
 The name(s) of the local file(s) to be uploaded. Wildcards
 are accepted. Can not be used if --stdin is used.''')
     parser_upload.add_argument('--stdin', action='store_true',
         help='''\
-Read data from stdin, instead of local file. 
+Read data from stdin, instead of local file.
 Can not be used if <filename> is given.''')
     parser_upload.add_argument('--name', default=None,
         help='''\
-Use the given name as the filename for bookkeeping 
-purposes. To be used in conjunction with --stdin or 
+Use the given name as the filename for bookkeeping
+purposes. To be used in conjunction with --stdin or
 when the file being uploaded is a temporary file.''')
     parser_upload.add_argument('--partsize', type=int, default=-1,
         help='''\
@@ -764,13 +819,14 @@ E.g.: /path/to/backup/vol001|vol002|vol003''')
 
     # glacier-cmd inventory <vault> [--refresh]
     parser_inventory = subparsers.add_parser('inventory',
-        help='List inventory of a vault, if available. If not available, \
-              creates inventory retrieval job if none running already.')
+        help="List inventory of a vault, if available. If not "\
+             "available, creates inventory retrieval job if none "\
+             "running already.")
     parser_inventory.add_argument('vault',
         help='The vault to list the inventory of.')
     parser_inventory.add_argument('--refresh', action='store_true',
-        help='Create an inventory retrieval job, even if inventory is \
-              available or with another retrieval job running.')
+        help="Create an inventory retrieval job, even if inventory is "\
+              "available or with another retrieval job running.")
     parser_inventory.set_defaults(func=inventory)
 
     # glacier-cmd getarchive <vault> <archive>
@@ -866,47 +922,61 @@ at hand.''')
 
     # glacier-cmd hash <filename>
     parser_describejob = subparsers.add_parser('treehash',
-        help='Calculate the tree-hash (Amazon style sha256-hash) of a file.')
+        help="Calculate the tree-hash (Amazon style sha256-hash) "\
+             "of a file.")
     parser_describejob.add_argument('filename', nargs='*',
         help='The filename to calculate the treehash of.')
     parser_describejob.set_defaults(func=treehash)
 
-    # SNS related commands are located in their own subparser 
-    parser_sns = subparsers.add_parser('sns', 
+    # SNS related commands are located in their own subparser
+    parser_sns = subparsers.add_parser('sns',
         help="Subcommands related to SNS")
-    sns_subparsers = parser_sns.add_subparsers(title="Subcommands related to SNS")
+    sns_subparsers = parser_sns.add_subparsers(title="Subcommands "\
+                                                     "related to SNS")
 
     # glacier-cmd sns syncs
     sns_parser_sync = sns_subparsers.add_parser('sync',
-        help="Go through configuration file and either subscribe all vaults to default topic or, if sections are present, create separate topics and subscribe specified vaults to that topic.")
+        help="Go through configuration file and either "\
+             "subscribe all vaults to default topic or, "\
+             "if sections are present, create separate "\
+             "topics and subscribe specified vaults to that topic.")
     sns_parser_sync.set_defaults(func=snssync, sns_options=sns)
 
     # glacier-cmd sns subscribe protocol endpoint topic [--vault]
     sns_parser_subscribe = sns_subparsers.add_parser('subscribe',
         help="Subscribe to topic.")
     sns_parser_subscribe.add_argument("protocol",
-        help="Protocol used for notifications. Can be email, http, https or sms.")
+        help="Protocol used for notifications. Can be email, "\
+             "http, https or sms.")
     sns_parser_subscribe.add_argument("endpoint",
-        help="Valid applicable endpoint - email address, URL or phone number.")
-    sns_parser_subscribe.add_argument("topic", 
-        help="Topic for which notifications will be sent to specified protocol and endpoint.")
+        help="Valid applicable endpoint - email address, "\
+             "URL or phone number.")
+    sns_parser_subscribe.add_argument("topic",
+        help="Topic for which notifications will be sent "\
+             "to specified protocol and endpoint.")
     sns_parser_subscribe.add_argument("--vault",
-        help="Optional vault names, seperated by comma, for this a new topic will be created and subscribed to.")
-    sns_parser_subscribe.set_defaults(func=snssubscribe, sns_options={ "options":sns, })
+        help="Optional vault names, seperated by comma, "\
+             "for this a new topic will be created and subscribed to.")
+    sns_parser_subscribe.set_defaults(func=snssubscribe,
+                                      sns_options={ "options":sns, })
 
     # glacier-cmd sns unsubscribe [--protocol <protocol>] [--endpoint <endpoint>] [--topic <topic>]
     sns_parser_unsubscribe = sns_subparsers.add_parser('unsubscribe',
         help="Unsubscribe from a specified topic.")
     sns_parser_unsubscribe.add_argument("--protocol",
-        help="Protocol used for notifications. Can be email, http, https or sms.")
+        help="Protocol used for notifications. Can be email, "\
+             "http, https or sms.")
     sns_parser_unsubscribe.add_argument("--endpoint",
-        help="Valid applicable endpoint - email address, URL or phone number.")
+        help="Valid applicable endpoint - email address, "\
+             "URL or phone number.")
     sns_parser_unsubscribe.add_argument("--topic",
-        help="Topic for which notifications will be sent to specified protocol and endpoint.")
-    sns_parser_unsubscribe.set_defaults(func=snsunsubscribe, sns_options=sns)
+        help="Topic for which notifications will be sent to "\
+             "specified protocol and endpoint.")
+    sns_parser_unsubscribe.set_defaults(func=snsunsubscribe,
+                                        sns_options=sns)
 
     # glacier-cmd sns lssub [--protocol <protocol>] [--endpoint <endpoint>] [--topic <topic>]
-    sns_parser_listsubs = sns_subparsers.add_parser('lssub', 
+    sns_parser_listsubs = sns_subparsers.add_parser('lssub',
         help="List subscriptions. Other arguments are ANDed together.")
     sns_parser_listsubs.add_argument("--protocol",
         help="Show only subscriptions on a specified protocol.")
@@ -914,23 +984,25 @@ at hand.''')
         help="Show only subscriptions to a specified endpoint.")
     sns_parser_listsubs.add_argument("--topic",
         help="Show only subscriptions for a specified topic.")
-    sns_parser_listsubs.set_defaults(func=snslistsubscriptions, sns_options=sns)
+    sns_parser_listsubs.set_defaults(func=snslistsubscriptions,
+                                     sns_options=sns)
 
     # glacier-cmd sns lstopic
     sns_parser_listtopics = sns_subparsers.add_parser('lstopic',
         help="List all topics.")
-    sns_parser_listtopics.set_defaults(func=snslisttopics, sns_options=sns)
-    
+    sns_parser_listtopics.set_defaults(func=snslisttopics,
+                                       sns_options=sns)
 
-    # TODO args.logtostdout becomes false when parsing the remaining_argv
-    # so here we bridge this. An ugly hack but it works.
+
+    # TODO args.logtostdout becomes false when parsing the
+    # remaining_argv so here we bridge this. An ugly hack but it works.
     logtostdout = args.logtostdout
 
     # Process the remaining arguments.
     args = parser.parse_args(remaining_argv)
-    
+
     args.logtostdout = logtostdout
-    
+
     # Run the subcommand.
     args.func(args)
 
