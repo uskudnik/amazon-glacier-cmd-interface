@@ -19,8 +19,7 @@ HEADERS_OUTPUT_FORMAT = ["csv","json"]
 TABLE_OUTPUT_FORMAT = ["csv","json", "print"]
 SYSTEM_WIDE_CONFIG_FILENAME = "/etc/glacier-cmd.conf"
 USER_CONFIG_FILENAME = "~/.glacier-cmd"
-HELP_MESSAGE_CONFIG = u"(Required if you have not created a "
-                       "~/.glacier-cmd or /etc/glacier-cmd.conf config file)"
+HELP_MESSAGE_CONFIG = u"(Required if you have not created a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)"
 ERRORCODE = {'InternalError': 127,        # Library internal error.
              'UndefinedErrorCode': 126,   # Undefined code.
              'NoResults': 125,            # Operation yielded no results.
