@@ -25,6 +25,7 @@ import time
 import boto.glacier.layer1
 
 from glacierexception import *
+from boto.glacier.exceptions import UnexpectedHTTPResponseError
 
 # Placeholder, effectively renaming the class.
 class GlacierConnection(boto.glacier.layer1.Layer1):
@@ -150,7 +151,7 @@ class GlacierWriter(object):
                 break
 
             except Exception as e:
-                if '408' in e.message or e.code == "ServiceUnavailableException" or e.type == "Server":
+                if '408' in e.message or e.code == "ServiceUnavailableException" or isinstance(e, UnexpectedHTTPResponseError):
                     uploaded_gb = self.uploaded_size / (1024 * 1024 * 1024)
                     if retries >= self.BLOCK_RETRIES and retries > math.log10(uploaded_gb) * 10:
                         if self.logger:
