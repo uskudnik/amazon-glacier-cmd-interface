@@ -31,6 +31,12 @@ def output_headers(headers, output):
     :type headers: dict
     """
     rows = [(k, headers[k]) for k in headers.keys()]
+
+    if output not in constants.TABLE_OUTPUT_FORMAT:
+        raise ValueError("Output format must be {}, got"
+                         ": {}".format(constants.TABLE_OUTPUT_FORMAT,
+                                      output))
+
     if output == 'print':
         table = PrettyTable(["Header", "Value"])
         for row in rows:
@@ -38,11 +44,6 @@ def output_headers(headers, output):
                 table.add_row(row)
 
         print table
-
-    if output not in constants.HEADERS_OUTPUT_FORMAT:
-        raise ValueError("Output format must be {}, got"
-                         ":{}".format(constants.HEADERS_OUTPUT_FORMAT,
-                                      output))
 
     if output == 'csv':
         csvwriter = csv.writer(sys.stdout, quoting=csv.QUOTE_ALL)
@@ -69,7 +70,7 @@ def output_table(results, output, keys=None, sort_key=None):
     """
 
     if output not in constants.TABLE_OUTPUT_FORMAT:
-        raise ValueError("Output format must be{}, "
+        raise ValueError("Output format must be {}, "
                          "got {}".format(constants.TABLE_OUTPUT_FORMAT,
                                          output))
     if output == 'print':
@@ -108,7 +109,7 @@ def output_msg(msg, output, success=True):
     """
 
     if output not in constants.TABLE_OUTPUT_FORMAT:
-        raise ValueError("Output format must be{}, "
+        raise ValueError("Output format must be {}, "
                          "got {}".format(constants.TABLE_OUTPUT_FORMAT,
                                          output))
 
@@ -298,7 +299,7 @@ def upload(args):
     # This is /path/to/vol001|vol002|vol003
     if args.bacula:
         if len(args.filename) > 1:
-            raise glacierexception.InputException("Bacula-style file name input can"\
+            raise glacierexception.InputException("Bacula-style file name input can "\
                                  "accept only one file name argument.")
 
         fileset = args.filename[0].split('|')
@@ -679,7 +680,7 @@ def main():
     group.add_argument('--output',
                        required=False,
                        default=default('output') if default('output') else 'print',
-                       choices=['print', 'csv', 'json'],
+                       choices=constants.TABLE_OUTPUT_FORMAT,
                        help="Set how to return results: print to "\
                             "the screen, or as csv resp. json string. "\
                             "NOTE: to receive full output use csv or "\
