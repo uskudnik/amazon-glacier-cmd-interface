@@ -150,6 +150,7 @@ def default_glacier_wrapper(args, **kwargs):
     return GlacierWrapper(args.aws_access_key,
                           args.aws_secret_key,
                           args.region,
+                          args.account_id,
                           bookkeeping=args.bookkeeping,
                           no_bookkeeping=args.no_bookkeeping,
                           bookkeeping_domain_name=args.bookkeeping_domain_name,
@@ -646,6 +647,10 @@ def main():
                        help="Region where you want to store \
                              your archives "\
                              "{}".format(constants.HELP_MESSAGE_CONFIG))
+    group.add_argument('--account-id',
+                       required=False,
+                       default=default("account-id") if default("account-id") else '-',
+                       help="AWS account ID of the account that owns the vault")
     bookkeeping = True if default('bookkeeping') == 'True' else False
     group.add_argument('--bookkeeping',
                        required=False,
