@@ -220,14 +220,17 @@ ap-southeast-2 (Asia-Pacific - Sydney)\
                         Connecting to Amazon Glacier with
                         aws_access_key %s
                         aws_secret_key %s
-                        region %s\
+                        region %s
+                        account_id %s\
                         """,
                                       self.aws_access_key,
                                       self.aws_secret_key,
-                                      self.region)
+                                      self.region,
+                                      self.account_id)
                     self.glacierconn = GlacierConnection(self.aws_access_key,
                                                          self.aws_secret_key,
-                                                         region_name=self.region)
+                                                         region_name=self.region,
+                                                         account_id=self.account_id)
                 except boto.exception.AWSConnectionError as e:
                     raise ConnectionException(
                         "Cannot connect to Amazon Glacier.",
@@ -1956,7 +1959,7 @@ your archive ID is correct, and start a retrieval job using \
 
         return unsubscribed
 
-    def __init__(self, aws_access_key, aws_secret_key, region,
+    def __init__(self, aws_access_key, aws_secret_key, region, account_id='-',
                  bookkeeping=False, no_bookkeeping=None, bookkeeping_domain_name=None,
                  sdb_access_key=None, sdb_secret_key=None, sdb_region=None,
                  logfile=None, loglevel='WARNING', logtostdout=True):
@@ -1969,6 +1972,8 @@ your archive ID is correct, and start a retrieval job using \
         :type aws_secret_key: str
         :param region: name of your default region, see :ref:`regions`.
         :type region: str
+        :param account_id: AWS account ID
+        :type account_id: str
         :param bookkeeping: whether to enable bookkeeping, see :reg:`bookkeeping`.
         :type bookkeeping: boolean
         :param bookkeeping_domain_name: your Amazon SimpleDB domain name where the bookkeeping information will be stored.
@@ -1997,6 +2002,7 @@ your archive ID is correct, and start a retrieval job using \
         self.bookkeeping_domain_name = bookkeeping_domain_name
 
         self.region = region
+        self.account_id = account_id
 
         self.sdb_access_key = sdb_access_key if sdb_access_key else aws_access_key
         self.sdb_secret_key = sdb_secret_key if sdb_secret_key else aws_secret_key
@@ -2015,6 +2021,7 @@ Creating GlacierWrapper instance with
     nobookkeeping=%s,
     bookkeeping_domain_name=%s,
     region=%s,
+    account_id=%s,
     sdb_access_key=%s,
     sdb_secret_key=%s,
     sdb_region=%s,
@@ -2023,6 +2030,6 @@ Creating GlacierWrapper instance with
     logging to stdout %s.""",
                           aws_access_key, aws_secret_key, bookkeeping,
                           no_bookkeeping,
-                          bookkeeping_domain_name, region,
+                          bookkeeping_domain_name, region, account_id,
                           sdb_access_key, sdb_secret_key, sdb_region,
                           logfile, loglevel, logtostdout)
