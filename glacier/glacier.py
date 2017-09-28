@@ -524,6 +524,25 @@ def snsunsubscribe(args):
                                        sns_options=args.sns_options)
     output_table(response, args.output)
 
+class CustomArgParseFormatter(argparse.ArgumentDefaultsHelpFormatter,
+                              argparse.RawDescriptionHelpFormatter):
+    def _get_help_string(self, action):
+        """
+        This method is identical to the base one, except that if the argument
+        ends in '-key', the default value is suppressed so that we don't print
+        out sensitive passwords (from the config file).
+        """
+        help = action.help
+        if '%(default)' not in action.help:
+            if action.default is not argparse.SUPPRESS:
+                defaulting_nargs = [argparse.OPTIONAL, argparse.ZERO_OR_MORE]
+                if action.option_strings or action.nargs in defaulting_nargs:
+                    if action.option_strings[0].endswith('-key'):
+                        pass
+                    else:
+                        help += ' (default: %(default)s)'
+        return help
+
 def main():
     program_description = u"""
     Command line interface for Amazon Glacier
@@ -620,7 +639,7 @@ def main():
 
     # Main configuration parser
     parser = argparse.ArgumentParser(parents=[conf_parser],
-             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+             formatter_class=CustomArgParseFormatter,
              description=program_description)
     subparsers = parser.add_subparsers(title='Subcommands',
         help=u"For subcommand help, use: glacier-cmd <subcommand> -h")
