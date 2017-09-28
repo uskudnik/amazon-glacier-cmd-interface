@@ -142,7 +142,7 @@ To upload from stdin:
 
     $ cat file | glacier-cmd upload Test --description "Some description" --stdin  --name /path/BetterName
 
-IMPORTANT NOTE: If you're uploading from stdin, and you don't specify a
+IMPORTANT NOTE: If you're uploading from stdin or a pipe, and you don't specify a
 --partsize option, your upload will be limited to 1.3Tb, and the progress
 report will come out every 128Mb. For more details, run:
 
@@ -156,7 +156,8 @@ its file name, its description, or limit the search by region and vault.
 If that is not enough you should use `getarchive` and specify the archive ID of
 the archive you want to retrieve:
 
-    $ TODO: example here
+    $ glacier-cmd download Test eBLl4DbMbZ4YMA7fD9cNacf2z1kGxpYxBqTV4qFVsuzgjuNlKSkWm2rFpw6Gq-bFT6Vt9cUZ1lGqSbtZjtbeh0jYn9tJC-MczQyA3tP6bezYUeN8dGGvqNqT3la79wjRRair1am1JA --outfile filename
+    Read 1 GB of 10 GB (10%). Rate 3.05 MB/s, average 2.71 MB/s, ETA 1:00:00.   
 
 To remove uploaded archive use `rmarchive`. You can currently delete only by
 archive id (notice the use of `--` when the archive ID starts with a dash):
@@ -221,80 +222,102 @@ Usage description(help):
     usage: glacier-cmd [-h] [-c FILE] [--logtostdout]
                        [--aws-access-key AWS_ACCESS_KEY]
                        [--aws-secret-key AWS_SECRET_KEY] [--region REGION]
-                       [--bookkeeping]
+                       [--account-id ACCOUNT_ID] [--bookkeeping]
                        [--no-bookkeeping]
                        [--bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME]
                        [--logfile LOGFILE]
                        [--loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}]
-                       [--output {print,csv,json}]
-
-
-    {mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash}
-                      ...
+                       [--output {csv,json,print}]
+                       [--sdb-access-key SDB_ACCESS_KEY]
+                       [--sdb-secret-key SDB_SECRET_KEY] [--sdb-region SDB_REGION]
+                       {mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash,sns}
+                       ...
 
     Command line interface for Amazon Glacier
 
     optional arguments:
-     -h, --help            show this help message and exit
-     -c FILE, --conf FILE  Name of the file to log messages to. (default:
-                           ~/.glacier-cmd)
-     --logtostdout         Send log messages to stdout instead of the config
-                           file. (default: False)
+      -h, --help            show this help message and exit
+      -c FILE, --conf FILE  Name of the file to log messages to. (default:
+                            ~/.glacier-cmd)
+      --logtostdout         Send log messages to stdout instead of the config
+                            file. (default: False)
 
     Subcommands:
-      {mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash}
-                           For subcommand help, use: glacier-cmd <subcommand> -h
-       mkvault             Create a new vault.
-       lsvault             List available vaults.
-       describevault       Describe a vault.
-       rmvault             Remove a vault.
-       upload              Upload an archive to Amazon Glacier.
-       listmultiparts      List all active multipart uploads.
-       abortmultipart      Abort a multipart upload.
-       inventory           List inventory of a vault, if available. If not
-                           available, creates inventory retrieval job if none
-                           running already.
-       getarchive          Requests to make an archive available for download.
-       download            Download a file by archive id.
-       rmarchive           Remove archive from Amazon Glacier.
-       search              Search Amazon SimpleDB database for available archives
-                           (requires bookkeeping to be enabled).
-       listjobs            List active jobs in a vault.
-       describejob         Describe a job.
-       treehash            Calculate the tree-hash (Amazon style sha256-hash) of
-                           a file.
+      {mkvault,lsvault,describevault,rmvault,upload,listmultiparts,abortmultipart,inventory,getarchive,download,rmarchive,search,listjobs,describejob,treehash,sns}
+                            For subcommand help, use: glacier-cmd <subcommand> -h
+        mkvault             Create a new vault.
+        lsvault             List available vaults.
+        describevault       Describe a vault.
+        rmvault             Remove a vault.
+        upload              Upload an archive to Amazon Glacier.
+        listmultiparts      List all active multipart uploads.
+        abortmultipart      Abort a multipart upload.
+        inventory           List inventory of a vault, if available. If not
+                            available, creates inventory retrieval job if none
+                            running already.
+        getarchive          Requests to make an archive available for download.
+        download            Download a file by archive id.
+        rmarchive           Remove archive from Amazon Glacier.
+        search              Search Amazon SimpleDB database for available archives
+                            (requires bookkeeping to be enabled).
+        listjobs            List active jobs in a vault.
+        describejob         Describe a job.
+        treehash            Calculate the tree-hash (Amazon style sha256-hash) of
+                            a file.
+        sns                 Subcommands related to SNS
 
     aws:
-     --aws-access-key AWS_ACCESS_KEY
-                           Your aws access key (Required if you have not created
-                           a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
-                           (default: AKIAIP5VPUSCSJQ6BSSQ)
-     --aws-secret-key AWS_SECRET_KEY
-                           Your aws secret key (Required if you have not created
-                           a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
-                           (default: WDgq6ZZn7Y4Lkt5LxPuionw2pTLbonwdFZz1BGtS)
+      --aws-access-key AWS_ACCESS_KEY
+                            Your aws access key (Required if you have not created
+                            a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
+                            (default: AKIAINJIQK32YOKKYIPA)
+      --aws-secret-key AWS_SECRET_KEY
+                            Your aws secret key (Required if you have not created
+                            a ~/.glacier-cmd or /etc/glacier-cmd.conf config file)
+                            (default: Tl1NT/8b5sRxr0Dzz9ySUv50hoJM64hGa8QpiL5k)
 
     glacier:
-     --region REGION       Region where you want to store your archives (Required
-                           if you have not created a ~/.glacier-cmd or /etc
-                           /glacier-cmd.conf config file) (default: us-east-1)
-     --bookkeeping         Should we keep book of all created archives. This
-                           requires a Amazon SimpleDB account and its bookkeeping
-                           domain name set (default: True)
-     --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
-                           Amazon SimpleDB domain name for bookkeeping. (default:
-                           squirrel)
-     --no-bookkeeping      If present, overrides either CLI or configuration file
-                           options provided for bookkeeping either beforehand or 
-                           afterwards
-     --logfile LOGFILE     File to write log messages to. (default: /home/wouter
-                           /.glacier-cmd.log)
-     --loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}
-                           Set the lowest level of messages you want to log.
-                           (default: DEBUG)
-     --output {print,csv,json}
-                           Set how to return results: print to the screen, or as
-                           csv resp. json string. (default: print)
+      --region REGION       Region where you want to store your archives (Required
+                            if you have not created a ~/.glacier-cmd or /etc
+                            /glacier-cmd.conf config file) (default: us-east-1)
+      --account-id ACCOUNT_ID
+                            AWS account ID of the account that owns the vault
+                            (default: -)
+      --bookkeeping         Should we keep book of all created archives. This
+                            requires a Amazon SimpleDB account and its bookkeeping
+                            domain name set (default: False)
+      --no-bookkeeping      Explicitly disables bookkeeping, regardless of other
+                            configuration or command line options. (default:
+                            False)
+      --bookkeeping-domain-name BOOKKEEPING_DOMAIN_NAME
+                            Amazon SimpleDB domain name for bookkeeping. (default:
+                            amazon-glacier)
+      --logfile LOGFILE     File to write log messages to. (default: /home/gburca
+                            /.glacier-cmd.log)
+      --loglevel {-1,DEBUG,0,INFO,1,WARNING,2,ERROR,3,CRITICAL}
+                            Set the lowest level of messages you want to log.
+                            (default: WARNING)
+      --output {csv,json,print}
+                            Set how to return results: print to the screen, or as
+                            csv resp. json string. NOTE: to receive full output
+                            use csv or json. `print` removes lines longer than 138
+                            chars (default: print)
+
+    sdb:
+      --sdb-access-key SDB_ACCESS_KEY
+                            aws access key to be used with bookkeeping (Required
+                            if you have not created a ~/.glacier-cmd or /etc
+                            /glacier-cmd.conf config file) (default:
+                            AKIAINJIQK32YOKKYIPA)
+      --sdb-secret-key SDB_SECRET_KEY
+                            aws secret key to be used with bookkeeping (Required
+                            if you have not created a ~/.glacier-cmd or /etc
+                            /glacier-cmd.conf config file) (default:
+                            Tl1NT/8b5sRxr0Dzz9ySUv50hoJM64hGa8QpiL5k)
+      --sdb-region SDB_REGION
+                            Region where you want to store bookkeeping (Required
+                            if you have not created a ~/.glacier-cmd or /etc
+                            /glacier-cmd.conf config file) (default: us-east-1)
 
 SimpleDB bookkeeping (custom) domain name
 -----------------------------------------
@@ -306,7 +329,7 @@ Short Notification Service (SNS) is Amazon's technology that allows you to be no
 
 If you run `glacier-cmd sns sync` without specifing anything in your configuration file, it will automatically subscribe all your vaults to `aws-glacier-notifications` topic.
 
-    $ glacier.py sns sync                                           
+    $ glacier-cmd sns sync
     +------------+-------------------------------------------------+
     | Vault Name |                    Request Id                   |
     +------------+-------------------------------------------------+
