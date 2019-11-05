@@ -113,20 +113,47 @@ class GlacierWrapper(object):
     MAX_VAULT_NAME_LENGTH = 255
     MAX_VAULT_DESCRIPTION_LENGTH = 1024
     MAX_PARTS = 10000
-    AVAILABLE_REGIONS = ('us-east-1', 'us-west-2', 'us-west-1',
-                         'eu-west-1', 'eu-central-1', 'sa-east-1',
-                         'ap-northeast-1', 'ap-southeast-1', 'ap-southeast-2')
+    AVAILABLE_REGIONS = (
+            'us-east-1',
+            'us-east-2',
+            'us-west-1',
+            'us-west-2',
+            'ca-central-1',
+            'eu-central-1',
+            'eu-west-1',
+            'eu-west-2',
+            'eu-west-3',
+            'eu-north-1',
+            'ap-east-1',
+            'ap-northeast-1',
+            'ap-northeast-2',
+            'ap-northeast-3',
+            'ap-southeast-1',
+            'ap-southeast-2',
+            'ap-south-1',
+            'me-south-1',
+            'sa-east-1')
     AVAILABLE_REGIONS_MESSAGE = """\
 Invalid region. Available regions for Amazon Glacier are:
-us-east-1 (US - Virginia)
-us-west-1 (US - N. California)
-us-west-2 (US - Oregon)
-eu-west-1 (EU - Ireland)
-eu-central-1 (EU - Frankfurt)
-sa-east-1 (South America - Sao Paulo)
-ap-northeast-1 (Asia-Pacific - Tokyo)
-ap-southeast-1 (Asia Pacific (Singapore)
-ap-southeast-2 (Asia-Pacific - Sydney)\
+us-east-1 US East (N. Virginia) 
+us-east-2 US East (Ohio) 
+us-west-1 US West (N. California) 
+us-west-2 US West (Oregon) 
+ca-central-1 Canada (Central) 
+eu-central-1 EU (Frankfurt) 
+eu-west-1 EU (Ireland) 
+eu-west-2 EU (London) 
+eu-west-3 EU (Paris) 
+eu-north-1 EU (Stockholm) 
+ap-east-1 Asia Pacific (Hong Kong)
+ap-northeast-1 Asia Pacific (Tokyo) 
+ap-northeast-2 Asia Pacific (Seoul) 
+ap-northeast-3 Asia Pacific (Osaka-Local) 
+ap-southeast-1 Asia Pacific (Singapore) 
+ap-southeast-2 Asia Pacific (Sydney) 
+ap-south-1 Asia Pacific (Mumbai) 
+me-south-1 Middle East (Bahrain)
+sa-east-1 South America (São Paulo)\
 """
 
     def setuplogging(self, logfile, loglevel, logtostdout):
