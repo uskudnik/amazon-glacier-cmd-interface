@@ -340,7 +340,7 @@ def getarchive(args):
     Initiate an archive retrieval job.
     """
     glacier = default_glacier_wrapper(args)
-    status, job, jobid = glacier.getarchive(args.vault, args.archive)
+    status, job, jobid = glacier.getarchive(args.vault, args.archive, args.type)
     output_headers(job, args.output)
 
 @handle_errors
@@ -774,6 +774,8 @@ E.g.: /path/to/backup/vol001|vol002|vol003''')
         help='The vault the archive is stored in.')
     parser_getarchive.add_argument('archive',
         help='The archive id.')
+    parser_getarchive.add_argument('type', default="Standard",
+        help='The archive retrieval type.')
     parser_getarchive.set_defaults(func=getarchive)
 
     # glacier-cmd download <vault> <archive> [--outfile <file name>]
