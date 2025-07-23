@@ -1040,7 +1040,7 @@ using %s MB parts to upload." % part_size)
                     cause=e,
                     code='FileError')
 
-        elif select.select([sys.stdin,],[],[],0.0)[0]:
+        elif select.select([sys.stdin,],[],[],2.0)[0]:
             reader = sys.stdin
             total_size = 0
         else:
