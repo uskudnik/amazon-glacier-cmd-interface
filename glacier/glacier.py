@@ -614,7 +614,7 @@ def main():
                         help="Amazon SimpleDB domain name for bookkeeping.")
     group.add_argument('--logfile',
                        required=False,
-                       default=os.path.expanduser('~/.glacier-cmd.log'),
+                       default=default('logfile') if default('logfile') else os.path.expanduser('~/.glacier-cmd.log'),
                        help='File to write log messages to.')
     group.add_argument('--loglevel',
                        required=False,
